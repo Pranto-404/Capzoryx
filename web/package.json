@@ -9,7 +9,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "predev": "node scripts/prepare-ocr.mjs",
     "prebuild": "node scripts/prepare-ocr.mjs",
-    "postbuild": "node scripts/android-links.mjs"
+    "postbuild": "node scripts/android-links.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tesseract.js-data/ben": "1.0.0",
@@ -29,7 +30,8 @@
     "@types/react-dom": "19.2.3",
     "playwright": "1.62.1",
     "typescript": "5.9.3",
-    "vite": "7.3.7"
+    "vite": "7.3.7",
+    "vitest": "4.1.12"
   },
   "overrides": {
     "esbuild": "0.28.1"
