@@ -33,7 +33,7 @@ The release checklist includes organizer confirmation of code-reuse rules before
 - **Text and dictation** support combined lakh/hajar amounts and tense-aware dates. Compatible browsers can use an installed on-device speech pack. The 30-clip voice accuracy gate and Android device test are pending.
 - **Cash-gap planning** simulates advancing part of one scheduled receipt to the first shortfall date. Options show the amount, source record and remaining maximum gap. A receipt returns to its original baseline on its due date. These are projections.
 - **Cash-flow passports** can be issued and revoked by an owner in Activity. The link and printable QR identify an aggregate report. The verifier checks the Ed25519 signature, expiry and revocation. Signer configuration uses SAFELEDGER_PASSPORT_ACTIVE_KEY and SAFELEDGER_PASSPORT_KEYS. The public key map is shipped in web/public/.well-known/capzoryx-passport-key.json. Keep retired public keys until all links signed with them expire.
-- **Phone installation** uses a web manifest and a bilingual offline screen. The service worker caches only three public assets. Offline financial drafts, payment-message sharing and native Android delivery are pending.
+- **Mobile app** development, including the install manifest and its offline screen, lives on the v2 branch. The main branch builds the responsive website.
 - **Cloud privacy** starts with Smart assist off. The on-device parser and bill reader work without an account at an AI provider. Remote extraction and planning require a compatible provider explicitly cleared for free, no-training processing. The staging service has no AI billing credentials.
 
 ## Free-tier release gates

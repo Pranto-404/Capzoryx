@@ -25,7 +25,6 @@ const faq:{q:string;a:string}[]=[
 const soon:{icon:string;title:string;text:string}[]=[
  {icon:'Data',title:T('Bank and wallet import'),text:T('Paste a bKash, Nagad, Rocket or bank message, or upload a statement, and we propose the records for you to confirm.')},
  {icon:'Cash flow',title:T('Live payment feed'),text:T('For businesses that take online payments: each received payment can arrive as a record by itself.')},
- {icon:'Settings',title:T('Install on your phone'),text:T('Add the site to your home screen and share a message straight into your records.')},
  {icon:'Invoices',title:T('Bill reminders'),text:T('Get a nudge before a bill is due, by email.')},
 ];
 const stats:{n:number;suffix:string;label:string}[]=[
