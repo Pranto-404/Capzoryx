@@ -14,7 +14,7 @@ from api.app.routes import router
 from api.app.agents.schema import create_schema as agent_schema
 from api.app.agents.errors import ProviderError
 from api.app.database import connect
-from api.app import accounts, inputs, financing, profile, workspaces, fx, assist, i18n, mailer, passport
+from api.app import accounts, inputs, financing, profile, workspaces, fx, assist, i18n, mailer, passport, receivables
 
 def _cors_origins() -> list[str]:
     """Read allowed origins from env; default to localhost dev ports only."""
@@ -63,6 +63,7 @@ app.include_router(fx.router)
 app.include_router(assist.router)
 app.include_router(i18n.router)
 app.include_router(passport.router)
+app.include_router(receivables.router)
 
 @app.exception_handler(ProviderError)
 async def ai_error(request,exc):

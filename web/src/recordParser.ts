@@ -3,7 +3,7 @@ import type {Draft} from './types';
 /** Reads a sentence such as "I paid Rahman 5k for freight yesterday" into a draft record. Everything here is a
  *  suggestion shown to the user for confirmation; nothing is saved until the owner presses Save. */
 const BN='০১২৩৪৫৬৭৮৯';
-const ascii=(s:string)=>s.replace(/[০-৯]/g,c=>String(BN.indexOf(c)));
+export const asciiDigits=(s:string)=>s.replace(/[০-৯]/g,c=>String(BN.indexOf(c)));
 const IN=/\b(?:received|receive|got paid|got|earned|earn|sold|sale|sales|collected|collect|deposit(?:ed)?|income|came in|paid me|pailam|peyechi|pelam|peyesi|nilam)\b|পেয়েছি|পেলাম|বিক্রি|আয়|জমা|গ্রহণ/i;
 const OUT=/\b(?:paid|pay|spent|spend|bought|buy|purchased|purchase|expense|rent|salary|wages|withdrew|gave|dibo|dilam|diyechi|disi|kinechi|kinlam)\b|দিলাম|দিয়েছি|খরচ|কিনেছি|কিনলাম|ভাড়া|বেতন|পরিশোধ/i;
 const INVOICE=/\b(?:bill|invoice|payable|owe|owed|due)\b|বাকি|বিল|পাওনা/i;
@@ -69,7 +69,7 @@ function findParty(text:string,amountSpan:[number,number]):string{
 }
 
 export function parseRecordSentence(raw:string,opts:{currency:string;digits:number;today?:Date}):Draft|null{
-  const text=expandLocalAmounts(ascii(raw.normalize('NFC'))).replace(/\s+/g,' ').trim();
+  const text=expandLocalAmounts(asciiDigits(raw.normalize('NFC'))).replace(/\s+/g,' ').trim();
   if(text.length<4||text.length>400||QUESTION.test(text))return null;
   const inflow=IN.test(text),outflow=OUT.test(text),invoice=INVOICE.test(text);
   if(!inflow&&!outflow&&!invoice)return null;
@@ -106,6 +106,6 @@ export const slug=(name:string)=>name.toLowerCase().replace(/[^a-z0-9]+/g,'-').r
 
 /** True when a sentence looks like someone describing a transaction but the on-device parser could not read it. */
 export function looksLikeTransaction(raw:string):boolean{
-  const text=ascii(raw);
+  const text=asciiDigits(raw);
   return !QUESTION.test(text)&&/\d/.test(text)&&(IN.test(text)||OUT.test(text)||INVOICE.test(text));
 }

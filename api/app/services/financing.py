@@ -125,7 +125,7 @@ def _digest(value) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def match_financing(dataset: Dataset, reserve_minor: int, request: FinancingMatchRequest) -> dict:
+def match_financing(dataset: Dataset, reserve_minor: int, request: FinancingMatchRequest, receivables=()) -> dict:
     ds = validated(dataset)
     req = FinancingMatchRequest.model_validate(request.model_dump(mode="json"))
     if req.as_of != ds.as_of:
@@ -136,7 +136,7 @@ def match_financing(dataset: Dataset, reserve_minor: int, request: FinancingMatc
         if quote.quoted_on > ds.as_of:
             raise ValueError("Quote date cannot be after the snapshot date")
     current = snapshot(ds)["balance_minor"]
-    movements = scheduled_movements(ds)
+    movements = scheduled_movements(ds, receivables=receivables)
     horizon = max([30] + [q.term_days for q in req.quotes])
     baseline, cash = [], current
     for offset in range(1, horizon + 1):

@@ -174,6 +174,7 @@ def leave(request: Request, response: Response, actor=Depends(principal), db=Dep
 
 # ---------- clear / restore ----------
 class ClearRequest(Exact):
+    erase_customer_details: bool = Field(default=False, strict=True)
     business_ids: list[str] = Field(min_length=1, max_length=20)
 
 
@@ -190,6 +191,11 @@ def clear(body: ClearRequest, request: Request, response: Response, actor=Depend
         if any(owned.get(b) != 'owner' for b in ids):sec.fail(403, 'WORKSPACE_OWNER_REQUIRED')
         currencies = [_currency_of(db, b) or 'BDT' for b in ids]
         for business in ids:
+            if db.execute('SELECT 1 FROM customer_keys WHERE business_id=?', (business,)).fetchone():
+                if not body.erase_customer_details:
+                    sec.fail(409, 'CUSTOMER_ERASURE_CONFIRMATION_REQUIRED')
+                db.execute('DELETE FROM customer_contacts WHERE business_id=?', (business,))
+                db.execute('DELETE FROM customer_keys WHERE business_id=?', (business,))
             db.execute('UPDATE workspace_meta SET archived_at=? WHERE business_id=?', (sec.now(), business))
             db.execute('DELETE FROM workspace_invites WHERE business_id=? AND used_by IS NULL', (business,))
         remaining = personal_member(db, account) if db.execute("SELECT 1 FROM account_members m JOIN security_users u ON u.user_id=m.user_id JOIN workspace_meta w ON w.business_id=m.business_id WHERE m.account_id=? AND u.active=1 AND w.kind='personal' AND w.archived_at IS NULL", (account,)).fetchone() else None
