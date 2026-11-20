@@ -18,10 +18,20 @@ const title=(s:string)=>s.replace(/\s+/g,' ').trim();
 function expandLocalAmounts(text:string):string {
   const unit = /(?<![\p{L}\p{N}.,])([0-9][0-9,]*(?:\.[0-9]+)?)\s*(hajar|hazar|হাজার|lakhs?|lac|লাখ|crore|কোটি|thousand|million|k)(?![\p{L}\p{M}])/giu;
   const group = new RegExp('(?:' + unit.source + '(?:\\s+|$)?)+', 'giu');
-  return text.replace(group, span => {
-    let total = 0;
-    for (const match of span.matchAll(unit)) total += Number(match[1].replaceAll(',', '')) * MULT[match[2].toLowerCase()];
-    return ' ' + total + ' ';
+  // An unscaled remainder can end a compound amount ("9 hajar 250 taka").
+  // Leave calendar dates, durations and invoice references available to their own parsers.
+  const remainder = /[0-9]+(?:\.[0-9]+)?(?=\s*(?:taka|tk\.?|bdt|টাকা|dilam|pailam|দিলাম|পেলাম)(?![\p{L}\p{M}])|\s*$)/u;
+  const compound = new RegExp(group.source + '(?:' + remainder.source + ')?', 'giu');
+  return text.replace(compound, span => {
+    let total = 0, lastUnit = 0, endOfUnits = 0;
+    for (const match of span.matchAll(unit)) {
+      endOfUnits = match.index! + match[0].length;
+      lastUnit = MULT[match[2].toLowerCase()];
+      total += Number(match[1].replaceAll(',', '')) * lastUnit;
+    }
+    const remainderValue = Number(span.slice(endOfUnits).trim());
+    if (remainderValue >= lastUnit) return span;
+    return ' ' + (total + remainderValue) + ' ';
   });
 }
 
@@ -63,9 +73,18 @@ function findParty(text:string,amountSpan:[number,number]):string{
   const stops=/\b(?:for|on|at|yesterday|today|tomorrow|due|by|in|of|bill|invoice|taka|tk|bdt|about|around|and|because)\b/i;
   const tail=text.slice(amountSpan[1]);
   const head=text.slice(0,amountSpan[0]);
-  const named=(from:string)=>{const m=from.match(/\b(?:from|to|with|by)\s+([A-Za-zঀ-৿][\wঀ-৿&.'-]*(?:\s+[A-Za-zঀ-৿][\wঀ-৿&.'-]*){0,3})/i);if(!m)return '';return m[1].split(/\s+/).reduce<string[]>((acc,w)=>stops.test(w)||acc.length>=4?acc:[...acc,w],[]).join(' ');};
+  const named=(from:string)=>{
+    const m=from.match(/\b(?:from|to|with|by)\s+([A-Za-zঀ-৿][\wঀ-৿&.'-]*(?:\s+[A-Za-zঀ-৿][\wঀ-৿&.'-]*){0,3})/i);
+    if(!m)return '';
+    const words=m[1].split(/\s+/);
+    const stop=words.findIndex(word=>stops.test(word));
+    return words.slice(0,stop===-1?words.length:stop).join(' ');
+  };
   const direct=head.match(/\b(?:paid|pay|gave|sent)\s+([A-Z][\w&.'-]*(?:\s+[A-Z][\w&.'-]*){0,2})\s*$/);
-  return title(named(tail)||named(head)||(direct?direct[1]:''));
+  // Local phrasing puts the party before its case marker (Shapla ke / শাপলাকে).
+  const localHead=head.trim().replace(/^(?:(?:আমি|আজ|গতকাল|কাল|ami|aj|kal|gotokal)\s+)+/iu,'');
+  const local=localHead.match(/^([\p{L}\p{M}][\p{L}\p{M}'.-]*(?:\s+[\p{L}\p{M}][\p{L}\p{M}'.-]*){0,2}?)(?:\s+(?:ke|theke|থেকে|কে)|কে)$/iu);
+  return title(named(tail)||named(head)||direct?.[1]||local?.[1]||'');
 }
 
 export function parseRecordSentence(raw:string,opts:{currency:string;digits:number;today?:Date}):Draft|null{
