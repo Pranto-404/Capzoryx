@@ -71,8 +71,9 @@ function ProfileTab({session,profile,request,reloadProfile,cloudAvailable}:Setti
         {provider.allowed.includes('record_data')?t('Receives selected records after consent. Training on records is disabled.'):
           provider.allowed.includes('question')?t('Receives questions and a short financial summary after consent. The provider may review them or use them for training.'):
           t('Receives interface labels only.')}</p>)}
-      <label className="check"><input type="checkbox" checked={profile?.smart_assist??false} disabled={busy||!cloudAvailable} onChange={e=>void run(async()=>{await request('/account/profile',{smart_assist:e.target.checked});},info,e.target.checked?t('Smart assist is on.'):t('Smart assist is off.'))}/>{t('Allow online assistance')}</label>
-      {!cloudAvailable&&<p className="small muted">{t('Smart assist is not available on this site right now.')}</p>}
+      <label className="check"><input type="checkbox" checked={profile?.smart_assist??false} disabled={busy||(!cloudAvailable&&!profile?.speech_provider)} onChange={e=>void run(async()=>{await request('/account/profile',{smart_assist:e.target.checked});},info,e.target.checked?t('Smart assist is on.'):t('Smart assist is off.'))}/>{t('Allow online assistance')}</label>
+      {profile?.speech_provider&&<p className="small muted">{t('Reviewed voice clips can be sent to {host} ({model}).',profile.speech_provider)}</p>}
+      {!cloudAvailable&&!profile?.speech_provider&&<p className="small muted">{t('Smart assist is not available on this site right now.')}</p>}
     </Section>
   </>;
 }
