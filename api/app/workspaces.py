@@ -6,8 +6,8 @@ import secrets
 import uuid
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field
-from api.app import mailer, security as sec
-from api.app.accounts import (browser_origin, create_workspace_data, current_ttl, identity, issue, personal_member, set_cookie)
+from api.app import app_sessions, mailer, security as sec
+from api.app.accounts import (browser_origin, create_workspace_data, current_ttl, personal_member, session_result)
 from api.app.contracts import Contract
 from api.app.profile import Exact, account_of
 from api.app.routes import db_connection, principal
@@ -136,6 +136,7 @@ def remove_member(body: MemberId, actor=Depends(principal), db=Depends(db_connec
     with sec.transaction(db):
         _member(db, actor, body.member_id)
         db.execute('UPDATE security_users SET active=0 WHERE user_id=?', (body.member_id,))
+        app_sessions.revoke_member(db,body.member_id)
         db.execute('DELETE FROM security_sessions WHERE user_id=?', (body.member_id,))
         sec.audit(db, actor, 'member-' + uuid.uuid4().hex, 'MEMBER_REMOVED', {'removed_user': body.member_id})
     return dict(simulation_only=True)
@@ -152,6 +153,7 @@ def change_role(body: MemberRole, actor=Depends(principal), db=Depends(db_connec
     with sec.transaction(db):
         _member(db, actor, body.member_id)
         db.execute('UPDATE security_users SET role=? WHERE user_id=?', (body.role, body.member_id))
+        app_sessions.revoke_member(db,body.member_id)
         db.execute('DELETE FROM security_sessions WHERE user_id=?', (body.member_id,))
         sec.audit(db, actor, 'member-' + uuid.uuid4().hex, 'MEMBER_ROLE_CHANGED', {'user': body.member_id, 'role': body.role})
     return dict(simulation_only=True)
@@ -166,10 +168,10 @@ def leave(request: Request, response: Response, actor=Depends(principal), db=Dep
     with sec.transaction(db):
         sec.audit(db, actor, 'member-' + uuid.uuid4().hex, 'MEMBER_LEFT', {'user': actor.user_id})
         db.execute('UPDATE security_users SET active=0 WHERE user_id=?', (actor.user_id,))
+        app_sessions.revoke_account(db,account)
         db.execute('DELETE FROM security_sessions WHERE user_id=?', (actor.user_id,))
-        token = issue(db, personal_member(db, account), ttl)
-    set_cookie(response, token, ttl)
-    return identity(db, sec.authenticate(db, token))
+        token = app_sessions.issue_client(db,request,response,personal_member(db,account),ttl)
+    return session_result(db,request,token)
 
 
 # ---------- clear / restore ----------
@@ -205,9 +207,8 @@ def clear(body: ClearRequest, request: Request, response: Response, actor=Depend
             db.execute('INSERT INTO account_members VALUES (?,?,?)', (account, business, user))
             create_workspace_data(db, business, 'personal', 'My workspace', currencies[0])
             remaining = user
-        token = issue(db, remaining, ttl)
-    set_cookie(response, token, ttl)
-    return dict(identity(db, sec.authenticate(db, token)), cleared=len(ids))
+        token = app_sessions.issue_client(db,request,response,remaining,ttl,switch_device=True)
+    return dict(session_result(db,request,token), cleared=len(ids))
 
 
 class BusinessId(Exact):
