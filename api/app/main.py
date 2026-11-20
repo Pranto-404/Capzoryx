@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from api.app import security
 from api.app.body_limit import BodyLimitMiddleware
 from api.app.ratelimit import limiter
+from api.app.copilot import plans
 from api.app.routes import router
 from api.app.agents.schema import create_schema as agent_schema
 from api.app.agents.errors import ProviderError
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI):
         profile.schema(db)
         i18n.schema(db)
         passport.schema(db)
+        plans.schema(db)
         accounts.archive_legacy_examples(db)
     yield
 
@@ -63,6 +65,7 @@ app.include_router(fx.router)
 app.include_router(assist.router)
 app.include_router(i18n.router)
 app.include_router(passport.router)
+app.include_router(plans.router)
 app.include_router(receivables.router)
 
 @app.exception_handler(ProviderError)
