@@ -84,6 +84,7 @@ def test_accept_is_atomic_and_tenant_scoped_and_fresh(world):
     assert c.post('/api/copilot/gap-fix/accept', json={'plan_id':old['id']}).status_code == 409
     plan = preview()
     before = c.get('/api/workspace').json()
+    assert before['next_collection'] is None
     def accept():
         r = c.post('/api/copilot/gap-fix/accept', json={'plan_id':plan['id']})
         assert r.status_code == 200, r.text
@@ -94,12 +95,14 @@ def test_accept_is_atomic_and_tenant_scoped_and_fresh(world):
     tasks = c.get('/api/copilot/tasks').json()['tasks']
     assert len(tasks) == 1
     assert tasks[0]['action']['amount_minor'] == 9000
+    assert c.get('/api/workspace').json()['next_collection'] == {'due_on':tasks[0]['due_on'],'amount_minor':9000}
     assert before['dataset_revision'] == c.get('/api/workspace').json()['dataset_revision']
     invite = c.post('/api/account/invitations', json={'role':'viewer'}).json()['code']
     signup(c, 'separate_cashgap')
     assert c.post('/api/copilot/gap-fix/accept', json={'plan_id':plan['id']}).status_code == 404
     assert c.get('/api/copilot/tasks').json()['tasks'] == []
     assert c.post('/api/account/join', json={'code':invite}).status_code == 200
+    assert c.get('/api/workspace').json()['next_collection'] is None
     assert c.post('/api/copilot/gap-fix/accept', json={'plan_id':plan['id']}).status_code == 403
     assert c.post('/api/copilot/tasks/' + tasks[0]['id'], json={'status':'done'}).status_code == 403
 
@@ -113,6 +116,7 @@ def test_task_decision_and_reminder_never_post_money(world):
     task = c.post('/api/copilot/gap-fix/accept', json={'plan_id':plan['id']}).json()['tasks'][0]
     before = c.get('/api/workspace').json()['dataset_revision']
     assert c.post('/api/copilot/tasks/' + task['id'], json={'status':'done'}).json()['tasks'] == []
+    assert c.get('/api/workspace').json()['next_collection'] is None
     assert c.post('/api/copilot/tasks/' + task['id'], json={'status':'done'}).status_code == 200
     assert c.post('/api/copilot/tasks/' + task['id'], json={'status':'dismissed'}).status_code == 409
     msg = lambda lang: c.post('/api/copilot/message', json=dict(receivable_id=debt, language=lang))

@@ -53,7 +53,7 @@ export function QuickAdd({request,revision,onSaved,profile,cloudAvailable}:Props
         <p className="small muted">{t('Read the total on this device. English and Bangla language files download on first use.')}</p>
         <input ref={file} id="document-photo" type="file" accept="image/*" capture="environment" hidden onChange={e=>void scan(e.target.files?.[0])}/>
         <input ref={gallery} id="document-gallery" type="file" accept="image/*" hidden onChange={e=>void scan(e.target.files?.[0])}/>
-        <div className="actions"><button disabled={busy!==''} onClick={()=>file.current?.click()}>{busy==='photo'?t('Reading your photo…'):t('Take a photo')}</button><button className="secondary" disabled={busy!==''} onClick={()=>gallery.current?.click()}>{t('Choose from gallery')}</button></div>
+        <div className="actions"><button id="capture-photo" disabled={busy!==''} onClick={()=>file.current?.click()}>{busy==='photo'?t('Reading your photo…'):t('Take a photo')}</button><button className="secondary" disabled={busy!==''} onClick={()=>gallery.current?.click()}>{t('Choose from gallery')}</button></div>
         {photoText&&<details><summary>{t('Text read from the photo')}</summary><p>{photoText}</p></details>}
         {preview&&busy==='photo'&&<img className="scan-preview" src={preview} alt={t('Your photo being read')}/>}
       </div>
@@ -66,7 +66,6 @@ export function QuickAdd({request,revision,onSaved,profile,cloudAvailable}:Props
         <button disabled={busy!==''||!text.trim()} onClick={()=>void read()}>{busy==='text'?t('Reading…'):t('Read it')}</button>
       </div>
     </div>
-    <p className="coming-soon small"><span className="soon-badge">{t('Coming soon')}</span>{t('Import from a bank or wallet message, or from a statement file.')}</p>
     {error&&<p className="error" role="alert">{error}</p>}
     {draft&&<div className={preview?'scan-compare has-photo':'scan-compare'}>{preview&&<figure className="scan-photo"><img src={preview} alt={t('Your photo')}/><figcaption className="small muted">{t('Compare with your photo before adding')}</figcaption></figure>}<DraftCard key={JSON.stringify(draft)} draft={draft} revision={revision} request={request} onDiscard={()=>{setDraft(null);setPreview('');}} onSaved={async()=>{await onSaved();setText('');setPreview('');}}/></div>}
   </section>;

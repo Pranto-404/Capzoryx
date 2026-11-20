@@ -20,3 +20,5 @@ export type Invitation={invite_id:string;role:string;expires_at:number};
 export type WorkspaceItem={business_id:string;role:string;name:string;currency:string|null;current?:boolean;restorable_until?:number};
 export type Draft={ok:boolean;reason?:string;kind:'invoice'|'cash';direction?:'inflow'|'outflow';status?:'cleared'|'scheduled';amount_minor:number;currency:string;workspace_currency:string;currency_mismatch:boolean;effective_on:string;due_on?:string;vendor_id?:string;vendor_name?:string;invoice_number?:string;memo:string;warnings:string[];can_save:boolean;confidence:number|null};
 export type FxRate={source_currency:string;target_currency:string;rate:string;provider:string;as_of:string|null;stale:boolean};
+
+export type NextCollection={due_on:string;amount_minor:number};
