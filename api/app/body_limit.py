@@ -1,4 +1,4 @@
-"""ASGI request buffering capped at 1 MiB before JSON/model parsing."""
+"""Bound JSON before parsing. Explicitly scoped file readers allow larger payloads."""
 import json
 from starlette.responses import JSONResponse
 
@@ -13,6 +13,7 @@ class BodyLimitMiddleware:
         if headers.get(b'content-type',b'').split(b';',1)[0].strip().lower()!=b'application/json':
             return await JSONResponse({'error':{'code':'JSON_CONTENT_TYPE_REQUIRED'}},status_code=415)(scope,receive,send)
         limit=self.large if scope.get('path')=='/api/assist/scan' else self.limit
+        if scope.get('path')=='/api/statements/preview':limit=4*1024*1024
         chunks=[];size=0
         while True:
             event=await receive()

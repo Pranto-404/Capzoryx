@@ -15,6 +15,7 @@ from api.app.body_limit import BodyLimitMiddleware
 from api.app.ratelimit import limiter
 from api.app.copilot import plans
 from api.app.routes import router
+from api.app import statements
 from api.app.agents.schema import create_schema as agent_schema
 from api.app.agents.errors import ProviderError
 from api.app.copilot import books
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
         plans.schema(db)
         payments.schema(db)
         payment_profile.schema(db)
+        statements.schema(db)
         accounts.archive_legacy_examples(db)
     yield
 
@@ -85,6 +87,7 @@ app.include_router(plans.router)
 app.include_router(receivables.router)
 app.include_router(payment_profile.router)
 app.include_router(payments.router)
+app.include_router(statements.router)
 
 @app.exception_handler(ProviderError)
 async def ai_error(request,exc):

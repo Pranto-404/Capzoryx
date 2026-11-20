@@ -27,6 +27,7 @@ import {t,T,LanguagePicker,useI18n,hasChosenLanguage} from './i18n';
 import './serverText';
 
 const WalletPayments=lazy(()=>import('./WalletPayments'));
+const StatementImport=lazy(()=>import('./StatementImport'));
 const Settings=lazy(()=>import('./Settings'));
 const Assistant=lazy(()=>import('./Assistant'));
 const tabs=['Overview','Data','Invoices','Cash flow','Financing','Assistant','Approvals','Audit','Settings'] as const;
@@ -194,6 +195,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {tab==='Data'&&<>
         <QuickAdd request={request} revision={revision} profile={profile} cloudAvailable={cloudAvailable} onSaved={async()=>{await refresh();}}/>
         <DataEntry events={events} session={session} revision={revision} snapshot={snapshot} busy={busy} submit={async body=>{let saved=false;await run(async()=>{await request('/workspace/records',body);saved=true;await refresh();setMessage(t('Record saved. Your balance, forecast and activity are updated.'));});if(!saved)throw new Error(t('The record was not saved. Check the message above and try again.'));}}/>
+        {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><StatementImport request={request} onSaved={refresh}/></Suspense></LazyBoundary>}
         {session.role==='owner'&&<ImportEvidence busy={busy} enabled={!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0} upload={importRaw}/>}</>}
       {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
       {tab==='Assistant'&&<AskBooks request={request}/>}
