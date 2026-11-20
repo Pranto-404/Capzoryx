@@ -1,0 +1,29 @@
+name: Notification scheduler backup
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tick:
+    if: github.ref == 'refs/heads/main' && vars.CAPZORYX_ENABLE_NOTIFICATION_BACKUP == '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [staging, production]
+    environment: ${{ matrix.environment }}
+    concurrency:
+      group: notification-tick-${{ matrix.environment }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deliver in-app reminders
+        env:
+          API_ORIGIN: ${{ vars.CAPZORYX_TICK_ORIGIN }}
+          CAPZORYX_TICK_SECRET: ${{ secrets.CAPZORYX_TICK_SECRET }}
+        run: |
+          if [ -z "$API_ORIGIN" ]; then exit 0; fi
+          node --input-type=module -e "import {runTick} from './infra/notification-tick/worker.mjs'; await runTick(process.env.API_ORIGIN,process.env.CAPZORYX_TICK_SECRET)"

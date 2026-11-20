@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from api.app import app_sessions, security
+from api.app.notifications.routes import router as notification_router
 from api.app.body_limit import BodyLimitMiddleware
 from api.app.ratelimit import limiter
 from api.app.copilot import plans
@@ -61,6 +62,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-SafeLedger-Client"],
 )
 app.include_router(router)
+app.include_router(notification_router)
 app.include_router(accounts.router)
 app.include_router(app_sessions.router)
 app.include_router(inputs.router)
