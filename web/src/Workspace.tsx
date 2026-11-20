@@ -1,6 +1,7 @@
 import {PassportManager} from './Passport';
 import {NotificationInbox} from './NotificationInbox';
 import {Brand} from './Logo';
+import {ReadOnlyTokens} from './ReadOnlyTokens';
 import {QuickTour} from './QuickTour';
 import {LazyBoundary} from './LazyBoundary';
 import {ThemeButton} from './Theme';
@@ -194,6 +195,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
         <DataEntry events={events} session={session} revision={revision} snapshot={snapshot} busy={busy} submit={async body=>{let saved=false;await run(async()=>{await request('/workspace/records',body);saved=true;await refresh();setMessage(t('Record saved. Your balance, forecast and activity are updated.'));});if(!saved)throw new Error(t('The record was not saved. Check the message above and try again.'));}}/>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><StatementImport request={request} onSaved={refresh}/></Suspense></LazyBoundary>}
         {session.role==='owner'&&<ImportEvidence busy={busy} enabled={!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0} upload={importRaw}/>}</>}
+      {tab==='Settings'&&session.role==='owner'&&<ReadOnlyTokens request={request}/>}
       {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
       {tab==='Assistant'&&<AskBooks request={request}/>}
       {chatLoaded&&<div id="workspace-assistant" hidden={tab!=='Assistant'&&!chatOpen} className={tab==='Assistant'?'assistant-page':'chat-float'} onKeyDown={(e:KeyboardEvent)=>{if(e.key==='Escape'&&tab!=='Assistant')closeChat();}}><LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening assistant…')}</section>}><Assistant visible={tab==='Assistant'||chatOpen} snapshot={snapshot} forecast={baselineMonth} week={week} events={events} invoices={invoices} session={session} profile={profile} cloudAvailable={cloudAvailable} revision={revision} request={request} onSaved={refresh} onNavigate={action=>{setTab(action);closeChat();}} onProposal={async()=>{await refresh();setTab('Approvals');closeChat();}} onClose={tab==='Assistant'?undefined:closeChat}/></Suspense></LazyBoundary></div>}

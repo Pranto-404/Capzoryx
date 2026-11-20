@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from api.app import app_sessions, quality, security
+from api.app import app_sessions, mcp_read, quality, security
 from api.app.notifications.routes import router as notification_router
 from api.app.body_limit import BodyLimitMiddleware
 from api.app.ratelimit import limiter
@@ -51,6 +51,7 @@ async def lifespan(app: FastAPI):
         agent_schema(db)
         accounts.schema(db)
         app_sessions.schema(db)
+        mcp_read.schema(db)
         profile.schema(db)
         books.schema(db)
         i18n.schema(db)
@@ -69,7 +70,7 @@ app.add_middleware(
     allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type", "X-SafeLedger-Client"],
+    allow_headers=["Authorization", "Content-Type", "X-SafeLedger-Client", "MCP-Protocol-Version"],
 )
 app.include_router(router)
 app.include_router(notification_router)
@@ -78,6 +79,7 @@ app.include_router(accounts.router)
 app.include_router(app_sessions.router)
 app.include_router(inputs.router)
 app.include_router(financing.router)
+app.include_router(mcp_read.router)
 app.include_router(profile.router)
 app.include_router(workspaces.router)
 app.include_router(fx.router)
