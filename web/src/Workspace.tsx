@@ -5,6 +5,7 @@ import {LazyBoundary} from './LazyBoundary';
 import {ThemeButton} from './Theme';
 import {Icon} from './Icon';
 import {Dashboard} from './Dashboard';
+import {GapFixPanel} from './GapFixPanel';
 import {CashChart} from './Charts';
 import {CurrencyProvider,CurrencyControls,useCurrency,usePreferredCurrency} from './Currency';
 import {lazy,Suspense,useEffect,useRef,useState,useCallback,type ReactNode,type KeyboardEvent} from 'react';
@@ -164,6 +165,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
           <button disabled={busy||!snapshot}>{t('Update forecast')}</button></form>
         <p className="muted">{t('Try “what if” changes here. They never change your records.')}</p>
         {forecast&&<><div className="metrics"><Metric label={t('Balance in 30 days')} value={forecast.closing_balance_minor}/><Metric label={t('Lowest balance')} value={forecast.minimum_balance_minor}/><article className="metric"><p>{t('First time below your reserve')}</p><strong>{forecast.first_shortfall_on?formatDate(forecast.first_shortfall_on):t('Never')}</strong></article></div><CashChart forecast={forecast}/><Basis count={forecast.source_ids.length}/><Notes values={forecast.assumptions}/></>}</Panel>
+        {snapshot&&forecast&&<GapFixPanel key={revision+'-'+forecast.reserve_minor} request={request} asOf={snapshot.as_of} reserve={forecast.reserve_minor??0} owner={session.role==='owner'}/>}
         {forecast&&<Panel title={t('Warnings and daily detail')}>
           {forecast.risk_flags.map((risk,n)=><div className="notice" key={n}><strong>{risk.risk==='DUPLICATE_POSSIBLE'?t('Possible duplicate bill'):risk.risk==='DUPLICATE_EXACT'?t('Duplicate bill'):risk.risk.replaceAll('_',' ').toLowerCase()}</strong><p>{risk.invoice_ids.map(number).filter(Boolean).join(', ')} · {risk.execution_blocked?'Payment is paused until you review it.':t('Review before paying.')}</p></div>)}
           <div className="table-wrap" tabIndex={0} role="region" aria-label={t('Scrollable table')}><table><caption>{t('Next 30 days')}</caption><thead><tr><th>{t('Date')}</th><th>{t('In')}</th><th>{t('Out')}</th><th>{t('Balance')}</th></tr></thead><tbody>{forecast.days.map(d=><tr key={d.date}><td>{formatDate(d.date)}</td><td>{money(d.inflow_minor)}</td><td>{money(d.outflow_minor)}</td><td className={d.projected_balance_minor<0?'negative':''}>{money(d.projected_balance_minor)}</td></tr>)}</tbody></table></div></Panel>}</>}

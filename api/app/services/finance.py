@@ -1,12 +1,12 @@
 """Deterministic single-currency finance. These services have no LLM/network/write authority."""
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from difflib import SequenceMatcher
 import hashlib
 import json
 import re
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 from pydantic import Field, model_validator
 from api.app.contracts import Contract, ImportRequest, ISODate, Minor, PositiveMinor, RecordId, ScenarioRequest, Currency
 
@@ -141,13 +141,22 @@ def snapshot(dataset: Dataset) -> dict:
             "dataset_sha256": fingerprint(ds), "assumptions": ["Cash basis; cleared income/expenses are cash movements, not accrual profit", "Opening balance is start-of-day opening_on; cleared events are included through end-of-day as_of"]}
 
 
-def project_cashflow(dataset: Dataset, request: ScenarioRequest, receivables=()) -> dict:
+class CashAdjustment(NamedTuple):
+    day: date
+    direction: Literal['inflow', 'outflow']
+    delta_minor: int
+    source_id: str
+
+
+def project_cashflow(dataset: Dataset, request: ScenarioRequest, receivables=(), extra_movements=()) -> dict:
     ds = validated(dataset)
     request = ScenarioRequest.model_validate(request.model_dump(mode="json"))
     if request.as_of != ds.as_of:
         raise ValueError("Scenario as_of must equal the immutable snapshot as_of")
     cash = snapshot(ds)["balance_minor"]
     days = scheduled_movements(ds, request.delay_inflows_days, receivables)
+    for adjustment in extra_movements:
+        days[adjustment.day].append((adjustment.direction, adjustment.delta_minor, adjustment.source_id))
     result = []
     for offset in range(1, request.horizon_days + 1):
         day = request.as_of + timedelta(days=offset)
@@ -157,7 +166,7 @@ def project_cashflow(dataset: Dataset, request: ScenarioRequest, receivables=())
         cash += incoming - outgoing
         result.append({"date": day.isoformat(), "inflow_minor": incoming, "outflow_minor": outgoing,
                        "projected_balance_minor": cash, "shortfall_minor": max(0, request.reserve_minor - cash),
-                       "source_ids": sorted(source for _, _, source in movements)})
+                       "source_ids": sorted({source for _, _, source in movements})})
     alerts = [x["date"] for x in result if x["shortfall_minor"]]
     duplicate_flags = analyze_duplicates(ds)
     return {"currency": ds.currency, "as_of": ds.as_of.isoformat(), "horizon_days": request.horizon_days,

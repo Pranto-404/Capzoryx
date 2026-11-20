@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {useCurrency} from './Currency';
 import {ApiError} from './api';
+import {ReminderDraft} from './ReminderDraft';
 import {asciiDigits} from './recordParser';
 import {formatDate} from './format';
 import {t} from './i18n';
@@ -102,7 +103,8 @@ export function Receivables({request,onSaved}:Props){
     </form>}
     {!!book.receivables.length&&<ul className="people">{book.receivables.map(debt=><li key={debt.id}>
       <div><strong>{names.get(debt.customer_id)}{debt.number&&' · '+debt.number}</strong>
-      <small>{t('Due date')} {formatDate(debt.due_on)} · {t('Still owed')} {nativeMoney(debt.open_minor)} / {nativeMoney(debt.amount_minor)}</small></div>
+      <small>{t('Due date')} {formatDate(debt.due_on)} · {t('Still owed')} {nativeMoney(debt.open_minor)} / {nativeMoney(debt.amount_minor)}</small>
+      {debt.open_minor>0&&<ReminderDraft key={debt.open_minor} request={request} id={debt.id}/>}</div>
       {debt.open_minor>0?<button type="button" className="secondary" disabled={busy} onClick={()=>{setSelected(debt);setMode('collect');}}>{t('Record receipt')}</button>:<span>{t('Paid in full')}</span>}
     </li>)}</ul>}
     {book.customers.some(c=>c.phone)&&<details><summary>{t('Customer contact details')}</summary>

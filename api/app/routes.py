@@ -111,7 +111,8 @@ def gap_fix(body: ScenarioRequest, actor=Depends(principal), db=Depends(db_conne
         if body.delay_inflows_days:
             sec.fail(422, 'USE_BASELINE_RECEIPT_DATES')
         receipts = open_receipts(db, current.business_id)
-        return dict(collection_plan(dataset, project_cashflow(dataset, body, receipts), receipts), simulation_only=True)
+        from api.app.copilot.plans import propose
+        return propose(db, current, dataset, receipts, body)
 
 
 class CompareRequest(Contract):
