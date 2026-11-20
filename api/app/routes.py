@@ -219,11 +219,13 @@ def agent_status(actor=Depends(principal)):
     import os
     from api.app.agents.provider import ChatProvider,ProviderError
     from api.app.agents.fallback import configured_secondary
+    from api.app.gateway import disclosure, REGISTRY
+    providers=disclosure()
     profile=os.environ.get('SAFELEDGER_LLM_PROFILE','gemini_free')
     reason=None
     try:ChatProvider();configured=True
     except ProviderError as exc:configured=False;reason=exc.code
-    return dict(provider_name='Google Gemini' if profile=='gemini_free' else 'Configured external provider',configured=configured,configuration_error=reason,availability_checked=False,fallback_provider='OpenAI',fallback_configured=configured_secondary(),free_only=os.environ.get('SAFELEDGER_ALLOW_PAID_AI')!='1',simulation_only=True)
+    return dict(providers=providers,provider_name=providers[0]['label'] if providers else REGISTRY['providers'].get(profile,REGISTRY['providers']['compatible'])['label'],configured=bool(providers),configuration_error=reason,availability_checked=False,fallback_provider='OpenAI',fallback_configured=configured_secondary(),free_only=os.environ.get('SAFELEDGER_ALLOW_PAID_AI')!='1',simulation_only=True)
 
 
 from pydantic import StrictBool
@@ -239,4 +241,4 @@ def agent_diagnostic(body:SyntheticDiagnostic,actor=Depends(principal),db=Depend
     sec.budget(db,'public-ai-global',8)
     from api.app.agents.diagnostic import synthetic_check
     # This function has no dataset access. No account identifiers or records are sent.
-    return synthetic_check()
+    return synthetic_check(db=db,business_id=actor.business_id)

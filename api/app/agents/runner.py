@@ -1,11 +1,12 @@
 """Models select tools and constrained rationale; all money/permissions stay server-owned."""
+from functools import partial
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
 import uuid
 from pydantic import ValidationError
-from api.app import security as sec
+from api.app import gateway, security as sec
 from api.app.agents.models import TOOLS, Rationale
 from api.app.agents.provider import ChatProvider, ProviderError, strict_json
 from api.app.contracts import ScenarioRequest
@@ -56,18 +57,20 @@ def reserve_run(db,actor,request,provider):
 
 def run_task(db,actor,request,provider=None):
     if request.allow_proposal and actor.role not in {'owner','approver','agent'}:sec.fail(403,'AI_PROPOSAL_NOT_AUTHORIZED')
+    injected = provider is not None
     provider=provider or get_provider()  # Missing provider is an explicit503, never a fake fallback.
     if request.fallback_ai_consent:
         from api.app.agents.fallback import with_authorized_fallback
         provider=with_authorized_fallback(provider)
     run_id=reserve_run(db,actor,request,provider)
+    model_call = provider.complete if injected else partial(gateway.agent_call, db, provider, business_id=actor.business_id, trace_id=run_id, task='agent_plan')
     try:
         ds=sec.runtime_dataset(db,actor.business_id)
         target=next((x for x in ds.invoices if x.invoice_id==request.invoice_id),None)
         if request.invoice_id and target is None:sec.fail(404,'INVOICE_NOT_FOUND')
         context={'task':request.task,'invoice_id':request.invoice_id,'allow_proposal':request.allow_proposal,'untrusted_invoice':target.model_dump(mode='json') if target else None}
         tools=[{'type':'function','function':{'name':name,'description':name.replace('_',' '),'parameters':model.model_json_schema(),'strict':True}} for name,model in TOOLS.items()]
-        plan=parse_calls(provider.complete([{'role':'system','content':SYSTEM},{'role':'user','content':json.dumps(context)}],tools=tools))
+        plan=parse_calls(model_call([{'role':'system','content':SYSTEM},{'role':'user','content':json.dumps(context)}],tools=tools))
         if any(name=='propose_payment' for name,_ in plan):
             if plan[-1][0]!='propose_payment' or sum(name=='propose_payment' for name,_ in plan)!=1 or not request.allow_proposal or actor.role not in {'owner','approver','agent'}:raise ProviderError('AI_PROPOSAL_NOT_AUTHORIZED')
             if plan[-1][1].invoice_id!=request.invoice_id or not any(name=='analyze_invoice' and args.invoice_id==request.invoice_id for name,args in plan[:-1]):raise ProviderError('AI_PROPOSAL_TARGET_MISMATCH')
@@ -105,7 +108,7 @@ def run_task(db,actor,request,provider=None):
                         result={'proposal_possible':False,'reason':exc.code};risks.append({'risk':exc.code});reasons.add('POLICY_BLOCKED')
                 tool_results.append({'tool':name,'result':result})
         finally:db.rollback()
-        selected=provider.complete([{'role':'system','content':'Select only fact IDs and reason codes from the verified context. Never output amounts,free text,permissions or source IDs. When proposal_candidate is present use PROPOSE_FOR_APPROVAL and HUMAN_APPROVAL_REQUIRED. When risk_flags is not empty use REVIEW_REQUIRED. Otherwise use READ_ONLY. Include all required reason codes.'},{'role':'user','content':json.dumps({'facts':facts,'required_reason_codes':sorted(reasons),'risk_flags':risks,'proposal_candidate':candidate})}],response_schema=Rationale.model_json_schema())
+        selected=model_call([{'role':'system','content':'Select only fact IDs and reason codes from the verified context. Never output amounts,free text,permissions or source IDs. When proposal_candidate is present use PROPOSE_FOR_APPROVAL and HUMAN_APPROVAL_REQUIRED. When risk_flags is not empty use REVIEW_REQUIRED. Otherwise use READ_ONLY. Include all required reason codes.'},{'role':'user','content':json.dumps({'facts':facts,'required_reason_codes':sorted(reasons),'risk_flags':risks,'proposal_candidate':candidate})}],response_schema=Rationale.model_json_schema())
         if selected.get('tool_calls') or not isinstance(selected.get('content'),str):raise ProviderError('AI_INVALID_RATIONALE')
         rationale=Rationale.model_validate(strict_json(selected['content']))
         if not set(rationale.fact_ids)==set(facts) or set(rationale.reason_codes)!=reasons:raise ProviderError('AI_UNGROUNDED_RATIONALE')

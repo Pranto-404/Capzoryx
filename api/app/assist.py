@@ -13,7 +13,7 @@ from api.app import cloud, security as sec
 from api.app.accounts import today_bd
 from api.app.contracts import Contract
 from api.app.currencies import CURRENCIES, scale
-from api.app.provider_policy import record_provider
+from api.app import gateway
 from api.app.profile import Exact, account_of
 from api.app.routes import db_connection, principal
 from api.app.services.receivables import open_receipts
@@ -96,7 +96,7 @@ def ask(body: AskBody, actor=Depends(principal), db=Depends(db_connection)):
     messages = [{'role': 'system', 'content': SYSTEM_ASK + facts}]
     messages += [{'role': t.role, 'content': t.text} for t in body.history]
     messages.append({'role': 'user', 'content': body.question})
-    answer = cloud.complete(messages, max_tokens=700)
+    answer = gateway.complete('explain', messages, db=db, business_id=actor.business_id, data_class='question', consent=True, max_tokens=700)
     return dict(answer=answer[:2500], simulation_only=True)
 
 
@@ -190,11 +190,10 @@ class ExtractBody(Exact):
 def extract(body: ExtractBody, actor=Depends(principal), db=Depends(db_connection)):
     if actor.role != 'owner':sec.fail(403, 'OWNER_REQUIRED')
     require_smart(db, actor)
-    record_provider()
     sec.budgets(db, [('extract:' + actor.user_id, 12), ('assist-all', 40)])
     ws_currency = sec.runtime_dataset(db, actor.business_id).currency
     today = today_bd()
-    text = cloud.complete([{'role': 'system', 'content': 'You turn a sentence about a business transaction into structured data. ' + SCHEMA_HELP.replace('{today}', today.isoformat())}, {'role': 'user', 'content': body.text}], max_tokens=300, json_mode=True)
+    text = gateway.complete('extract_text', [{'role': 'system', 'content': 'You turn a sentence about a business transaction into structured data. ' + SCHEMA_HELP.replace('{today}', today.isoformat())}, {'role': 'user', 'content': body.text}], db=db, business_id=actor.business_id, data_class='record_data', consent=True, max_tokens=300, schema={'type':'object'})
     return dict(draft=normalize_draft(cloud.parse_json_object(text), ws_currency, today), simulation_only=True)
 
 
@@ -247,14 +246,14 @@ def _scan_issues(raw):
     return issues
 
 
-def _read_photo(image, today, previous=None, issues=None):
+def _read_photo(db, business, image, today, previous=None, issues=None):
     system = (VERIFY_SYSTEM if previous else SCAN_SYSTEM).replace('{today}', today.isoformat())
     if previous:
         text = 'First reading (may contain mistakes): ' + json.dumps(previous, ensure_ascii=False)[:1800] + '\nThings to check: ' + ', '.join(issues or ['everything']) + '.'
     else:
         text = 'Read this bill, invoice or receipt photo.'
     content = [{'type': 'text', 'text': text}, {'type': 'image_url', 'image_url': {'url': image}}]
-    reply = cloud.complete([{'role': 'system', 'content': system}, {'role': 'user', 'content': content}], max_tokens=900, json_mode=True, timeout=24, vision=True)
+    reply = gateway.complete('scan_image', [{'role': 'system', 'content': system}, {'role': 'user', 'content': content}], db=db, business_id=business, data_class='record_data', consent=True, max_tokens=900, schema={'type':'object'}, vision=True)
     return cloud.parse_json_object(reply)
 
 
@@ -262,7 +261,6 @@ def _read_photo(image, today, previous=None, issues=None):
 def scan(body: ScanBody, actor=Depends(principal), db=Depends(db_connection)):
     if actor.role != 'owner':sec.fail(403, 'OWNER_REQUIRED')
     require_smart(db, actor)
-    record_provider()
     match = IMAGE.fullmatch(body.image)
     if not match:sec.fail(422, 'IMAGE_FORMAT_UNSUPPORTED')
     try:raw = base64.b64decode(match.group(2), validate=True)
@@ -274,13 +272,13 @@ def scan(body: ScanBody, actor=Depends(principal), db=Depends(db_connection)):
     ws_currency = sec.runtime_dataset(db, actor.business_id).currency
     today = today_bd()
     started = time.monotonic()
-    first = _read_photo(body.image, today)
+    first = _read_photo(db, actor.business_id, body.image, today)
     issues = _scan_issues(first)
     final, checked = first, False
     # A second, checking pass fixes most misreads. It is skipped when the first answer looks solid or time is short.
     if issues and time.monotonic() - started < 14:
         try:
-            second = _read_photo(body.image, today, previous=first, issues=issues)
+            second = _read_photo(db, actor.business_id, body.image, today, previous=first, issues=issues)
             if _scan_issues(second) != issues or _money(second.get('total')) is not None:final, checked = second, True
         except ProviderError:
             pass

@@ -25,6 +25,24 @@ class ChatProvider:
     is_mock=False
     def __init__(self,transport=None,*,profile=None,base=None,model=None,key=None,allowed_hosts=None):
         self.profile=profile if profile is not None else os.environ.get('SAFELEDGER_LLM_PROFILE','gemini_free')
+        if self.profile == 'hisab_lm' and profile == 'hisab_lm':
+            self.base = os.environ.get('SAFELEDGER_LOCAL_LLM_URL','').rstrip('/')
+            self.model = os.environ.get('SAFELEDGER_LOCAL_LLM_MODEL','hisab-lm')
+            self.key = ''
+            try:
+                parts = urlsplit(self.base)
+                if (parts.scheme not in {'http','https'} or parts.hostname not in {'127.0.0.1','::1'}
+                    or parts.path != '/v1' or parts.username or parts.password or parts.query or parts.fragment
+                    or not parts.port or not re.fullmatch(r'[a-zA-Z0-9_.:-]{1,120}', self.model)):
+                    raise ValueError()
+            except ValueError:
+                raise ProviderError('AI_CONFIGURATION_INVALID') from None
+            self.calls=0
+            self.deadline=time.monotonic()+90
+            self.telemetry=[]
+            self.transport=transport
+            self.is_mock=transport is not None
+            return
         if self.profile not in {'gemini_free','compatible'}:raise ProviderError('AI_CONFIGURATION_INVALID')
         free=self.profile=='gemini_free'
         self.base=(base if base is not None else os.environ.get('SAFELEDGER_LLM_BASE_URL','https://generativelanguage.googleapis.com/v1beta/openai' if free else '')).rstrip('/')
@@ -48,6 +66,9 @@ class ChatProvider:
         self.transport=transport
         self.is_mock=transport is not None
 
+    def headers(self):
+        return {'Authorization':'Bearer '+self.key} if self.key else {}
+
     def complete(self,messages,*,tools=None,response_schema=None):
         self.calls+=1
         remaining=self.deadline-time.monotonic()
@@ -67,7 +88,7 @@ class ChatProvider:
         if len(encoded.encode())>24000:raise ProviderError('AI_INPUT_BUDGET_EXCEEDED')
         try:
             with httpx.Client(transport=self.transport,trust_env=False,follow_redirects=False,timeout=min(30,remaining)) as client:
-                with client.stream('POST',self.base+'/chat/completions',headers={'Authorization':'Bearer '+self.key},json=payload) as response:
+                with client.stream('POST',self.base+'/chat/completions',headers=self.headers(),json=payload) as response:
                     if response.status_code==429:raise ProviderError('AI_QUOTA_EXHAUSTED')
                     if response.status_code!=200:raise ProviderError('AI_PROVIDER_REJECTED',http_status=response.status_code)
                     chunks=[];size=0
@@ -79,7 +100,7 @@ class ChatProvider:
             raw=strict_json(b''.join(chunks).decode('utf-8'))
             if not isinstance(raw,dict):raise ProviderError('AI_INVALID_RESPONSE')
             def tag(value):
-                return value if isinstance(value,str) and re.fullmatch(r'[A-Za-z0-9_.:/-]{1,160}',value) and self.key not in value else None
+                return value if isinstance(value,str) and re.fullmatch(r'[A-Za-z0-9_.:/-]{1,160}',value) and (not self.key or self.key not in value) else None
             usage=raw.get('usage')
             valid=isinstance(usage,dict) and all(type(usage.get(k)) is int and 0<=usage[k]<=10**9 for k in ('prompt_tokens','completion_tokens'))
             if valid and 'total_tokens' in usage:

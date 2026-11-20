@@ -11,33 +11,23 @@ MAX_RESPONSE_BYTES = 65536
 
 
 def configured():
-    from api.app.agents.provider import ChatProvider
-    try:ChatProvider();return True
-    except ProviderError:return False
+    from api.app.gateway import disclosure
+    return any('question' in provider['allowed'] or 'ui_text' in provider['allowed'] for provider in disclosure())
 
 
-def complete(messages, *, max_tokens=600, json_mode=False, timeout=28, vision=False):
-    """One bounded call. For photos, SAFELEDGER_VISION_MODEL (a stronger model) is tried first and the normal model is the fallback."""
-    import os
-    preferred = (os.environ.get('SAFELEDGER_VISION_MODEL') or '').strip() if vision else ''
-    if preferred:
-        try:return _complete(messages, max_tokens, json_mode, timeout, preferred)
-        except ProviderError as exc:
-            if exc.code in {'AI_CONFIGURATION_INVALID'}:pass
-            elif exc.code not in {'AI_QUOTA_EXHAUSTED', 'AI_PROVIDER_REJECTED', 'AI_TIMEOUT', 'AI_TIMEOUT_OR_NETWORK_FAILURE', 'AI_INVALID_RESPONSE', 'AI_INCOMPLETE_RESPONSE'}:raise
-    return _complete(messages, max_tokens, json_mode, timeout, None)
-
-
-def _complete(messages, max_tokens, json_mode, timeout, model):
-    from api.app.agents.provider import ChatProvider
-    provider = ChatProvider(model=model) if model else ChatProvider()  # validates host, model, key and free-tier acknowledgement
+def send(provider, messages, max_tokens, schema, deadline):
+    """Bounded OpenAI-compatible text/vision transport used by the policy gateway."""
     payload = {'model': provider.model, 'messages': messages, 'max_tokens': max_tokens, 'temperature': 0.2}
     if provider.profile == 'gemini_free':payload['reasoning_effort'] = 'low'
-    if json_mode:payload['response_format'] = {'type': 'json_object'}
-    deadline = time.monotonic() + timeout
+    if schema is not None:
+        payload['response_format'] = {'type':'json_object'} if schema == {'type':'object'} else {
+            'type':'json_schema', 'json_schema':{'name':'gateway_result', 'strict':True, 'schema':schema}}
+    timeout = deadline - time.monotonic()
+    if timeout <= 0:
+        raise ProviderError('AI_TIMEOUT')
     try:
         with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=timeout) as client:
-            with client.stream('POST', provider.base + '/chat/completions', headers={'Authorization': 'Bearer ' + provider.key}, json=payload) as response:
+            with client.stream('POST', provider.base + '/chat/completions', headers=provider.headers(), json=payload) as response:
                 if response.status_code == 429:raise ProviderError('AI_QUOTA_EXHAUSTED')
                 if response.status_code != 200:raise ProviderError('AI_PROVIDER_REJECTED', http_status=response.status_code)
                 chunks, size = [], 0
@@ -52,7 +42,7 @@ def _complete(messages, max_tokens, json_mode, timeout, model):
         if choice.get('finish_reason') not in {'stop', None} and not text:raise ProviderError('AI_INCOMPLETE_RESPONSE')
         if isinstance(text, list):text = ''.join(part.get('text', '') for part in text if isinstance(part, dict))
         if not isinstance(text, str) or not text.strip():raise ProviderError('AI_INVALID_RESPONSE')
-        return text.strip()
+        return text.strip(), data.get('usage')
     except (httpx.HTTPError, TimeoutError):
         raise ProviderError('AI_TIMEOUT_OR_NETWORK_FAILURE') from None
     except (ValueError, KeyError, IndexError, TypeError, AttributeError):

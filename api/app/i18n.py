@@ -15,6 +15,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from api.app import cloud, security as sec
 from api.app.agents.errors import ProviderError
+from api.app import gateway
 from api.app.ratelimit import limiter
 from api.app.routes import db_connection
 
@@ -63,7 +64,7 @@ def _clean(source, value):
 
 
 def google_configured():
-    return bool(os.environ.get('SAFELEDGER_GOOGLE_TRANSLATE_KEY'))
+    return bool(os.environ.get('SAFELEDGER_GOOGLE_TRANSLATE_KEY')) and os.getenv('SAFELEDGER_GOOGLE_TRANSLATE_FREE_CONFIRMED') == '1'
 
 
 def _translate_google(code, batch):
@@ -86,13 +87,13 @@ def _translate_google(code, batch):
     return found
 
 
-def _translate_batch(language, batch):
+def _translate_batch(db, language, batch):
     listing = '\n'.join(f'{i + 1}. {text}' for i, text in enumerate(batch))
-    reply = cloud.complete([
+    reply = gateway.complete('translate_ui', [
         {'role': 'system', 'content': f'You translate short user-interface text for a small-business finance web app from English to {language}. '
          'Use natural, concise wording a shopkeeper understands. Keep the brand name Capzoryx Copilot, the abbreviations PDF, 2FA, OCR, and every {placeholder} exactly as written. '
          'Do not add notes. Return only a JSON object mapping each item number (as a string) to its translation.'},
-        {'role': 'user', 'content': listing}], max_tokens=6000, json_mode=True, timeout=40)
+        {'role': 'user', 'content': listing}], db=db, business_id='system:translations', data_class='ui_text', max_tokens=6000, schema={'type':'object'})
     data = cloud.parse_json_object(reply)
     found = {}
     for i, text in enumerate(batch):
@@ -112,17 +113,18 @@ def interface_text(lang: str, db=Depends(db_connection)):
     missing = [s for s in _STRINGS if _key(s) not in have]
     use_google = google_configured()
     stall = 'i18n-stall:' + lang
-    if missing and (use_google or cloud.configured()) and not limiter.held(stall) and _LOCKS[lang].acquire(blocking=False):
+    if os.environ.get('SAFELEDGER_READ_ONLY') != '1' and missing and (use_google or cloud.configured()) and not limiter.held(stall) and _LOCKS[lang].acquire(blocking=False):
         try:
             sec.budgets(db, [('i18n-translate-all', 60 if use_google else 30)])
             if use_google:
                 found = {}
                 started = time.monotonic()
                 for i in range(0, len(missing), GOOGLE_BATCH):
-                    found.update(_translate_google(lang, missing[i:i + GOOGLE_BATCH]))
+                    batch = missing[i:i + GOOGLE_BATCH]
+                    found.update(gateway.translate_labels(db, batch, lambda: _translate_google(lang, batch)))
                     if time.monotonic() - started > 20:break
             else:
-                found = _translate_batch(english, missing[:BATCH])
+                found = _translate_batch(db, english, missing[:BATCH])
             if not found:limiter.hold(stall, STALL_SECONDS)
             if found:
                 with sec.transaction(db):
