@@ -104,8 +104,8 @@ PNG = 'data:image/png;base64,' + base64.b64encode(b'\x89PNG\r\n\x1a\n' + b'x' * 
 
 @pytest.fixture
 def model(monkeypatch):
-    for key, value in dict(SAFELEDGER_LLM_PROFILE='gemini_free', SAFELEDGER_LLM_BASE_URL='https://generativelanguage.googleapis.com/v1beta/openai', SAFELEDGER_LLM_MODEL='gemini-3.5-flash-lite',
-                           SAFELEDGER_LLM_API_KEY='test-key-not-real-12345', SAFELEDGER_LLM_ALLOWED_HOSTS='generativelanguage.googleapis.com', SAFELEDGER_LLM_FREE_TIER_CONFIRMED='1').items():
+    for key, value in dict(SAFELEDGER_RECORD_PROVIDER_NO_TRAINING='1', SAFELEDGER_LLM_PROFILE='compatible', SAFELEDGER_LLM_BASE_URL='https://private-model.example/v1', SAFELEDGER_LLM_MODEL='gemini-3.5-flash-lite',
+                           SAFELEDGER_LLM_API_KEY='test-key-not-real-12345', SAFELEDGER_LLM_ALLOWED_HOSTS='private-model.example', SAFELEDGER_LLM_FREE_TIER_CONFIRMED='1').items():
         monkeypatch.setenv(key, value)
     seen = {'requests': [], 'reply': '{"kind":"none"}', 'status': 200}
     def handler(request):
@@ -201,8 +201,8 @@ def test_assist_endpoints_are_rate_limited(world, model):
 
 
 def _scripted(monkeypatch, replies, statuses=None):
-    for key, value in dict(SAFELEDGER_LLM_PROFILE='gemini_free', SAFELEDGER_LLM_BASE_URL='https://generativelanguage.googleapis.com/v1beta/openai', SAFELEDGER_LLM_MODEL='gemini-3.5-flash-lite',
-                           SAFELEDGER_LLM_API_KEY='test-key-not-real-12345', SAFELEDGER_LLM_ALLOWED_HOSTS='generativelanguage.googleapis.com', SAFELEDGER_LLM_FREE_TIER_CONFIRMED='1').items():
+    for key, value in dict(SAFELEDGER_RECORD_PROVIDER_NO_TRAINING='1', SAFELEDGER_LLM_PROFILE='compatible', SAFELEDGER_LLM_BASE_URL='https://private-model.example/v1', SAFELEDGER_LLM_MODEL='gemini-3.5-flash-lite',
+                           SAFELEDGER_LLM_API_KEY='test-key-not-real-12345', SAFELEDGER_LLM_ALLOWED_HOSTS='private-model.example', SAFELEDGER_LLM_FREE_TIER_CONFIRMED='1').items():
         monkeypatch.setenv(key, value)
     log = []
     def handler(request):
@@ -259,3 +259,15 @@ def test_stronger_vision_model_is_tried_first_and_the_normal_model_is_the_fallba
     log = _scripted(monkeypatch, [good], statuses=[400])
     d = c.post('/api/assist/scan', json={'image': PNG}).json()['draft']
     assert [b['model'] for b in log] == ['gemini-3.8-flash', 'gemini-3.5-flash-lite'] and d['ok']
+
+
+def test_free_provider_cannot_receive_records_even_after_opt_in(world, model, monkeypatch):
+    client, _ = world
+    signup(client, 'free_data_boundary')
+    assert client.post('/api/account/profile', json={'smart_assist': True}).status_code == 200
+    monkeypatch.setenv('SAFELEDGER_LLM_PROFILE', 'gemini_free')
+    monkeypatch.setenv('SAFELEDGER_LLM_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai')
+    monkeypatch.setenv('SAFELEDGER_LLM_ALLOWED_HOSTS', 'generativelanguage.googleapis.com')
+    for route, body in [('extract', {'text':'I paid 500'}), ('scan', {'image':PNG})]:
+        assert client.post('/api/assist/' + route, json=body).json()['error']['code'] == 'PRIVATE_RECORD_PROVIDER_REQUIRED'
+    assert not model['requests']

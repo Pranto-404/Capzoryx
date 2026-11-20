@@ -41,3 +41,7 @@ assert(looksLikeTransaction('Mr Karim gave me 500 for the order') && !looksLikeT
 // Dates inside references are not mistaken for amounts.
 assert.equal(p('paid invoice 2026-10-12 total 4500').amount_minor, 450000);
 console.log('record parser: ' + cases.length + ' sentences and the negative cases passed');
+assert.equal(p('Rahman ke 4 lakh 20 hajar dilam kal').amount_minor,42000000);
+assert.equal(p('Rahman ke 4 lakh 20 hajar dilam kal').effective_on,'2026-10-19');
+assert.equal(p('Karim ke 5 hajar dibo kal').effective_on,'2026-10-21');
+assert.equal(p('রহিমকে ৪ লাখ ২০ হাজার দিলাম').amount_minor,42000000);

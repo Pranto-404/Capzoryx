@@ -14,7 +14,7 @@ from api.app.routes import router
 from api.app.agents.schema import create_schema as agent_schema
 from api.app.agents.errors import ProviderError
 from api.app.database import connect
-from api.app import accounts, inputs, financing, profile, workspaces, fx, assist, i18n, mailer
+from api.app import accounts, inputs, financing, profile, workspaces, fx, assist, i18n, mailer, passport
 
 def _cors_origins() -> list[str]:
     """Read allowed origins from env; default to localhost dev ports only."""
@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
         accounts.schema(db)
         profile.schema(db)
         i18n.schema(db)
+        passport.schema(db)
         accounts.archive_legacy_examples(db)
     yield
 
@@ -61,6 +62,7 @@ app.include_router(workspaces.router)
 app.include_router(fx.router)
 app.include_router(assist.router)
 app.include_router(i18n.router)
+app.include_router(passport.router)
 
 @app.exception_handler(ProviderError)
 async def ai_error(request,exc):
@@ -91,7 +93,7 @@ async def headers(request, call_next):
     else:
         response = await call_next(request)
     response.headers['X-Frame-Options']='DENY'
-    response.headers['Permissions-Policy']='camera=(), microphone=(), geolocation=(), payment=()'
+    response.headers['Permissions-Policy']='camera=(self), microphone=(self), geolocation=(), payment=()'
     if request.url.path.startswith('/api/'):
         response.headers['Content-Security-Policy']="default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
     if request.url.scheme=='https' or os.environ.get('RENDER') or os.environ.get('VERCEL'):

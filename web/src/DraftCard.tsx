@@ -14,7 +14,7 @@ export function DraftCard({draft,revision,request,onSaved,onDiscard,compact}:Pro
   const currency=draft.workspace_currency;
   const [kind,setKind]=useState(draft.kind);
   const [amount,setAmount]=useState(major(draft.amount_minor,currency));
-  const [date,setDate]=useState(draft.effective_on);const [due,setDue]=useState(draft.due_on||draft.effective_on);
+  const [date,setDate]=useState(draft.effective_on);const [due,setDue]=useState(draft.due_on??draft.effective_on);
   const [vendor,setVendor]=useState(draft.vendor_name||(draft.vendor_id&&draft.vendor_id!=='unknown-vendor'?prettyVendor(draft.vendor_id):''));
   const [number,setNumber]=useState(draft.invoice_number||'');const [memo,setMemo]=useState(draft.memo);
   const [direction,setDirection]=useState(draft.direction||'outflow');const [status,setStatus]=useState(draft.status||'cleared');

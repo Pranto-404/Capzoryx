@@ -20,7 +20,9 @@ def create_schema(db):
     db.commit()
 
 
-def get_provider():return ChatProvider()
+def get_provider():
+    from api.app.provider_policy import record_provider
+    return record_provider()
 
 
 def parse_calls(message):

@@ -1,4 +1,4 @@
-"""Security hardening found in the 20 Oct review: spoofable client IP, weak lockout, weak passwords, stale sessions."""
+"""Security regressions: spoofable client IP, weak lockout, weak passwords, stale sessions."""
 import hashlib
 import itertools
 import sqlite3
@@ -163,7 +163,7 @@ def test_rate_limiter_windows_expire_and_memory_is_bounded():
 
 
 def test_hostile_traffic_never_writes_to_the_database(world, fast, monkeypatch):
-    """Regression for the 20 Oct outage: rejected requests must cost no database write."""
+    """Rejected requests must cost no database write."""
     c, _ = world
     signup(c, 'quiet_user'); c.post('/api/auth/logout', json={})
     def forbidden(db):

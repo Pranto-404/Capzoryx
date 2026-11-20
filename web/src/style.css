@@ -465,3 +465,9 @@ main.welcome>.welcome-story>.scroll-cue{order:8;align-self:flex-start;margin-top
 /* Sign-in: keep-me-signed-in row and a reserved status area so messages never push the form around. */
 .keep-signed-in{display:flex;align-items:flex-start;gap:10px;margin:14px 0 4px;font-weight:600;cursor:pointer}.keep-signed-in span{min-width:0}.keep-signed-in small{display:block;font-weight:400;margin-top:2px;line-height:1.4}.keep-signed-in input{width:20px;min-height:20px;height:20px;margin:2px 0 0;flex:0 0 20px}
 .auth-status.reserve{min-height:64px}.auth-status .notice,.auth-status .error{margin:12px 0 0}.auth-status:empty{display:none}.auth-status.reserve:empty{display:block}
+
+.passport-page { max-width: 42rem; margin: 3rem auto; padding: 1rem; }
+.passport-page dl > div { display: flex; justify-content: space-between; padding: .75rem 0; border-bottom: 1px solid currentColor; }
+.passport-page dd { font-weight: 700; }
+.passport-print { display: block; margin-top: 1rem; }
+@media print { .passport-print { display: none; } .passport-page { margin: 0 auto; } }

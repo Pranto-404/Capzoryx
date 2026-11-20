@@ -174,8 +174,7 @@ def client_keys(request):
 
     claimed: the left-most X-Forwarded-For entry. Behind Vercel this is the real end user (Vercel sets it).
              A caller who reaches the Render origin directly can forge it, and Render does not expose any other
-             trustworthy address (verified 20 Oct 2026: neither cf-connecting-ip nor an infrastructure-appended
-             entry is present). Per-address limits are therefore a fairness tool, not a security boundary.
+             trustworthy address when infrastructure headers are absent. Per-address limits are therefore a fairness tool, not a security boundary.
     edge:    an infrastructure header (cf-connecting-ip / true-client-ip) when the platform supplies one;
              otherwise the same as claimed.
     Abuse resistance rests on limits that do not depend on the address: per-account failed-attempt lockouts,

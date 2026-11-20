@@ -26,3 +26,18 @@ The idea document’s five-hour demo and the plan book’s 310-hour roadmap have
 | Receivables and alerts | Link settlements to ledger inputs atomically, enforce role checks and verify time zones, quiet hours and reminder deduplication. |
 
 The release checklist includes organizer confirmation of code-reuse rules before any event submission.
+
+## Implemented in this build
+
+- **Photo capture** reads printed English or Bangla bills locally with Tesseract. The worker, OCR engine and language data are served by the frontend. A clearly labelled total becomes an editable draft. Conflicting totals and incompatible currencies require manual review.
+- **Text and dictation** support combined lakh/hajar amounts and tense-aware dates. Compatible browsers can use an installed on-device speech pack. The 30-clip voice accuracy gate and Android device test are pending.
+- **Cash-gap planning** simulates advancing part of one scheduled receipt to the first shortfall date. Options show the amount, source record and remaining maximum gap. A receipt returns to its original baseline on its due date. These are projections.
+- **Cash-flow passports** can be issued and revoked by an owner in Activity. The link and printable QR identify an aggregate report. The verifier checks the Ed25519 signature, expiry and revocation. Signer configuration uses SAFELEDGER_PASSPORT_ACTIVE_KEY and SAFELEDGER_PASSPORT_KEYS. The public key map is shipped in web/public/.well-known/capzoryx-passport-key.json. Keep retired public keys until all links signed with them expire.
+- **Phone installation** uses a web manifest and a bilingual offline screen. The service worker caches only three public assets. Offline financial drafts, payment-message sharing and native Android delivery are pending.
+- **Cloud privacy** starts with Smart assist off. The on-device parser and bill reader work without an account at an AI provider. Remote extraction and planning require a compatible provider explicitly cleared for free, no-training processing. The staging service has no AI billing credentials.
+
+## Free-tier release gates
+
+The staging API belongs to the Mahin_404 workspace, in Singapore. Its frontend rewrite targets https://capzoryx-staging-api.onrender.com. Keep production and staging credentials separate. Configure a new Turso database before sending any staging traffic. A local keypair can be used in a separate development checkout by replacing the public key map and setting the corresponding private key through the environment.
+
+Keep main protected with pull requests and the backend, frontend and dependency-audit CI jobs. Verify branch protection in the repository settings. Publish model scores, mobile speech claims and native-app distribution only after their device and dataset gates pass.

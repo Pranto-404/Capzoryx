@@ -1,8 +1,6 @@
 """Process-local rate limiting.
 
-Counters live in memory, never in the database. Rejected or hostile traffic therefore costs no database round
-trip: on 20 Oct 2026 a 300-request parallel flood made the API write a budget row to the remote database for
-every request, the single remote writer jammed, and the whole site returned 503 for about eight minutes.
+Rejected requests consume in-memory budgets so they never occupy the remote database writer.
 
 Trade-off: counters reset when the process restarts and are not shared between instances. The production
 topology is a single Render instance, so this is the right granularity; a multi-instance deployment would need

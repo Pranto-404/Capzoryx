@@ -13,6 +13,7 @@ from api.app import cloud, security as sec
 from api.app.accounts import today_bd
 from api.app.contracts import Contract
 from api.app.currencies import CURRENCIES, scale
+from api.app.provider_policy import record_provider
 from api.app.profile import Exact, account_of
 from api.app.routes import db_connection, principal
 from api.app.services.finance import project_cashflow, snapshot
@@ -184,6 +185,7 @@ class ExtractBody(Exact):
 def extract(body: ExtractBody, actor=Depends(principal), db=Depends(db_connection)):
     if actor.role != 'owner':sec.fail(403, 'OWNER_REQUIRED')
     require_smart(db, actor)
+    record_provider()
     sec.budgets(db, [('extract:' + actor.user_id, 12), ('assist-all', 40)])
     ws_currency = sec.runtime_dataset(db, actor.business_id).currency
     today = today_bd()
@@ -255,6 +257,7 @@ def _read_photo(image, today, previous=None, issues=None):
 def scan(body: ScanBody, actor=Depends(principal), db=Depends(db_connection)):
     if actor.role != 'owner':sec.fail(403, 'OWNER_REQUIRED')
     require_smart(db, actor)
+    record_provider()
     match = IMAGE.fullmatch(body.image)
     if not match:sec.fail(422, 'IMAGE_FORMAT_UNSUPPORTED')
     try:raw = base64.b64decode(match.group(2), validate=True)

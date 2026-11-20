@@ -59,7 +59,7 @@ def test_api_security_headers_and_production_docs_are_restricted(world,monkeypat
     assert r.headers['Cache-Control']=='no-store'
     assert r.headers['X-Frame-Options']=='DENY'
     assert "default-src 'none'" in r.headers['Content-Security-Policy']
-    assert 'camera=()' in r.headers['Permissions-Policy']
+    assert 'camera=(self), microphone=(self)' in r.headers['Permissions-Policy']
     monkeypatch.setenv('VERCEL','1')
     r=c.get('/openapi.json')
     assert r.status_code==404 and 'Strict-Transport-Security' in r.headers

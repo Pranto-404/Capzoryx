@@ -4,16 +4,26 @@ import type {Draft} from './types';
  *  suggestion shown to the user for confirmation; nothing is saved until the owner presses Save. */
 const BN='০১২৩৪৫৬৭৮৯';
 const ascii=(s:string)=>s.replace(/[০-৯]/g,c=>String(BN.indexOf(c)));
-const IN=/\b(?:received|receive|got paid|got|earned|earn|sold|sale|sales|collected|collect|deposit(?:ed)?|income|came in|paid me|peyechi|pelam|peyesi|nilam)\b|পেয়েছি|পেলাম|বিক্রি|আয়|জমা|গ্রহণ/i;
-const OUT=/\b(?:paid|pay|spent|spend|bought|buy|purchased|purchase|expense|rent|salary|wages|withdrew|gave|dilam|diyechi|disi|kinechi|kinlam)\b|দিলাম|দিয়েছি|খরচ|কিনেছি|কিনলাম|ভাড়া|বেতন|পরিশোধ/i;
+const IN=/\b(?:received|receive|got paid|got|earned|earn|sold|sale|sales|collected|collect|deposit(?:ed)?|income|came in|paid me|pailam|peyechi|pelam|peyesi|nilam)\b|পেয়েছি|পেলাম|বিক্রি|আয়|জমা|গ্রহণ/i;
+const OUT=/\b(?:paid|pay|spent|spend|bought|buy|purchased|purchase|expense|rent|salary|wages|withdrew|gave|dibo|dilam|diyechi|disi|kinechi|kinlam)\b|দিলাম|দিয়েছি|খরচ|কিনেছি|কিনলাম|ভাড়া|বেতন|পরিশোধ/i;
 const INVOICE=/\b(?:bill|invoice|payable|owe|owed|due)\b|বাকি|বিল|পাওনা/i;
 const QUESTION=/\?|^(?:how|what|why|when|where|which|who|can|could|should|do|does|is|are|will|would|please explain|show|tell|list|কত|কি|কী|কেন|কিভাবে|কীভাবে)\b/i;
-const MULT:Record<string,number>={k:1e3,thousand:1e3,হাজার:1e3,hajar:1e3,lakh:1e5,lac:1e5,লাখ:1e5,lakhs:1e5,crore:1e7,কোটি:1e7,m:1e6,million:1e6};
+const MULT:Record<string,number>={k:1e3,thousand:1e3,হাজার:1e3,hajar:1e3,hazar:1e3,lakh:1e5,lac:1e5,লাখ:1e5,lakhs:1e5,crore:1e7,কোটি:1e7,m:1e6,million:1e6};
 const MONTHS=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
 const pad=(n:number)=>String(n).padStart(2,'0');
 const iso=(d:Date)=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const addDays=(d:Date,n:number)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x;};
 const title=(s:string)=>s.replace(/\s+/g,' ').trim();
+
+function expandLocalAmounts(text:string):string {
+  const unit = /(?<![\p{L}\p{N}.,])([0-9][0-9,]*(?:\.[0-9]+)?)\s*(hajar|hazar|হাজার|lakhs?|lac|লাখ|crore|কোটি|thousand|million|k)(?![\p{L}\p{M}])/giu;
+  const group = new RegExp('(?:' + unit.source + '(?:\\s+|$)?)+', 'giu');
+  return text.replace(group, span => {
+    let total = 0;
+    for (const match of span.matchAll(unit)) total += Number(match[1].replaceAll(',', '')) * MULT[match[2].toLowerCase()];
+    return ' ' + total + ' ';
+  });
+}
 
 function findAmount(text:string,digits:number):{minor:number;span:[number,number]}|null{
   const re=/(?:bdt|tk\.?|taka|৳|\$|€|£|usd|eur)?\s*(\d[\d,]*(?:\.\d+)?)\s*(k|thousand|হাজার|hajar|lakhs?|lac|লাখ|crore|কোটি|million|m)?\b\s*(?:taka|tk\.?|bdt|টাকা)?/gi;
@@ -35,7 +45,11 @@ function findDate(text:string,today:Date):{date:string;explicit:boolean}{
   const t=text.toLowerCase();
   if(/\b(?:today|aj|আজ)\b|আজ/.test(t))return {date:iso(today),explicit:true};
   if(/\byesterday\b|গতকাল|\bgotokal\b/.test(t))return {date:iso(addDays(today,-1)),explicit:true};
-  if(/\btomorrow\b|আগামীকাল|\bkal\b|কাল/.test(t)&&!/গতকাল/.test(t))return {date:iso(addDays(today,1)),explicit:true};
+  if(/\btomorrow\b|আগামীকাল/.test(t))return {date:iso(addDays(today,1)),explicit:true};
+  if(/\bkal\b|কাল/.test(t)) {
+    if(/\b(?:dilam|pailam|pelam|paid|received)\b|দিলাম|পেলাম/.test(t))return {date:iso(addDays(today,-1)),explicit:true};
+    if(/\b(?:dibo|dite hobe|will)\b|দিবো|দেব|দিতে হবে/.test(t))return {date:iso(addDays(today,1)),explicit:true};
+  }
   const isoM=t.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);if(isoM)return {date:isoM[0],explicit:true};
   const dmy=t.match(/\b(\d{1,2})[\/.](\d{1,2})[\/.](20\d{2})\b/);if(dmy)return {date:`${dmy[3]}-${pad(+dmy[2])}-${pad(+dmy[1])}`,explicit:true};
   const named=t.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTHS.join('|')})[a-z]*(?:\\s+(20\\d{2}))?\\b`));
@@ -55,7 +69,7 @@ function findParty(text:string,amountSpan:[number,number]):string{
 }
 
 export function parseRecordSentence(raw:string,opts:{currency:string;digits:number;today?:Date}):Draft|null{
-  const text=ascii(raw).replace(/\s+/g,' ').trim();
+  const text=expandLocalAmounts(ascii(raw.normalize('NFC'))).replace(/\s+/g,' ').trim();
   if(text.length<4||text.length>400||QUESTION.test(text))return null;
   const inflow=IN.test(text),outflow=OUT.test(text),invoice=INVOICE.test(text);
   if(!inflow&&!outflow&&!invoice)return null;
@@ -66,6 +80,7 @@ export function parseRecordSentence(raw:string,opts:{currency:string;digits:numb
   const todayIso=iso(today);
   const party=findParty(text,amount.span);
   const warnings:string[]=[];
+  if(!explicit && /\bkal\b|কাল/i.test(text))warnings.push('Please confirm the date: kal can mean yesterday or tomorrow.');
   // "paid"/"gave" with a past action is cash out; "owe"/"due"/"bill" without a payment verb is an unpaid supplier bill.
   const paidAlready=/\b(?:paid|gave|dilam|diyechi|disi)\b|দিলাম|দিয়েছি|পরিশোধ/i.test(text);
   const isInvoice=invoice&&!paidAlready&&!inflow;
