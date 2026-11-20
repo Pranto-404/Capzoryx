@@ -1,6 +1,6 @@
 """SQLite locally; primary-only Turso Hrana HTTP remotely. No local-cloud replicas.
 
-Protocol: https://github.com/tursodatabase/libsql/blob/main/docs/HTTP_V2_SPEC.md
+Protocol: Turso Hrana HTTP v3 JSON pipeline.
 A failed/lost stream is permanently unusable; financial transactions are never retried.
 """
 import os
@@ -79,14 +79,26 @@ class RemoteConnection:
         try:
             requests=([{'type':'execute','stmt':{'sql':'PRAGMA foreign_keys=ON'}}] if self.baton is None and request['type']!='close' else [])+[request]
             try:
-                response=self.client.post(self.base+'/v2/pipeline',json={'baton':self.baton,'requests':requests})
+                response=self.client.post(self.base+'/v3/pipeline',json={'baton':self.baton,'requests':requests})
             except (httpx.ConnectError,httpx.RemoteProtocolError,httpx.ReadError):
                 # A pooled connection the server already closed. Nothing has started on this stream yet, so one retry is safe.
                 if self.baton is not None:raise
-                response=self.client.post(self.base+'/v2/pipeline',json={'baton':self.baton,'requests':requests})
+                response=self.client.post(self.base+'/v3/pipeline',json={'baton':self.baton,'requests':requests})
             if not response.is_success:
                 self.failed = True
-                raise sqlite3.DatabaseError(f'Remote database operation failed (Turso HTTP {response.status_code})')
+                # Some proxies use 400 for an invalid or malformed JWT. Classify
+                # the response without logging its text, URL, token or SQL.
+                detail = response.text[:2048].lower()
+                reason = ''
+                if any(word in detail for word in ('token', 'jwt', 'bearer', 'auth', 'credential')):
+                    reason = ', authentication'
+                elif 'readonly' in detail or 'read-only' in detail or 'permission' in detail:
+                    reason = ', database permissions'
+                elif 'database' in detail and ('not found' in detail or 'does not exist' in detail):
+                    reason = ', unknown database'
+                elif any(word in detail for word in ('unsupported', 'protocol', 'version', 'pipeline')):
+                    reason = ', protocol rejected'
+                raise sqlite3.DatabaseError(f'Remote database operation failed (Turso HTTP {response.status_code}{reason})')
             body=response.json()
             baton=body['baton']
             if not allow_close and request['type']!='close' and not isinstance(baton,str):raise ValueError('Closed stream')

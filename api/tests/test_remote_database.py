@@ -69,8 +69,11 @@ def test_vercel_never_falls_back_to_ephemeral_sqlite(monkeypatch,url,token):
 
 
 def test_turso_auth_failure_reports_status_without_credentials():
-    db = client(lambda request: httpx.Response(401, text='private diagnostic'))
+    def unauthorized(request):
+        assert request.url.path == '/v3/pipeline'
+        return httpx.Response(401, text='Invalid JWT: private diagnostic')
+    db = client(unauthorized)
     with pytest.raises(sqlite3.DatabaseError) as caught:
         db.execute('SELECT 1')
-    assert str(caught.value) == 'Remote database operation failed (Turso HTTP 401)'
+    assert str(caught.value) == 'Remote database operation failed (Turso HTTP 401, authentication)'
     db.close()
