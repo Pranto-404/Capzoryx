@@ -119,28 +119,36 @@ def add_receivable(body: Receivable, actor=Depends(principal), db=Depends(db_con
         return save_once(db, current, 'receivable', body, write)
 
 
+def apply_receipt(db, current, receivable_id, amount_minor, received_on, request_id, cash_request_id, payment_event_id=None):
+    """Record cleared cash and the linked settlement inside the caller's owner transaction."""
+    business = current.business_id
+    row = db.execute('SELECT open_minor,issued_on FROM receivable_balances WHERE business_id=? AND id=?',
+                     (business, receivable_id)).fetchone()
+    if not row:
+        sec.fail(404, 'RECEIVABLE_NOT_FOUND')
+    if amount_minor > row[0]:
+        sec.fail(409, 'AMOUNT_EXCEEDS_RECEIVABLE')
+    if received_on.isoformat() < row[1] or received_on > today_bd():
+        sec.fail(422, 'INVALID_RECEIPT_DATE')
+    ds = sec.original_dataset(db, business)
+    cash = append_record(db, current, InputRecord(request_id=cash_request_id, expected_revision=fingerprint(ds),
+                         kind='cash', amount_minor=amount_minor, effective_on=received_on))
+    if cash['replayed']:
+        sec.fail(409, 'CASH_REQUEST_ALREADY_USED')
+    identity = 'settlement-' + uuid.uuid4().hex
+    db.execute('INSERT INTO receivable_settlements VALUES (?,?,?,?,?,?,?,?)',
+               (identity, business, receivable_id, payment_event_id, amount_minor, request_id, cash['source_id'], sec.now()))
+    sec.audit(db, current, identity, 'RECEIVABLE_SETTLED', dict(receivable_id=receivable_id, cash_record_id=cash['source_id'],
+                                                                amount_minor=amount_minor))
+    return identity, cash['source_id']
+
+
 @router.post('/receivables/{receivable_id}/settlements', status_code=201)
 def settle(receivable_id: str, body: Receipt, actor=Depends(principal), db=Depends(db_connection)):
     with owner_transaction(db, actor) as current:
-        business = current.business_id
         def write():
-            row = db.execute('SELECT open_minor,issued_on FROM receivable_balances WHERE business_id=? AND id=?',
-                             (business, receivable_id)).fetchone()
-            if not row:
-                sec.fail(404, 'RECEIVABLE_NOT_FOUND')
-            if body.amount_minor > row[0]:
-                sec.fail(409, 'AMOUNT_EXCEEDS_RECEIVABLE')
-            if body.received_on.isoformat() < row[1] or body.received_on > today_bd():
-                sec.fail(422, 'INVALID_RECEIPT_DATE')
-            ds = sec.original_dataset(db, business)
-            # The cash record has its own request namespace. The outer request owns retry semantics.
-            cash = append_record(db, current, InputRecord(request_id=str(uuid.uuid4()), expected_revision=fingerprint(ds),
-                                 kind='cash', amount_minor=body.amount_minor, effective_on=body.received_on))
-            identity = 'settlement-' + uuid.uuid4().hex
-            db.execute('INSERT INTO receivable_settlements VALUES (?,?,?,?,?,?,?,?)',
-                       (identity, business, receivable_id, None, body.amount_minor, body.request_id, cash['source_id'], sec.now()))
-            sec.audit(db, current, identity, 'RECEIVABLE_SETTLED', dict(receivable_id=receivable_id, cash_record_id=cash['source_id'],
-                                                                        amount_minor=body.amount_minor))
+            identity, _ = apply_receipt(db,current,receivable_id,body.amount_minor,body.received_on,
+                                        body.request_id,str(uuid.uuid4()))
             return identity
         return save_once(db, current, 'settle/' + receivable_id, body, write)
 
