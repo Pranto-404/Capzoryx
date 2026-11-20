@@ -55,6 +55,8 @@ def tick_business(db, business, at):
             run_workspace(db, business, at)
     from api.app.notifications import telegram
     telegram.deliver(db,business,at)
+    from api.app.notifications import push
+    push.deliver(db,business,at)
     return bool(claimed)
 
 

@@ -72,7 +72,7 @@ def preferences(body: Preferences, actor=Depends(principal), db=Depends(db_conne
              body.quiet_start_min,body.quiet_end_min,sec.now()))
         if not body.enabled:
             db.execute("""UPDATE notification_jobs SET status='cancelled',claimed_until=NULL
-                          WHERE business_id=? AND recipient_user_id=? AND status IN ('queued','sending')""",
+                          WHERE business_id=? AND recipient_user_id=? AND channel='inapp' AND status IN ('queued','sending')""",
                        (current.business_id,current.user_id))
     return dict(simulation_only=True)
 

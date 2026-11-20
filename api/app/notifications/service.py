@@ -111,6 +111,8 @@ def enqueue(db, business, kind, record_id, *, at=None, recipients=None, period='
         if role not in roles or (recipients is not None and user not in recipients):
             continue
         enabled, start, end = pref(db, business, user)
+        from api.app.notifications import push
+        push.queue(db,business,kind,record_id,period,user,at,(start,end))
         if not enabled:
             continue
         key = sec.signature('notification-key', [business, kind, record_id, user, 'inapp', period])

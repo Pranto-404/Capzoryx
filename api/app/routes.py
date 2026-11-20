@@ -4,7 +4,7 @@ import hashlib
 import json
 import sqlite3
 from typing import Annotated
-from fastapi import APIRouter, Depends, Path as ApiPath, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Path as ApiPath, Request
 from api.app import security as sec
 from api.app.contracts import ApprovalRequest, Contract, PositiveMinor, ProposalRequest, ScenarioRequest
 from api.app.services.finance import Dataset, FinancingRequest, compare_financing, project_cashflow, snapshot
@@ -133,8 +133,12 @@ def financing(body:CompareRequest,actor=Depends(principal)):
 
 
 @router.post('/proposals',status_code=201)
-def proposal(body: ProposalRequest,actor=Depends(principal),db=Depends(db_connection)):
-    return sec.propose(db,actor,body.invoice_id)
+def proposal(body: ProposalRequest,background:BackgroundTasks,actor=Depends(principal),db=Depends(db_connection)):
+    from api.app.notifications import push
+    result=sec.propose(db,actor,body.invoice_id)
+    if push.enabled('webpush') or push.enabled('fcm'):
+        background.add_task(push.urgent_delivery,actor.business_id)
+    return result
 
 
 @router.get('/proposals')

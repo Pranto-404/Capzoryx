@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from api.app import app_sessions, mcp_read, quality, security
 from api.app.notifications import telegram
+from api.app.notifications import push
 from api.app.notifications.routes import router as notification_router
 from api.app import khata
 from api.app.body_limit import BodyLimitMiddleware
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
         telegram.schema(db)
         profile.schema(db)
         books.schema(db)
+        push.schema(db)
         i18n.schema(db)
         passport.schema(db)
         plans.schema(db)
@@ -79,6 +81,7 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(feature_flags.router)
 app.include_router(telegram.router)
+app.include_router(push.router)
 app.include_router(notification_router)
 app.include_router(quality.router)
 app.include_router(khata.router)
