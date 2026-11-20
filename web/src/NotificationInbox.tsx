@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {WebPushControl} from './WebPushControl';
 import {formatTime} from './format';
 import {t,T} from './i18n';
 
@@ -14,7 +15,7 @@ const labels:Record<string,string>={
 const timeText=(minutes:number)=>[Math.floor(minutes/60),minutes%60].map(n=>String(n).padStart(2,'0')).join(':');
 const minutes=(time:string)=>Number(time.slice(0,2))*60+Number(time.slice(3));
 
-export function NotificationInbox({request,navigate}:{request:Request;navigate:(page:string)=>void}){
+export function NotificationInbox({request,navigate,scope}:{request:Request;navigate:(page:string)=>void;scope:string}){
   const [inbox,setInbox]=useState<Inbox|null>(null);
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
@@ -40,6 +41,7 @@ export function NotificationInbox({request,navigate}:{request:Request;navigate:(
         <small>{formatTime(item.sent_at)} · {item.read?t('Read'):t('Unread')}</small></div>
       <button type="button" disabled={busy} onClick={()=>void run(async()=>{await request('/notifications/'+item.id+'/read',{});navigate(item.page);})}>{t('Review')}</button>
     </li>)}</ul>}
+    <WebPushControl request={request} scope={scope}/>
     {inbox&&<details><summary>{t('Notification preferences')}</summary>
       <form onSubmit={e=>{e.preventDefault();void run(async()=>{
         await request('/notifications/preferences',{enabled,quiet_start_min:minutes(start),quiet_end_min:minutes(end)});

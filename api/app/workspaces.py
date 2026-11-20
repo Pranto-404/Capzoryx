@@ -210,6 +210,7 @@ def clear(body: ClearRequest, request: Request, response: Response, actor=Depend
             db.execute('UPDATE api_tokens SET revoked_at=? WHERE business_id=? AND revoked_at IS NULL',(sec.now(),business))
             db.execute('DELETE FROM telegram_links WHERE business_id=?',(business,))
             db.execute('UPDATE passports SET revoked_at=? WHERE business_id=? AND revoked_at IS NULL', (sec.now(), business))
+            db.execute("UPDATE push_subscriptions SET revoked_at=?,subscription_json='' WHERE business_id=? AND revoked_at IS NULL",(sec.now(),business))
             db.execute('UPDATE workspace_meta SET archived_at=? WHERE business_id=?', (sec.now(), business))
             db.execute('DELETE FROM workspace_invites WHERE business_id=? AND used_by IS NULL', (business,))
         remaining = personal_member(db, account) if db.execute("SELECT 1 FROM account_members m JOIN security_users u ON u.user_id=m.user_id JOIN workspace_meta w ON w.business_id=m.business_id WHERE m.account_id=? AND u.active=1 AND w.kind='personal' AND w.archived_at IS NULL", (account,)).fetchone() else None
