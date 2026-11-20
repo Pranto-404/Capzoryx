@@ -20,8 +20,21 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+      - name: Check the free-tier staging window
+        id: window
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+          UNTIL: ${{ vars.CAPZORYX_QA_UNTIL_UTC }}
+        run: |
+          active=false
+          if [ "$ENVIRONMENT" = production ]; then
+            active=true
+          elif [ -n "$UNTIL" ] && [ "$(date -u -d "$UNTIL" +%s)" -gt "$(date -u +%s)" ]; then
+            active=true
+          fi
+          echo "active=$active" >> "$GITHUB_OUTPUT"
       - name: Verify the staged app and Turso schema
-        if: matrix.environment == 'staging'
+        if: matrix.environment == 'staging' && steps.window.outputs.active == 'true'
         env:
           EXPECTED: ${{ vars.CAPZORYX_QA_COMMIT }}
         run: |
@@ -35,6 +48,7 @@ jobs:
           echo "$ready" | jq -e '.status == "ready" and .database == "libsql"' >/dev/null
           echo "Verified staging commit \`$EXPECTED\` with Turso at $(date -u +%FT%TZ)." >> "$GITHUB_STEP_SUMMARY"
       - name: Deliver in-app reminders
+        if: steps.window.outputs.active == 'true'
         env:
           API_ORIGIN: ${{ vars.CAPZORYX_TICK_ORIGIN }}
           CAPZORYX_TICK_SECRET: ${{ secrets.CAPZORYX_TICK_SECRET }}
