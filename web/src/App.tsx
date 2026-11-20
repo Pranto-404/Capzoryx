@@ -4,8 +4,7 @@ import {lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {accountRequest} from './api';
 import type {Session} from './types';
 import {Auth} from './Auth';
-const loadWorkspace=()=>import('./Workspace');
-const Workspace=lazy(loadWorkspace);
+const Workspace=lazy(()=>import('./Workspace'));
 const JOIN_KEY='safeledger-join-code';
 
 function takeJoinCode():string{
@@ -21,28 +20,43 @@ export default function App() {
   const [auth,setAuth]=useState<{session:Session}|null>(null);
   const [recoveryCode,setRecoveryCode]=useState('');
   const [error,setError]=useState('');const [notice,setNotice]=useState('');
-  const [restoring,setRestoring]=useState(true);
   const [joinCode,setJoinCode]=useState(takeJoinCode);
   const restoreRequest=useRef<AbortController|null>(null);
-  // Warm the workspace code while the sign-in page is on screen, so signing in feels instant.
-  useEffect(()=>{const t=window.setTimeout(()=>{void loadWorkspace();},300);return()=>window.clearTimeout(t);},[]);
-  useEffect(()=>{const c=new AbortController();restoreRequest.current=c;void fetch('/api/session',{credentials:'same-origin',signal:AbortSignal.any([c.signal,AbortSignal.timeout(90000)])}).then(async r=>{if(r.ok){const session=await r.json() as Session;if(!c.signal.aborted&&!session.guest&&session.workspace_kind!=='demo')setAuth({session});}}).catch(()=>{}).finally(()=>{if(!c.signal.aborted)setRestoring(false);});return()=>c.abort();},[]);
+  // Public content is available while the server checks its HttpOnly session cookie.
+  useEffect(()=>{
+    const controller=new AbortController();
+    restoreRequest.current=controller;
+    async function restore(){
+      try{
+        const response=await fetch('/api/session',{
+          credentials:'same-origin',
+          signal:AbortSignal.any([controller.signal,AbortSignal.timeout(90000)])
+        });
+        if(!response.ok)return;
+        const session=await response.json() as Session;
+        if(!controller.signal.aborted&&!session.guest&&session.workspace_kind!=='demo'){
+          setAuth({session});
+        }
+      }catch{/* Visitors can still browse and sign in when the session check fails. */}
+    }
+    void restore();
+    return ()=>controller.abort();
+  },[]);
   // An invitation link joins the shared workspace as soon as the person is signed in.
   useEffect(()=>{
     if(!auth||!joinCode)return;
     const code=joinCode;setJoinCode('');try{sessionStorage.removeItem(JOIN_KEY);}catch{/* optional */}
     void accountRequest<Session>('/account/join',{code}).then(session=>{setAuth({session});setNotice(`You joined ${session.workspace_name||'the workspace'} as ${session.role}.`);}).catch(e=>setError(e instanceof Error?e.message:'The invitation could not be used.'));
   },[auth,joinCode]);
-  function enter(session:Session){restoreRequest.current?.abort();setRestoring(false);void loadWorkspace();setRecoveryCode(session.recovery_code||'');setError('');setAuth({session:{...session,recovery_code:undefined}});}
+  function enter(session:Session){restoreRequest.current?.abort();setRecoveryCode(session.recovery_code||'');setError('');setAuth({session:{...session,recovery_code:undefined}});}
   async function signout(){try{await accountRequest('/auth/logout',{});}catch{setError('Could not sign out. Please retry.');return;}try{Object.keys(sessionStorage).filter(k=>k.startsWith('safeledger-financing-quotes-v1:')).forEach(k=>sessionStorage.removeItem(k));}catch{/* Storage may be unavailable. */}setAuth(null);setError('');setNotice('');setRecoveryCode('');}
   function expired(){setAuth(null);setError('Your session ended. Sign in again to continue.');}
-  if(restoring&&!auth)return <main className="workspace-loading" role="status"><span className="loading-ring"/>Opening Capzoryx Copilot…</main>;
   return <>
     {auth&&error&&<p className="error banner" role="alert">{error} <button className="link" onClick={()=>setError('')}>Dismiss</button></p>}
     {auth&&notice&&<p className="success banner" role="status">{notice} <button className="link" onClick={()=>setNotice('')}>Dismiss</button></p>}
     {auth&&recoveryCode&&<RecoveryNotice code={recoveryCode} done={()=>setRecoveryCode('')}/>}
     {auth?<LazyBoundary><Suspense fallback={<main className="workspace-loading" role="status"><span className="loading-ring"/>Opening your workspace…</main>}><Workspace key={auth.session.business_id+auth.session.user_id} token="" session={auth.session} logout={()=>void signout()} expired={expired} changeSession={session=>setAuth({session})}/></Suspense></LazyBoundary>
-      :<Auth onSession={enter} joinCode={joinCode} notice={error||''}/>}
+      :<Auth onAuthStart={()=>restoreRequest.current?.abort()} onSession={enter} joinCode={joinCode} notice={error||''}/>}
   </>;
 }
 

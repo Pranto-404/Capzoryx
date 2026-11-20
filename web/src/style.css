@@ -252,9 +252,6 @@ h3 .ui-icon,.welcome-benefits .ui-icon,.draft-card .ui-icon,.actions .ui-icon,.c
 #splash .splash-name{font-size:26px;font-weight:800;letter-spacing:-.5px;color:var(--text);animation:rise .5s .15s ease both}
 #splash .splash-name b{color:#0f9b7c}
 #splash .splash-rise{stroke-dasharray:40;stroke-dashoffset:40;animation:draw .7s .2s ease forwards}
-#splash.leave{opacity:0;visibility:hidden}
-#splash.leave svg{transform:translate(-42vw,-42vh) scale(.3);transition:transform .55s cubic-bezier(.5,0,.2,1);animation:none}
-#splash.leave .splash-name{opacity:0;transition:opacity .25s ease;animation:none}
 @keyframes splash-pop{from{transform:scale(.5);opacity:0}to{transform:scale(1);opacity:1}}
 @keyframes splash-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
 @keyframes splash-failsafe{to{opacity:0;visibility:hidden}}
