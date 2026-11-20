@@ -20,6 +20,20 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+      - name: Verify the staged app and Turso schema
+        if: matrix.environment == 'staging'
+        env:
+          EXPECTED: ${{ vars.CAPZORYX_QA_COMMIT }}
+        run: |
+          set -eu
+          origin=https://capzoryx-qa.vercel.app
+          fetch_json() { curl --fail --silent --show-error --max-time 100 --retry 2 "$origin/api/$1"; }
+          health=$(fetch_json health)
+          ready=$(fetch_json ready)
+          test -n "$EXPECTED"
+          echo "$health" | jq -e --arg sha "$EXPECTED" '.status == "ok" and .build_commit == $sha' >/dev/null
+          echo "$ready" | jq -e '.status == "ready" and .database == "libsql"' >/dev/null
+          echo "Verified staging commit \`$EXPECTED\` with Turso at $(date -u +%FT%TZ)." >> "$GITHUB_STEP_SUMMARY"
       - name: Deliver in-app reminders
         env:
           API_ORIGIN: ${{ vars.CAPZORYX_TICK_ORIGIN }}
