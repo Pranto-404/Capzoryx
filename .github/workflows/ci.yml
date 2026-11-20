@@ -54,6 +54,16 @@ jobs:
           node scripts/check_i18n.cjs
           node scripts/extract_ui_strings.cjs --check
           python -m evals.run --suite smoke
+      - name: Vitest browser-side finance fixtures
+        run: npm test --prefix web
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Browser golden scenario with an isolated local API
+        run: |
+          python -m pip install -r api/requirements.lock.txt
+          web/node_modules/.bin/playwright install --with-deps chromium
+          node scripts/check_rahim_browser.cjs
 
   app-browser:
     runs-on: ubuntu-latest
