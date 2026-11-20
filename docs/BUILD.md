@@ -40,6 +40,6 @@ The release checklist includes organizer confirmation of code-reuse rules before
 
 ## Free-tier release gates
 
-The staging API belongs to the Mahin_404 workspace, in Singapore. Its frontend rewrite targets https://capzoryx-staging-api.onrender.com. Keep production and staging credentials separate. Configure a new Turso database before sending any staging traffic. A local keypair can be used in a separate development checkout by replacing the public key map and setting the corresponding private key through the environment.
+See docs/RESOURCES.md for the website, app and isolated QA environments. A local keypair can be used in a separate development checkout by replacing the public key map and setting the corresponding private key through the environment.
 
 Keep main protected with pull requests and the backend, frontend and dependency-audit CI jobs. Verify branch protection in the repository settings. Publish model scores, mobile speech claims and native-app distribution only after their device and dataset gates pass.
