@@ -41,8 +41,13 @@ async function share(request) {
   }
   const text=new URLSearchParams(raw+decoder.decode()).get('text')?.trim();
   if(!text || text.length>2000)return new Response('Expected 1–2000 characters',{status:400});
-  const id=await self.capzoryxStore.share(text);
-  return Response.redirect(new URL('/share?id='+id,self.location.origin).href,303);
+  try {
+    const id=await self.capzoryxStore.share(text);
+    return Response.redirect(new URL('/share?id='+id,self.location.origin).href,303);
+  } catch(error) {
+    if(error.name==='NotAllowedError')return new Response('The workspace owner can review shared payment text.',{status:403});
+    throw error;
+  }
 }
 self.addEventListener('fetch', event=>{
   const {request}=event, url=new URL(request.url);
@@ -80,4 +85,21 @@ self.addEventListener('fetch', event=>{
   })();
   event.waitUntil(fresh.then(()=>{},()=>{}));
   event.respondWith(caches.match(request,{ignoreVary:true}).then(cached=>cached || fresh));
+});
+
+self.addEventListener('push', event=>{
+  // Empty Web Push messages deliberately carry no financial or customer data.
+  event.waitUntil(self.registration.showNotification('Capzoryx',{
+    body:'Open your workspace to review your updates.',tag:'capzoryx-updates',icon:'/icon-192.png'
+  }));
+});
+self.addEventListener('notificationclick', event=>{
+  event.notification.close();
+  event.waitUntil((async()=>{
+    const root=new URL('/',self.location.origin).href;
+    const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+    const existing=windows.find(client=>client.url===root);
+    if(existing)await existing.focus();
+    else await self.clients.openWindow(root);
+  })());
 });

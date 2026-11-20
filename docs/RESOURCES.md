@@ -82,3 +82,13 @@ On a physical Android 12 or newer device, install the release APK. Run `adb shel
 | @aparajita/capacitor-secure-storage | 8.0.1 | Encrypted session storage backed by Android Keystore |
 
 Plugin versions are pinned in the npm lockfile. FCM auto-initialization and analytics collection default to disabled. A working push delivery setup needs the owner's Firebase Android configuration, server delivery credentials, explicit notification permission and a registered notification device. Tokens for signing in are stored together in the native encrypted store. Public website and PWA sessions continue to use HttpOnly cookies.
+
+### Optional Android reminders
+
+In the same Firebase project used for the server FCM HTTP v1 sender, add Android app clients for `com.capzoryx.copilot.debug` and `com.capzoryx.copilot`. Download the matching client `google-services.json` for each build. In the GitHub repository's `android-debug` and `android-release` environments, save the corresponding file as an environment secret with this command, substituting the appropriate environment and local file path.
+
+```bash
+base64 -w0 google-services.json | gh secret set CAPZORYX_ANDROID_GOOGLE_SERVICES_JSON_BASE64 --env android-debug --repo Pranto-404/Capzoryx
+```
+
+Rebuild the APK. Sign in, open Activity and select **Turn on Android reminders**. The control appears after both the packaged app and server report FCM configuration. Grant the Android notification permission. To verify delivery, use two signed-in test accounts, generate an approval alert outside quiet hours and check the device. Turning off reminders or leaving the current session unregisters this device and clears delivered notifications. Android settings can also revoke notification permission.

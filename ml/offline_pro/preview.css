@@ -1,0 +1,4 @@
+:root{font:1rem/1.6 system-ui,sans-serif;color-scheme:light dark}
+main{max-width:40rem;padding:1rem;margin:auto}label,textarea,output{display:block}
+textarea{box-sizing:border-box;width:100%;margin:.4rem 0;padding:.6rem;font:inherit}
+button{padding:.5rem .8rem;font:inherit}output{white-space:pre-wrap;overflow-wrap:anywhere;margin:1rem 0}

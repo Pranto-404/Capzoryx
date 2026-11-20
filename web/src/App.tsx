@@ -80,6 +80,12 @@ export default function App() {
   },[auth,joinCode]);
   function enter(session:Session){restoreRequest.current?.abort();setRecoveryCode(session.recovery_code||'');setError('');setAuth({session:{...session,recovery_code:undefined}});}
   async function signout(){try{await accountRequest('/auth/logout',{});}catch{setError('Could not sign out. Please retry.');return;}try{Object.keys(sessionStorage).filter(k=>k.startsWith('safeledger-financing-quotes-v1:')).forEach(k=>sessionStorage.removeItem(k));}catch{/* Storage may be unavailable. */}setAuth(null);setError('');setNotice('');setRecoveryCode('');
+    try{
+      for(const key of Object.keys(localStorage))if(key.startsWith('capzoryx-push:'))localStorage.removeItem(key);
+      const reg=await navigator.serviceWorker?.getRegistration();
+      const subscription=await reg?.pushManager?.getSubscription();
+      if(subscription)await subscription.unsubscribe();
+    }catch{/* The push service may already have removed this subscription. */}
     try{await window.capzoryxStore.clear();if('BroadcastChannel' in window){const channel=new BroadcastChannel('capzoryx-account');channel.postMessage('logout');channel.close();}}catch{setError('Device storage could not be cleared.');}
   }
   useEffect(()=>{

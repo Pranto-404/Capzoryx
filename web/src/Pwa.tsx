@@ -68,7 +68,7 @@ export function OfflineCapture(){
     try{
       const amount_minor=parseMinor(asciiDigits(value('amount')),owner.currency);
       if(amount_minor<=0)throw new Error(t('Enter a positive amount.'));
-      const draft:QueuedRecord={...owner,request_id:crypto.randomUUID(),amount_minor,effective_on:value('date'),
+      const draft:QueuedRecord={user_id:owner.user_id,business_id:owner.business_id,currency:owner.currency,request_id:crypto.randomUUID(),amount_minor,effective_on:value('date'),
         kind:kind==='invoice'?'invoice':'cash',direction:kind==='cash'&&value('direction')==='outflow'?'outflow':'inflow'};
       if(kind==='invoice'){
         const supplier=value('supplier');
@@ -116,10 +116,10 @@ export function CaptureSync({session,currency,request,onSaved,onInvoices}:{sessi
       if(running||!live)return;
       running=true;
       try{
-        if(session.role!=='owner'){await store.setScope(null);return;}
-        await store.setScope(owner);
+        if(session.role!=='owner'&&session.role!=='bookkeeper'){await store.setScope(null);return;}
+        await store.setScope({...owner,role:session.role});
         navigator.serviceWorker?.controller?.postMessage('RESTORE_SHELL');
-        if(id&&/^[a-f0-9-]{36}$/.test(id)){
+        if(session.role==='owner'&&id&&/^[a-f0-9-]{36}$/.test(id)){
           const item=await store.getShare(id);
           if(live&&item&&(!item.owner||store.same(item.owner,owner)))setShared({id:item.id,text:item.text});
           else if(live)setNote(t('This shared item is unavailable in this workspace.'));
@@ -144,7 +144,7 @@ export function CaptureSync({session,currency,request,onSaved,onInvoices}:{sessi
     return ()=>{live=false;window.removeEventListener('online',sync);};
   },[session.business_id,session.user_id,session.role,currency,retry]);
   async function finishShare(discard=false){
-    if(!shared||sending)return;
+    if(!shared||sending||session.role!=='owner')return;
     setSending(true);
     try{
       if(!discard)try{
@@ -156,7 +156,7 @@ export function CaptureSync({session,currency,request,onSaved,onInvoices}:{sessi
     }catch(e){setNote(e instanceof Error?e.message:t('Draft is waiting to sync.'));}
     finally{setSending(false);}
   }
-  return <>{shared&&<section className="panel"><h2>{t('Review shared payment text')}</h2><p>{shared.text}</p>
+  return <>{session.role==='owner'&&shared&&<section className="panel"><h2>{t('Review shared payment text')}</h2><p>{shared.text}</p>
     <button disabled={sending} onClick={()=>void finishShare()}>{t('Review in Wallet payments')}</button>
     <button disabled={sending} className="secondary" onClick={()=>void finishShare(true)}>{t('Discard')}</button></section>}
     {note&&<p role="status">{note}</p>}

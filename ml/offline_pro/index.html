@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Offline Pro model preview</title><link rel="stylesheet" href="/preview.css"></head>
+<body><main><h1>Offline Pro model preview</h1>
+<p>Load Qwen3 0.6B from this computer. The model runs through WebGPU and can use about 1.4 GB of graphics memory. The preview works without internet access while its local server is running.</p>
+<button id="load">Load local model</button> <button id="stop" disabled>Unload model</button>
+<p id="state" role="status"></p>
+<form><label for="prompt">Draft a short reminder in English or বাংলা</label>
+<textarea id="prompt" rows="4" maxlength="600" required disabled></textarea><button id="ask" disabled>Generate a draft</button></form>
+<output id="answer" aria-live="polite"></output></main><script type="module" src="/preview.js"></script></body></html>

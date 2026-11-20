@@ -1,3 +1,4 @@
+import {nativeBuild} from './apiBase';
 import {apiFetch} from './apiBase';
 import {PassportManager} from './Passport';
 import {NotificationInbox} from './NotificationInbox';
@@ -28,6 +29,7 @@ import {formatDate,formatTime,prettyVendor,roleLabel,workspaceLabel} from './for
 import {t,T,LanguagePicker,useI18n,hasChosenLanguage} from './i18n';
 import './serverText';
 
+const AndroidReminders=lazy(()=>import('./AndroidReminders'));
 const WalletPayments=lazy(()=>import('./WalletPayments'));
 const StatementImport=lazy(()=>import('./StatementImport'));
 const KhataPage=lazy(()=>import('./KhataPage'));
@@ -52,6 +54,10 @@ export default function Workspace(props:WorkspaceProps){
 const AUDIT_TEXT:Record<string,string>={CUSTOMER_ADDED:T('Customer saved.'),CUSTOMER_PHONE_REMOVED:T('Phone number erased.'),RECEIVABLE_ADDED:T('Receivable saved.'),RECEIVABLE_SETTLED:T('Receipt recorded.'),IMPORTED:T('Records imported'),RECORD_ADDED:T('Record added'),PROPOSED:T('Payment prepared for approval'),APPROVED:T('Payment approved'),REJECTED:T('Payment rejected'),EXECUTED:T('Payment recorded'),EXPIRED:T('A payment proposal expired'),DENIED:T('An action was blocked'),IDEMPOTENT_REPLAY:T('A repeated approval was ignored'),FINANCING_ANALYZED:T('Loan offers compared'),INVITATION_CREATED:T('Invitation created'),WORKSPACE_JOINED:T('Someone joined this workspace'),WORKSPACE_CREATED:T('Workspace created'),CURRENCY_CHANGED:T('Currency changed'),PAYEE_PERMISSION_CHANGED:T('Supplier permission changed'),ACCOUNT_RECOVERED:T('Account recovered'),MEMBER_REMOVED:T('Someone was removed'),MEMBER_ROLE_CHANGED:T('A role was changed'),MEMBER_LEFT:T('Someone left this workspace')};
 
 function WorkspaceContent({token,session,logout,expired,changeSession,setCurrency}:WorkspaceProps&{setCurrency:(currency:string)=>void}){
+  const notificationScope=session.business_id+'/'+session.user_id;
+  useEffect(()=>{
+    if(nativeBuild)void import('./nativePush').then(push=>push.resumeNativePush(notificationScope)).catch(()=>{});
+  },[notificationScope]);
   const {currency,money,nativeMoney,parseMinor}=useCurrency();
   const [chatOpen,setChatOpen]=useState(false);const [chatLoaded,setChatLoaded]=useState(new URLSearchParams(location.search).get('open')==='ask');
   const chatButton=useRef<HTMLButtonElement>(null);
@@ -201,13 +207,14 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
           <button className="secondary" onClick={()=>setSelected(p)}>{t('Details')}</button>{p.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<button disabled={busy} onClick={()=>setSelected(p)}>{t('Review and decide')}</button>}</article>)}</div>
         {selected&&selected.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<ApprovalDialog proposal={selected} number={number(selected.details.invoice_id)} error={error} balance={snapshot?.balance_minor} busy={busy} onClose={()=>setSelected(null)} onDecision={d=>void run(()=>decide(selected,d))}/>}</Panel>}
       {tab==='Audit'&&<NotificationInbox request={request} scope={session.business_id+':'+session.user_id} navigate={tourNavigate}/>}
+      {tab==='Audit'&&nativeBuild&&<LazyBoundary><Suspense fallback={null}><AndroidReminders scope={notificationScope}/></Suspense></LazyBoundary>}
       {tab==='Audit' && session.role==='owner' && <PassportManager request={request}/>}
       {tab==='Audit'&&<Panel title={t('Everything that happened')}>
         {audit?<><p className={audit.chain_verified?'success':'error'}>{audit.chain_verified?t('History verified: nothing has been changed or removed.'):t('History could not be verified. Contact support.')}</p>
           {!audit.events.length&&<p>{t('No activity yet.')}</p>}
           <ol className="audit-list">{audit.events.slice().reverse().map(event=>{const p=(event.payload||{}) as Record<string,unknown>;const who=event.actor_id===session.user_id?'You':t('A teammate');return <li key={event.event_id}><strong>{t(AUDIT_TEXT[event.kind]||'')||event.kind.replaceAll('_',' ').toLowerCase()}</strong><small>{formatTime(event.created_at)} · {who}{typeof p.note==='string'&&p.note?` · ${p.note}`:''}{event.kind==='EXECUTED'&&typeof p.cash_delta_minor==='number'?` · ${nativeMoney(Math.abs(p.cash_delta_minor))}`:''}{event.kind==='DENIED'?' · blocked by a safety rule':''}</small></li>;})}</ol>
           <details className="advanced"><summary>{t('For auditors')}</summary><p className="muted small">{t('Each entry is linked to the one before it and signed by the server, so any later change is detectable.')} {t('This is not a claim of protection from the system administrator.')}</p><button className="secondary" onClick={()=>save(new Blob([JSON.stringify(audit,null,2)],{type:'application/json'}),'capzoryx-activity-log.json')}>{t('Download the full signed log')}</button></details></>:<p>{t('Activity is unavailable. Refresh to try again.')}</p>}</Panel>}
-      {snapshot&&<CaptureSync session={session} currency={snapshot.currency} request={request} onSaved={refresh} onInvoices={()=>setTab('Invoices')}/>}
+      {snapshot&&<CaptureSync key={session.user_id+':'+session.business_id+':'+session.role} session={session} currency={snapshot.currency} request={request} onSaved={refresh} onInvoices={()=>setTab('Invoices')}/>}
       {tab==='Data'&&<>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><KhataPage request={request} session={session} onSaved={refresh}/></Suspense></LazyBoundary>}
         {canAddRecords&&<QuickAdd request={request} revision={revision} profile={profile} owner={session.role==='owner'} cloudAvailable={cloudAvailable} onSaved={async()=>{await refresh();}}/>}

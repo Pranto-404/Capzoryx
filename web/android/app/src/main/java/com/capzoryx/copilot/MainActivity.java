@@ -1,9 +1,16 @@
 package com.capzoryx.copilot;
 
 import android.content.Intent;
+import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(CapzoryxPush.class);
+        super.onCreate(savedInstanceState);
+    }
+
     // The app accepts only plain text shares. Do not pass file streams,
     // clip data, URI grants, or other extras to plugins.
     @Override

@@ -52,7 +52,10 @@
     async share(text) {
       if(typeof text!=='string'||!text.trim()||text.length>2000)throw new RangeError('Expected 1–2000 characters');
       const id = crypto.randomUUID();
-      await saveScoped('shares',owner=>({id,text,owner,created_at:Date.now()}));
+      await saveScoped('shares',owner=>{
+        if(owner?.role==='bookkeeper')throw new DOMException('An owner reviews shared payment text.','NotAllowedError');
+        return {id,text,owner,created_at:Date.now()};
+      });
       return id;
     },
     getShare: id => use('shares','readonly',s=>s.get(id)),

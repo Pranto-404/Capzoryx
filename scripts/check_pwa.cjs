@@ -78,6 +78,10 @@ async function poll(check){
     });
     assert.ok(paths.includes('/index.html'));
     assert.ok(!paths.some(p=>p.startsWith('/api')||p==='/share'));
+    const headers={Origin:origin,'X-SafeLedger-Client':'web'};
+    const invitation=await context.request.post(origin+'/api/account/invitations',{headers,data:{role:'bookkeeper'}});
+    assert.equal(invitation.status(),201);
+    const code=(await invitation.json()).code;
     const id=new URL(page.url()).searchParams.get('id');
     await page.getByRole('button',{name:'Sign out',exact:true}).click();
     await poll(()=>page.evaluate(async id=>!(await window.capzoryxStore.scope()) && !(await window.capzoryxStore.getShare(id)) &&
@@ -87,5 +91,28 @@ async function poll(check){
     },draft);
     assert.equal(accepted,false,'a stale open form cannot write a draft after logout');
     console.log('PASS Web Share Target POST, scoped review, private routes uncached and logout cleanup');
+    const newMember=await context.request.post(origin+'/api/auth/signup',{headers,
+      data:{username:'offline_browser_recorder',password:'Fictional workspace for QA 28!'}});
+    assert.equal(newMember.status(),201);
+    const joined=await context.request.post(origin+'/api/account/join',{headers,data:{code}});
+    assert.equal((await joined.json()).role,'bookkeeper');
+    await page.reload();
+    await poll(()=>page.evaluate(async()=>(await window.capzoryxStore.scope())?.role==='bookkeeper'));
+    await poll(()=>page.evaluate(()=>!!navigator.serviceWorker.controller));
+    const shareStatus=await page.evaluate(async()=>(await fetch('/share',{method:'POST',
+      body:new URLSearchParams({text:'Synthetic wallet text'}),redirect:'manual'})).status);
+    assert.equal(shareStatus,403);
+    await poll(()=>page.evaluate(async()=>!!(await caches.match('/index.html',{ignoreVary:true}))));
+    await context.setOffline(true);
+    await page.reload();
+    await page.getByRole('heading',{name:'Offline capture'}).waitFor();
+    await page.getByLabel(/Amount/).fill('25.50');
+    await page.getByRole('button',{name:'Save and sync on reconnect'}).click();
+    await page.getByText('Queued records: 1',{exact:true}).waitFor();
+    await context.setOffline(false);
+    await page.getByText('Offline records synced.',{exact:true}).waitFor();
+    const after=await (await context.request.get(origin+'/api/workspace')).json();
+    assert.equal(after.snapshot.balance_minor,14895);
+    console.log('PASS bookkeeper can sync their cash record and cannot receive wallet shares');
   }finally{if(browser)await browser.close();server.kill();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
