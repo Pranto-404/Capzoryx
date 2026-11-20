@@ -44,4 +44,4 @@ node scripts/check_i18n.cjs
 node scripts/extract_ui_strings.cjs --check
 ```
 
-Vercel builds the website from the repository root on `main`. The installable phone app is developed on `v2`. Both clients use the same finance API. Local SQLite is sufficient for development. Hosted instances require a dedicated Turso database and a stable signing key. Deployment details and remaining product milestones are in [the build notes](docs/BUILD.md).
+Vercel builds the website from the `web` root directory on `main`. The installable phone app is developed on `v2`. Both clients use the same finance API. Local SQLite is sufficient for development. Hosted instances require a dedicated Turso database and a stable signing key. Deployment details and remaining product milestones are in [the build notes](docs/BUILD.md).
