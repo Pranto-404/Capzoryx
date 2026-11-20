@@ -22,11 +22,12 @@ SUSPECT_FEE_SHARE = Fraction(1, 5)
 class LenderQuote(Contract):
     quote_id: RecordId
     lender_name: Annotated[str, Field(min_length=1, max_length=100)]
-    product_type: Literal["term_loan", "working_capital_line", "invoice_financing", "equipment_loan", "other"]
+    product_type: Literal["term_loan", "working_capital_line", "invoice_financing", "equipment_loan", "other", "murabaha"]
     currency: Currency
     principal_minor: PositiveMinor
     upfront_fee_minor: Minor
-    rate_type: Literal["flat_per_term", "annual_reducing"]
+    rate_type: Literal["flat_per_term", "annual_reducing", "murabaha_markup"]
+    markup_minor: Annotated[Minor | None, Field(exclude_if=lambda value: value is None)] = None
     rate_bps: Annotated[int, Field(strict=True, ge=0, le=20000)]
     repayment: Literal["single_payment", "equal_installments"]
     installments: Annotated[int, Field(strict=True, ge=1, le=60)]
@@ -36,6 +37,13 @@ class LenderQuote(Contract):
 
     @model_validator(mode="after")
     def consistent(self):
+        if self.product_type == "murabaha":
+            if self.rate_type != "murabaha_markup" or self.markup_minor is None:
+                raise ValueError("Murabaha requires an explicit asset price and fixed markup")
+            if self.rate_bps != half_up(Fraction(self.markup_minor * 10000, self.principal_minor)):
+                raise ValueError("The displayed markup rate must agree with the fixed amount")
+        elif self.rate_type == "murabaha_markup" or self.markup_minor is not None:
+            raise ValueError("Markup belongs only to a murabaha quote")
         if self.upfront_fee_minor >= self.principal_minor:
             raise ValueError("Upfront fee must be less than principal")
         if self.repayment == "single_payment" and self.installments != 1:
@@ -77,8 +85,10 @@ def _schedule(quote: LenderQuote) -> list[tuple[int, int, int]]:
     p, n = quote.principal_minor, quote.installments
     period = quote.term_days // n
     rate = Fraction(quote.rate_bps, 10000)
-    if quote.rate_type == "flat_per_term" or n == 1:
-        if quote.rate_type == "flat_per_term":
+    if quote.rate_type in {"flat_per_term","murabaha_markup"} or n == 1:
+        if quote.markup_minor is not None:
+            interest = quote.markup_minor
+        elif quote.rate_type == "flat_per_term":
             interest = half_up(p * rate)
         else:
             interest = half_up(p * rate * Fraction(quote.term_days, 365))
@@ -153,13 +163,15 @@ def match_financing(dataset: Dataset, reserve_minor: int, request: FinancingMatc
         interest = sum(i for _, _, i in schedule)
         repaid = sum(a for _, a, _ in schedule)
         rate = effective_annual_rate_bps(net, schedule)
+        asset = quote.product_type == "murabaha"
+        liquid_cash = -quote.upfront_fee_minor if asset else net
         paid_by_day, balances = {}, []
         for day, amount, _ in schedule:
             paid_by_day[day] = paid_by_day.get(day, 0) + amount
         cumulative = 0
         for offset in range(1, horizon + 1):
             cumulative += paid_by_day.get(offset, 0)
-            balances.append(baseline[offset - 1] + net - cumulative)
+            balances.append(baseline[offset - 1] + liquid_cash - cumulative)
         # Day 0 is before the proceeds arrive, so only post-financing days describe this offer.
         with_loan_min = min(balances[:quote.term_days])
         month_with_loan = min(balances[:30])
@@ -171,10 +183,12 @@ def match_financing(dataset: Dataset, reserve_minor: int, request: FinancingMatc
             warnings.append("FLAT_RATE_UNDERSTATES_EFFECTIVE_COST")
         if rate > HIGH_COST_BPS:
             warnings.append("HIGH_COST_FINANCING")
-        if need and net > need * 3 // 2:
+        if not asset and need and net > need * 3 // 2:
             warnings.append("BORROWS_MORE_THAN_NEEDED")
         suspect = rate > SUSPECT_COST_BPS or Fraction(quote.upfront_fee_minor, quote.principal_minor) > SUSPECT_FEE_SHARE
-        if suspect:
+        if asset:
+            status = "ASSET_FINANCING_ONLY"
+        elif suspect:
             status = "VERIFY_TERMS_WITH_LENDER"
         elif net < need:
             status = "DOES_NOT_COVER_SHORTFALL"
@@ -185,7 +199,8 @@ def match_financing(dataset: Dataset, reserve_minor: int, request: FinancingMatc
         rows.append({"quote_id": quote.quote_id, "lender_name": quote.lender_name, "product_type": quote.product_type,
                      "quote_source": quote.quote_source, "quoted_on": quote.quoted_on.isoformat(), "user_supplied": True,
                      "principal_minor": quote.principal_minor, "upfront_fee_minor": quote.upfront_fee_minor,
-                     "net_proceeds_minor": net, "interest_minor": interest, "total_repayment_minor": repaid,
+                     "net_proceeds_minor": 0 if asset else net, "interest_minor": 0 if asset else interest,
+                     **({"markup_minor": interest} if asset else {}), "total_repayment_minor": repaid,
                      "total_cost_minor": interest + quote.upfront_fee_minor, "rate_type": quote.rate_type,
                      "rate_bps": quote.rate_bps, "term_days": quote.term_days, "installments": quote.installments,
                      "effective_annual_rate_bps": rate, "lowest_balance_with_financing_minor": with_loan_min,
@@ -193,7 +208,8 @@ def match_financing(dataset: Dataset, reserve_minor: int, request: FinancingMatc
                      "first_reserve_breach_on": (ds.as_of + timedelta(days=breach)).isoformat() if breach else None,
                      "additional_receipts_needed_minor": max(0, reserve_minor - with_loan_min),
                      "status": status, "warnings": warnings,
-                     "schedule": [{"date": (ds.as_of + timedelta(days=d)).isoformat(), "payment_minor": a, "interest_minor": i} for d, a, i in schedule]})
+                     "schedule": [{"date": (ds.as_of + timedelta(days=d)).isoformat(), "payment_minor": a, "interest_minor": 0 if asset else i,
+                                   **({"markup_minor": i} if asset else {})} for d, a, i in schedule]})
     rows.sort(key=lambda x: (x["status"] != "FITS_CASH_FLOW", x["total_cost_minor"], x["effective_annual_rate_bps"], x["quote_id"]))
     eligible = [x for x in rows if x["status"] == "FITS_CASH_FLOW"]
     result = {"currency": ds.currency, "as_of": ds.as_of.isoformat(), "reserve_minor": reserve_minor,
@@ -209,5 +225,7 @@ def match_financing(dataset: Dataset, reserve_minor: int, request: FinancingMatc
                               "Effective annual rate is an estimated internal rate of return on net proceeds, for comparison only",
                               "Repayment capacity uses only recorded balances, scheduled receipts and open obligations; no new sales are inferred",
                               "Not financial advice. Confirm all terms, eligibility and total cost directly with the lender"]}
+    if any(q.product_type=="murabaha" for q in req.quotes):
+        result["assumptions"].append("Murabaha finances the asset purchase. The effective annual cost uses its cash price less fees. The cash forecast includes fees and instalments, with zero cash disbursement.")
     result["analysis_sha256"] = _digest({"dataset": snapshot(ds)["dataset_sha256"], "reserve": reserve_minor, "request": req.model_dump(mode="json")})
     return result

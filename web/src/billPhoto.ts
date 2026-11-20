@@ -3,7 +3,7 @@ import type {Draft} from './types';
 import {t} from './i18n';
 import {todayIso} from './format';
 
-export async function readPhotoText(image:string, language:string):Promise<string> {
+export async function readPhotoText(image:string|File, language:string):Promise<string> {
   const {createWorker, OEM} = await import('tesseract.js');
   const worker = await createWorker(language === 'bn' ? 'ben+eng' : 'eng', OEM.LSTM_ONLY, {
     workerPath:'/ocr/worker.min.js', corePath:'/ocr/core.wasm.js', langPath:'/ocr', workerBlobURL:false
