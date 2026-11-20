@@ -12,6 +12,7 @@ from api.app.contracts import Contract, Currency, ISODate, PositiveMinor, Record
 from api.app.inputs import InputRecord, append_record
 from api.app.routes import db_connection, principal
 from api.app.services.finance import fingerprint
+from api.app.services.payment_timing import collection_outlook
 from api.app.services.receivables import customer_key, key_tag, seal, unseal
 
 router = APIRouter(prefix='/api/workspace')
@@ -172,4 +173,6 @@ def customer_book(db, business):
 @router.get('/receivables')
 def list_receivables(actor=Depends(principal), db=Depends(db_connection)):
     with owner_transaction(db, actor) as current:
-        return dict(customer_book(db, current.business_id), simulation_only=True)
+        book=customer_book(db,current.business_id)
+        outlook=collection_outlook(db,current.business_id,book["receivables"],today_bd())
+        return dict(book,collection_outlook=outlook,simulation_only=True)
