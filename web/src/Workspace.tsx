@@ -24,7 +24,7 @@ import {QuickAdd} from './QuickAdd';
 import {AskBooks} from './AskBooks';
 import {TelegramLink} from './TelegramLink';
 import {Avatar} from './Avatar';
-import {formatDate,formatTime,prettyVendor,workspaceLabel} from './format';
+import {formatDate,formatTime,prettyVendor,roleLabel,workspaceLabel} from './format';
 import {t,T,LanguagePicker,useI18n,hasChosenLanguage} from './i18n';
 import './serverText';
 
@@ -148,6 +148,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
     await run(async()=>{changeSession(await request<Session>('/account/switch',{business_id:id}));});
   }
   const canPropose=session.role==='owner';
+  const canAddRecords=session.role==='owner'||session.role==='bookkeeper';
   const name=profile?.display_name||session.display_name||session.username||'You';
   const number=(id:string)=>invoices.find(i=>i.invoice_id===id)?.invoice_number||'';
   const visible=invoices.filter(i=>`${i.vendor_id} ${i.invoice_number}`.toLowerCase().includes(query.toLowerCase()));
@@ -155,7 +156,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
     <Brand/>
     <nav aria-label={t('Workspace')}>{tabs.map(tb=><button key={tb} data-tour={tb} aria-current={tab===tb?'page':undefined} onClick={()=>{setTab(tb);setSelected(null);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}}}><Icon name={tb}/>{t(tabLabel[tb])}</button>)}</nav>
     <div className="identity">
-      <button className="identity-user" onClick={()=>setTab('Settings')} title={t('Open your profile and settings')}><Avatar profile={profile} name={name}/><span><strong>{name}</strong><small>{session.role==='owner'?t('Owner'):session.role==='approver'?t('Approver'):t('Viewer')}</small></span></button>
+      <button className="identity-user" onClick={()=>setTab('Settings')} title={t('Open your profile and settings')}><Avatar profile={profile} name={name}/><span><strong>{name}</strong><small>{roleLabel(session.role)}</small></span></button>
       {lists.workspaces.length>1&&<><label htmlFor="workspace-switch" className="sr-only">{t('Switch workspace')}</label><select id="workspace-switch" value={session.business_id} disabled={busy} onChange={e=>void switchTo(e.target.value)}>{lists.workspaces.map(w=><option key={w.business_id} value={w.business_id}>{workspaceLabel(w.name)}{w.currency?` · ${w.currency}`:''}{w.role!=='owner'?' · '+t('shared'):''}</option>)}</select></>}
       <LanguagePicker compact id="language-side" onPicked={code=>{void request('/account/profile',{language:code}).catch(()=>{});}}/>
       <button className="secondary" onClick={logout}>{t('Sign out')}</button></div></aside>
@@ -166,7 +167,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {error&&<p className="error" role="alert">{error}</p>}
       {profile&&profile.email&&!profile.email_verified&&profile.email_service&&tab!=='Settings'&&<p className="notice">{t('Verify your email so you can reset your password with a code.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Verify now')}</button></p>}
       {profile&&!profile.email&&tab==='Overview'&&<p className="notice">{t('Add an email address to reset your password with a code if you ever forget it.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Add email')}</button></p>}
-      {missing&&<p className="notice">Nothing here yet. {session.role==='owner'?<button className="link" onClick={()=>setTab('Data')}>{t('Add your first record')}</button>:t('Ask the owner to add records.')}</p>}
+      {missing&&<p className="notice">Nothing here yet. {canAddRecords?<button className="link" onClick={()=>setTab('Data')}>{t('Add your first record')}</button>:t('Ask the owner to add records.')}</p>}
       {tab==='Overview'&&<Dashboard role={session.role} nextCollection={nextCollection} snapshot={snapshot} week={week} month={baselineMonth} invoices={invoices} events={events} proposals={proposals} audit={audit} navigate={showDashboardDestination} openAssistant={()=>{setChatLoaded(true);setChatOpen(true);}} onSample={session.role==='owner'&&!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0?()=>void importRaw(sampleBusiness(snapshot.currency)).catch(e=>report(e)):undefined}/>}
       {tab==='Invoices'&&session.role==='owner'&&<Receivables key={revision} request={request} onSaved={refresh}/>}
       {tab==='Invoices'&&session.role==='owner'&&snapshot?.currency==='BDT'&&<LazyBoundary><Suspense fallback={null}><WalletPayments request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary>}
@@ -209,7 +210,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {snapshot&&<CaptureSync session={session} currency={snapshot.currency} request={request} onSaved={refresh} onInvoices={()=>setTab('Invoices')}/>}
       {tab==='Data'&&<>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><KhataPage request={request} session={session} onSaved={refresh}/></Suspense></LazyBoundary>}
-        <QuickAdd request={request} revision={revision} profile={profile} cloudAvailable={cloudAvailable} onSaved={async()=>{await refresh();}}/>
+        {canAddRecords&&<QuickAdd request={request} revision={revision} profile={profile} owner={session.role==='owner'} cloudAvailable={cloudAvailable} onSaved={async()=>{await refresh();}}/>}
         <DataEntry events={events} session={session} revision={revision} snapshot={snapshot} busy={busy} submit={async body=>{let saved=false;await run(async()=>{await request('/workspace/records',body);saved=true;await refresh();setMessage(t('Record saved. Your balance, forecast and activity are updated.'));});if(!saved)throw new Error(t('The record was not saved. Check the message above and try again.'));}}/>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><StatementImport request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary>}
         {session.role==='owner'&&<ImportEvidence busy={busy} enabled={!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0} upload={importRaw}/>}</>}

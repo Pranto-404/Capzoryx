@@ -160,7 +160,7 @@ def briefing(actor=Depends(principal), db=Depends(db_connection)):
     db.execute('BEGIN')
     with db:
         current = sec.recheck(db, actor)
-        if current.role not in ('owner', 'viewer', 'approver'):
+        if current.role not in ('owner', 'viewer', 'approver', 'bookkeeper'):
             sec.fail(403, 'MEMBER_REQUIRED')
         sec.verified_audit(db, current.business_id)
         dataset = sec.runtime_dataset(db, current.business_id)

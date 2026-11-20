@@ -19,7 +19,7 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
   const [picking,setPicking]=useState(false);const [target,setTarget]=useState('');
   const lastIntent=useRef('');const nextId=useRef(0);const mounted=useRef(true);const pending=useRef(false);
   const log=useRef<HTMLDivElement>(null);const input=useRef<HTMLTextAreaElement>(null);
-  const owner=session.role==='owner';const smart=!!profile?.smart_assist&&cloudAvailable;
+  const owner=session.role==='owner';const canAddRecords=owner||session.role==='bookkeeper';const smart=!!profile?.smart_assist&&cloudAvailable;
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   useEffect(()=>{if(visible)input.current?.focus();},[visible]);
   useEffect(()=>{if(log.current)log.current.scrollTop=log.current.scrollHeight;},[messages,busy]);
@@ -32,7 +32,7 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
     add({role:'user',text:q});
     try{
       // 1. A sentence that describes a payment or a bill becomes a draft record to confirm.
-      if(owner){
+      if(canAddRecords){
         const draft=await parseRecordForDraft(q,{currency,digits});
         if(draft){add({role:'assistant',kind:'device',text:draft.kind==='invoice'?t('I read this as a bill you still have to pay. Check it, then add it to your records.'):draft.direction==='inflow'?t('I read this as money you received. Check it, then add it to your records.'):t('I read this as a payment you made. Check it, then add it to your records.'),draft});return;}
       }
@@ -72,11 +72,11 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
   return <section className="panel chat-panel" aria-label={t('Assistant')}>
     <div className="chat-heading"><div className="assistant-orb" aria-hidden="true"><Icon name="spark"/></div><div><h2>{t('Assistant')}</h2><p>{t('Ask a question, or tell me what you paid or received')}</p></div>{onClose&&<button className="secondary chat-close" onClick={onClose} aria-label={t('Minimize assistant')}>×</button>}</div>
     <div className="chat-log" ref={log} role="log" aria-label={t('Conversation')} aria-live="polite">
-      {!messages.length&&<div className="chat-welcome"><span aria-hidden="true"><Icon name="spark"/></span><h3>{t('How can I help?')}</h3><p>{t('Ask a question, or tell me what you paid or received. I can add records for you, explain your numbers and compare loan offers.')}</p><div className="chat-suggestions">{hints.filter(h=>owner||!/^I paid/.test(h)).map(h=><button key={h} className="secondary" onClick={()=>void ask(h)}>{t(h)}</button>)}</div></div>}
+      {!messages.length&&<div className="chat-welcome"><span aria-hidden="true"><Icon name="spark"/></span><h3>{t('How can I help?')}</h3><p>{t('Ask a question, or tell me what you paid or received. I can add records for you, explain your numbers and compare loan offers.')}</p><div className="chat-suggestions">{hints.filter(h=>canAddRecords||!/^I paid/.test(h)).map(h=><button key={h} className="secondary" onClick={()=>void ask(h)}>{t(h)}</button>)}</div></div>}
       {messages.map(m=><article className={'chat-message '+m.role} key={m.id}>
         {m.role==='assistant'&&<small>{m.kind==='smart'?t('Smart answer'):'Assistant'}</small>}
         {m.text.split('\n\n').map((para,i)=><p key={i}>{para}</p>)}
-        {m.draft&&owner&&<DraftCard compact draft={m.draft} revision={revision} request={request} onSaved={onSaved} onDiscard={()=>setMessages(cur=>cur.map(x=>x.id===m.id?{...x,draft:undefined,text:t('Discarded. Nothing was added.')}:x))}/>}
+        {m.draft&&canAddRecords&&<DraftCard canTrustVendor={owner} compact draft={m.draft} revision={revision} request={request} onSaved={onSaved} onDiscard={()=>setMessages(cur=>cur.map(x=>x.id===m.id?{...x,draft:undefined,text:t('Discarded. Nothing was added.')}:x))}/>}
         {!!m.actions?.length&&<div className="chat-actions">{m.actions.map(a=><button className="secondary" key={a} onClick={()=>onNavigate(a)}>{({Financing:t('Open Loans'),Data:t('Open Add records'),Audit:t('Open Activity')} as Record<string,string>)[a]||`Open ${a}`}</button>)}</div>}
         {m.offTopic&&smart&&<div className="chat-actions"><button className="secondary" disabled={busy} onClick={()=>void ask(m.offTopic!,true)}>{t('It is about my business: try anyway')}</button></div>}
         {m.retry&&<div className="chat-actions"><button className="secondary" disabled={busy} onClick={()=>void ask(m.retry!)}>{t('Try again')}</button></div>}

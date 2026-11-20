@@ -18,7 +18,7 @@ const trust:{icon:string;title:string;text:string}[]=[
 const faq:{q:string;a:string}[]=[
  {q:T('Is it free?'),a:T('Yes. You can create a workspace and use every feature at no cost.')},
  {q:T('Does it move my money?'),a:T('No. It records and plans. Approving a payment writes it in your books; no bank transfer is made.')},
- {q:T('Who can see my records?'),a:T('Only you and people you invite. You choose whether they can approve payments or only view.')},
+ {q:T('Who can see my records?'),a:T('Only you and people you invite. You choose who can add records, approve payments or view the books.')},
  {q:T('Which currencies are supported?'),a:T('Over 150 currencies, with live exchange rates for converted values.')},
  {q:T('What if I forget my password?'),a:T('Ask for a code by email, or use the recovery key you saved when you signed up.')},
 ];

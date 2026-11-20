@@ -1,4 +1,4 @@
-"""Owner-entered sandbox records. Append only, versioned, atomic and idempotent."""
+"""Workspace record entry. Append only, versioned, atomic and idempotent."""
 import hashlib
 import json
 import uuid
@@ -42,10 +42,10 @@ class OfflineRecord(RecordFields):
 
 @router.post('/workspace/offline-records', status_code=201)
 def sync_offline(body: OfflineRecord, actor=Depends(principal), db=Depends(db_connection)):
-    """The owner already reviewed this independent record before queueing it on this device."""
+    """The signed-in recordkeeper already reviewed this independent record before queueing it on this device."""
     with sec.transaction(db):
         current = sec.recheck(db, actor)
-        if current.role != 'owner' or (current.business_id,current.user_id) != (body.business_id,body.user_id):
+        if current.role not in ('owner','bookkeeper') or (current.business_id,current.user_id) != (body.business_id,body.user_id):
             sec.fail(403,'DRAFT_WORKSPACE_MISMATCH')
         active = db.execute("""SELECT 1 FROM account_members m JOIN workspace_meta w ON w.business_id=m.business_id
                                WHERE m.user_id=? AND m.business_id=? AND w.kind='personal' AND w.archived_at IS NULL""",
@@ -58,17 +58,18 @@ def sync_offline(body: OfflineRecord, actor=Depends(principal), db=Depends(db_co
 
 @router.post('/workspace/records',status_code=201)
 def add_record(body:InputRecord,actor=Depends(principal),db=Depends(db_connection)):
-    if actor.role!='owner':sec.fail(403,'OWNER_REQUIRED')
+    if actor.role not in ('owner', 'bookkeeper'):sec.fail(403,'RECORDKEEPER_REQUIRED')
     if not db.execute('SELECT 1 FROM account_members WHERE user_id=?',(actor.user_id,)).fetchone():sec.fail(403,'ACCOUNT_REQUIRED')
     with sec.transaction(db):
         current=sec.recheck(db,actor)
-        if current.role!='owner':sec.fail(403,'OWNER_REQUIRED')
+        if current.role not in ('owner', 'bookkeeper'):sec.fail(403,'RECORDKEEPER_REQUIRED')
+        if body.trust_vendor and current.role != 'owner':sec.fail(403,'OWNER_REQUIRED')
         sec.verify_audit_head(db,current.business_id)
         return append_record(db, current, body)
 
 
 def append_record(db, current, body):
-    """Append in the caller's verified owner transaction."""
+    """Append in the caller's verified recordkeeping transaction."""
     digest=hashlib.sha256(sec.canonical(body.model_dump(mode='json')).encode()).hexdigest()
     prior=db.execute('SELECT body_sha256 FROM workspace_input_requests WHERE business_id=? AND request_id=?',(current.business_id,body.request_id)).fetchone()
     if prior:

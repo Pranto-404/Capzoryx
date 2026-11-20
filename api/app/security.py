@@ -71,6 +71,14 @@ def create_schema(db):
       user_id TEXT PRIMARY KEY, business_id TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('owner','approver','viewer','agent')),
       active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)));
+    CREATE TABLE IF NOT EXISTS bookkeeper_seats(
+      user_id TEXT PRIMARY KEY REFERENCES security_users(user_id) ON DELETE CASCADE);
+    CREATE VIEW IF NOT EXISTS effective_security_users AS
+      SELECT u.user_id,u.business_id,
+        CASE WHEN u.role='viewer' AND b.user_id IS NOT NULL THEN 'bookkeeper' ELSE u.role END AS role,u.active
+      FROM security_users u LEFT JOIN bookkeeper_seats b ON b.user_id=u.user_id;
+    CREATE TRIGGER IF NOT EXISTS clear_bookkeeper_seat AFTER UPDATE OF role,active ON security_users
+      BEGIN DELETE FROM bookkeeper_seats WHERE user_id=NEW.user_id; END;
     CREATE TABLE IF NOT EXISTS security_sessions(
       token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES security_users(user_id),
       expires_at INTEGER NOT NULL);
@@ -160,20 +168,32 @@ class Principal:
     token_hash: str
 
 
+def stored_role(role):
+    # Legacy readers see a viewer and therefore cannot write as a bookkeeper.
+    return 'viewer' if role == 'bookkeeper' else role
+
+
+def grant_bookkeeper(db, user_id, role):
+    # Changing the base seat clears any old grant, even on an older application release.
+    if role == 'bookkeeper':
+        db.execute('INSERT INTO bookkeeper_seats(user_id) VALUES (?)', (user_id,))
+
+
 def provision_session(db, user_id, business_id, role, ttl_seconds=3600):
     """Trusted local provisioning only; never exposed as an HTTP role-switch API."""
-    if role not in {'owner','approver','viewer','agent'} or not 1 <= ttl_seconds <= 86400:
+    if role not in {'owner','approver','viewer','bookkeeper','agent'} or not 1 <= ttl_seconds <= 86400:
         raise ValueError('Invalid server provisioning settings')
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     with db:
-        db.execute('INSERT INTO security_users(user_id,business_id,role) VALUES (?,?,?)', (user_id,business_id,role))
+        db.execute('INSERT INTO security_users(user_id,business_id,role) VALUES (?,?,?)', (user_id,business_id,stored_role(role)))
+        grant_bookkeeper(db, user_id, role)
         db.execute('INSERT INTO security_sessions VALUES (?,?,?)', (token_hash,user_id,now()+ttl_seconds))
     return token
 
 
 def resolve_hash(db, token_hash):
-    row = db.execute('SELECT u.user_id,u.business_id,u.role FROM security_sessions s JOIN security_users u ON s.user_id=u.user_id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1', (token_hash,now())).fetchone()
+    row = db.execute('SELECT u.user_id,u.business_id,u.role FROM security_sessions s JOIN effective_security_users u ON s.user_id=u.user_id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1', (token_hash,now())).fetchone()
     if row is None:
         fail(401,'INVALID_OR_EXPIRED_SESSION')
     return Principal(*row,token_hash)
