@@ -18,6 +18,7 @@ import {Receivables} from './Receivables';
 import {DataEntry} from './DataEntry';
 import {Financing} from './Financing';
 import {QuickAdd} from './QuickAdd';
+import {AskBooks} from './AskBooks';
 import {Avatar} from './Avatar';
 import {formatDate,formatTime,prettyVendor,workspaceLabel} from './format';
 import {t,T,LanguagePicker,useI18n,hasChosenLanguage} from './i18n';
@@ -192,6 +193,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
         <DataEntry events={events} session={session} revision={revision} snapshot={snapshot} busy={busy} submit={async body=>{let saved=false;await run(async()=>{await request('/workspace/records',body);saved=true;await refresh();setMessage(t('Record saved. Your balance, forecast and activity are updated.'));});if(!saved)throw new Error(t('The record was not saved. Check the message above and try again.'));}}/>
         {session.role==='owner'&&<ImportEvidence busy={busy} enabled={!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0} upload={importRaw}/>}</>}
       {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
+      {tab==='Assistant'&&<AskBooks request={request}/>}
       {chatLoaded&&<div id="workspace-assistant" hidden={tab!=='Assistant'&&!chatOpen} className={tab==='Assistant'?'assistant-page':'chat-float'} onKeyDown={(e:KeyboardEvent)=>{if(e.key==='Escape'&&tab!=='Assistant')closeChat();}}><LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening assistant…')}</section>}><Assistant visible={tab==='Assistant'||chatOpen} snapshot={snapshot} forecast={baselineMonth} week={week} events={events} invoices={invoices} session={session} profile={profile} cloudAvailable={cloudAvailable} revision={revision} request={request} onSaved={refresh} onNavigate={action=>{setTab(action);closeChat();}} onProposal={async()=>{await refresh();setTab('Approvals');closeChat();}} onClose={tab==='Assistant'?undefined:closeChat}/></Suspense></LazyBoundary></div>}
       {tab!=='Assistant'&&<button ref={chatButton} className="chat-launcher" aria-label={chatOpen?t('Close assistant'):t('Open assistant')} aria-expanded={chatOpen} aria-controls="workspace-assistant" onClick={()=>{setChatLoaded(true);setChatOpen(!chatOpen);}}><Icon name="spark"/> <span>{chatOpen?t('Close'):t('Assistant')}</span></button>}
       <footer>{t('Capzoryx Copilot · Your records · A second person approves every payment · Nothing leaves your control')}</footer></main></div>;
