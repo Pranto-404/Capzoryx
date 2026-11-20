@@ -1,3 +1,4 @@
+import {apiFetch} from './apiBase';
 import {currencies} from './currencies';
 const messages:Record<string,string> = {
   WORKSPACE_CURRENCY_LOCKED:'This workspace already has records. Create another workspace for a different currency.',
@@ -26,7 +27,7 @@ export function client(token: string, signal: AbortSignal, onUnauthorized: () =>
   return async function request<T>(path: string, body?: unknown): Promise<T> {
     let response: Response;
     try {
-      response = await fetch(`/api${path}`, { method: body === undefined ? 'GET' : 'POST', credentials:'same-origin', headers: { ...(token?{Authorization: `Bearer ${token}`} : {}), 'X-SafeLedger-Client':'web', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.any([signal, AbortSignal.timeout(90000)]), cache: 'no-store' });
+      response = await apiFetch(`/api${path}`, { method: body === undefined ? 'GET' : 'POST', credentials:'same-origin', headers: { ...(token?{Authorization: `Bearer ${token}`} : {}), 'X-SafeLedger-Client':'web', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.any([signal, AbortSignal.timeout(90000)]), cache: 'no-store' });
     } catch (error) {
       if (signal.aborted) throw error;
       throw new ApiError('CONNECTION_FAILED', 0, 'Could not reach the server. Check the connection and retry. A timed-out action may have completed; refresh before retrying.');
@@ -102,7 +103,7 @@ export class AuthError extends Error {
 export async function accountRequest<T>(path:string, body?:unknown, signal?:AbortSignal):Promise<T> {
   let r:Response;
   try{
-    r = await fetch('/api'+path,{method:body===undefined?'GET':'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-SafeLedger-Client':'web'},body:body===undefined?undefined:JSON.stringify(body),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(90000)]):AbortSignal.timeout(90000)});
+    r = await apiFetch('/api'+path,{method:body===undefined?'GET':'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-SafeLedger-Client':'web'},body:body===undefined?undefined:JSON.stringify(body),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(90000)]):AbortSignal.timeout(90000)});
   }catch(error){
     if(signal?.aborted)throw error;
     throw new AuthError('Could not reach the server. Check your connection and try again.','CONNECTION_FAILED',0);
@@ -121,7 +122,7 @@ export async function accountRequest<T>(path:string, body?:unknown, signal?:Abor
 
 /** Live exchange rate for the currency view. Display only; the server fetches and caches it. */
 export async function fxRate(from:string,to:string,signal?:AbortSignal){
-  const r=await fetch(`/api/fx/rate?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,{credentials:'same-origin',headers:{'X-SafeLedger-Client':'web'},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(20000)]):AbortSignal.timeout(20000),cache:'no-store'});
+  const r=await apiFetch(`/api/fx/rate?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,{credentials:'same-origin',headers:{'X-SafeLedger-Client':'web'},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(20000)]):AbortSignal.timeout(20000),cache:'no-store'});
   const data=await r.json().catch(()=>null);
   if(!r.ok)throw new Error(friendly[data?.error?.code]||'Live exchange rates are not reachable right now.');
   if(data?.simulation_only!==true||typeof data.rate!=='string')throw new Error('Unexpected exchange-rate response.');

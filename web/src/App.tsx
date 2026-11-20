@@ -1,3 +1,4 @@
+import {apiFetch,nativeBuild} from './apiBase';
 import {OfflineCapture,InstallControl} from './Pwa';
 import {useI18n} from './i18n';
 import {LazyBoundary} from './LazyBoundary';
@@ -38,7 +39,7 @@ export default function App() {
       if(abort.signal.aborted)return;
       if(navigator.onLine && document.visibilityState==='visible'){
         try{
-          const response=await fetch('/api/health',{cache:'no-store',signal:AbortSignal.any([abort.signal,AbortSignal.timeout(8000)])});
+          const response=await apiFetch('/api/health',{cache:'no-store',signal:AbortSignal.any([abort.signal,AbortSignal.timeout(8000)])});
           if(response.ok && (await response.json()).status==='ok' && !abort.signal.aborted){
             setAuth(null);setOnline(true);return;
           }
@@ -56,7 +57,7 @@ export default function App() {
     restoreRequest.current=controller;
     async function restore(){
       try{
-        const response=await fetch('/api/session',{
+        const response=await apiFetch('/api/session',{
           credentials:'same-origin',
           signal:AbortSignal.any([controller.signal,AbortSignal.timeout(90000)])
         });
@@ -94,7 +95,7 @@ export default function App() {
     {auth&&notice&&<p className="success banner" role="status">{notice} <button className="link" onClick={()=>setNotice('')}>Dismiss</button></p>}
     {auth&&recoveryCode&&<RecoveryNotice code={recoveryCode} done={()=>setRecoveryCode('')}/>}
     {auth?<LazyBoundary><Suspense fallback={<main className="workspace-loading" role="status"><span className="loading-ring"/>Opening your workspace…</main>}><Workspace key={auth.session.business_id+auth.session.user_id} token="" session={auth.session} logout={()=>void signout()} expired={expired} changeSession={session=>setAuth({session})}/></Suspense></LazyBoundary>
-      :<><Auth onAuthStart={()=>restoreRequest.current?.abort()} onSession={enter} joinCode={joinCode} notice={error||''}/><InstallControl/></>}
+      :<><Auth onAuthStart={()=>restoreRequest.current?.abort()} onSession={enter} joinCode={joinCode} notice={error||''}/>{!nativeBuild && <InstallControl/>}</>}
   </>;
 }
 

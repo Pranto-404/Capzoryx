@@ -1,3 +1,4 @@
+import {apiFetch,nativeBuild,publicOrigin} from './apiBase';
 import {useEffect, useState} from 'react';
 import {t, useI18n} from './i18n';
 import {currencyDigits} from './api';
@@ -48,8 +49,8 @@ const bytes = (value:string) => Uint8Array.from(atob(value), char => char.charCo
 
 async function readVerified(id:string, signal:AbortSignal):Promise<Summary> {
   const [data, keys] = await Promise.all([
-    fetch('/api/public/passport/' + id, {credentials:'omit', cache:'no-store', signal}),
-    fetch('/.well-known/capzoryx-passport-key.json', {credentials:'omit', cache:'no-store', signal})
+    apiFetch('/api/public/passport/' + id, {credentials:'omit', cache:'no-store', signal}),
+    fetch(nativeBuild?'/passport-keys.json':'/.well-known/capzoryx-passport-key.json', {credentials:'omit', cache:'no-store', signal})
   ]);
   if (!data.ok || !keys.ok) throw Error();
   const {canonical, signature} = await data.json();
@@ -71,7 +72,7 @@ export function VerifyPassport({id}: {id:string}) {
     readVerified(id, ctrl.signal).then(report => {
       if (!ctrl.signal.aborted) setSummary(report);
     }).catch(() => {if (!ctrl.signal.aborted) setFailed(true);});
-    import('qrcode').then(q => q.toDataURL(location.origin + '/verify/' + id)).then(url => {
+    import('qrcode').then(q => q.toDataURL(publicOrigin() + '/verify/' + id)).then(url => {
       if (!ctrl.signal.aborted) setQr(url);
     }).catch(() => {});
     return () => ctrl.abort();

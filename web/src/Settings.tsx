@@ -1,3 +1,4 @@
+import {publicOrigin} from './apiBase';
 import {useCallback,useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
 import {CurrencySelect} from './Currency';
 import {PasswordStrength} from './PasswordStrength';
@@ -156,7 +157,7 @@ function SharingTab({session,request,changeSession}:SettingsProps){
       <Notice m={msg.message}/>
     </Section>
     {owner&&<Section title={t('Invite someone')} hint={t('Send them a link. They sign in or create a free account and are added automatically.')}>
-      <form onSubmit={(e:FormEvent)=>{e.preventDefault();void act(async()=>{const r=await request<{code:string;emailed:boolean}>('/account/invitations',{role,hours,...(email.trim()?{email:email.trim()}:{})});setLink(`${window.location.origin}/?join=${r.code}`);setCopied(false);setEmail('');if(email.trim()&&!r.emailed)throw new Error('The invitation link is ready below, but we could not email it. Copy the link and send it yourself.');},'Invitation ready. Copy the link below.');}}>
+      <form onSubmit={(e:FormEvent)=>{e.preventDefault();void act(async()=>{const r=await request<{code:string;emailed:boolean}>('/account/invitations',{role,hours,...(email.trim()?{email:email.trim()}:{})});setLink(`${publicOrigin()}/?join=${r.code}`);setCopied(false);setEmail('');if(email.trim()&&!r.emailed)throw new Error('The invitation link is ready below, but we could not email it. Copy the link and send it yourself.');},'Invitation ready. Copy the link below.');}}>
         <div className="form-grid"><label>{t('They can')}<select value={role} onChange={e=>setRole(e.target.value as 'approver'|'viewer')}><option value="approver">{t('Approve payments')}</option><option value="viewer">{t('View only')}</option></select></label>
           <label>{t('Link works for')}<select value={hours} onChange={e=>setHours(Number(e.target.value))}><option value={24}>{t('1 day')}</option><option value={72}>{t('3 days')}</option><option value={168}>{t('7 days')}</option></select></label></div>
         <label htmlFor="invite-email">{t('Their email (optional, we will email the link)')}</label><input id="invite-email" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder={t('friend@example.com')}/>

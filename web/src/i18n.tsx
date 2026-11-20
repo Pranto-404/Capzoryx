@@ -1,3 +1,4 @@
+import {apiFetch} from './apiBase';
 import {createContext,useCallback,useContext,useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 
 export type Language={code:string;name:string;rtl:boolean};
@@ -79,7 +80,7 @@ export function I18nProvider({children}:{children:ReactNode}){
         }catch{/* The server can still supply translations. */}
         let last=-1;
         for(let round=0;round<10&&run.current===id;round++){
-          const r=await fetch('/api/i18n?lang='+encodeURIComponent(code),{credentials:'same-origin',signal:controller.signal});
+          const r=await apiFetch('/api/i18n?lang='+encodeURIComponent(code),{credentials:'same-origin',signal:controller.signal});
           if(!r.ok)break;
           const body=await r.json() as {strings:Record<string,string>;missing:number;version:string};
           if(run.current!==id)return;
