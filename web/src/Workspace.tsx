@@ -30,6 +30,7 @@ import './serverText';
 
 const WalletPayments=lazy(()=>import('./WalletPayments'));
 const StatementImport=lazy(()=>import('./StatementImport'));
+const KhataPage=lazy(()=>import('./KhataPage'));
 const Settings=lazy(()=>import('./Settings'));
 const Assistant=lazy(()=>import('./Assistant'));
 const tabs=['Overview','Data','Invoices','Cash flow','Financing','Assistant','Approvals','Audit','Settings'] as const;
@@ -207,6 +208,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
           <details className="advanced"><summary>{t('For auditors')}</summary><p className="muted small">{t('Each entry is linked to the one before it and signed by the server, so any later change is detectable.')} {t('This is not a claim of protection from the system administrator.')}</p><button className="secondary" onClick={()=>save(new Blob([JSON.stringify(audit,null,2)],{type:'application/json'}),'capzoryx-activity-log.json')}>{t('Download the full signed log')}</button></details></>:<p>{t('Activity is unavailable. Refresh to try again.')}</p>}</Panel>}
       {snapshot&&<CaptureSync session={session} currency={snapshot.currency} request={request} onSaved={refresh} onInvoices={()=>setTab('Invoices')}/>}
       {tab==='Data'&&<>
+        {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><KhataPage request={request} session={session} onSaved={refresh}/></Suspense></LazyBoundary>}
         <QuickAdd request={request} revision={revision} profile={profile} cloudAvailable={cloudAvailable} onSaved={async()=>{await refresh();}}/>
         <DataEntry events={events} session={session} revision={revision} snapshot={snapshot} busy={busy} submit={async body=>{let saved=false;await run(async()=>{await request('/workspace/records',body);saved=true;await refresh();setMessage(t('Record saved. Your balance, forecast and activity are updated.'));});if(!saved)throw new Error(t('The record was not saved. Check the message above and try again.'));}}/>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><StatementImport request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary>}
