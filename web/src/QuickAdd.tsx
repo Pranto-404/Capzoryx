@@ -1,3 +1,4 @@
+import {VoiceCapture} from './VoiceCapture';
 import {LocalVoice} from './LocalVoice';
 import {Icon} from './Icon';
 import {useRef,useState} from 'react';
@@ -61,6 +62,7 @@ export function QuickAdd({request,revision,onSaved,profile,cloudAvailable}:Props
         <label htmlFor="quick-text" className="sr-only">{t('Describe the payment or bill')}</label>
         <textarea id="quick-text" rows={3} maxLength={400} value={text} onChange={e=>setText(e.target.value)} placeholder={'e.g. "I paid Rahman 5000 for freight yesterday"\n"Received 20,000 from Karim Traders"\n"Bill from Dhaka Packaging 12000 due in 10 days"'}/>
         <LocalVoice onText={setText}/>
+        {profile?.smart_assist&&profile.speech_provider&&<VoiceCapture provider={profile.speech_provider} request={request} onText={setText}/> }
         <button disabled={busy!==''||!text.trim()} onClick={()=>void read()}>{busy==='text'?t('Reading…'):t('Read it')}</button>
       </div>
     </div>

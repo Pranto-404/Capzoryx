@@ -12,8 +12,8 @@ class BodyLimitMiddleware:
         headers=dict(scope.get('headers',[]))
         if headers.get(b'content-type',b'').split(b';',1)[0].strip().lower()!=b'application/json':
             return await JSONResponse({'error':{'code':'JSON_CONTENT_TYPE_REQUIRED'}},status_code=415)(scope,receive,send)
-        limit=self.large if scope.get('path')=='/api/assist/scan' else self.limit
-        if scope.get('path')=='/api/statements/preview':limit=4*1024*1024
+        limits = {'/api/assist/scan':self.large, '/api/assist/voice':self.large, '/api/statements/preview':4*1024*1024}
+        limit = limits.get(scope.get('path'),self.limit)
         chunks=[];size=0
         while True:
             event=await receive()

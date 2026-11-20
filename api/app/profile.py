@@ -113,8 +113,9 @@ def get_profile(actor=Depends(principal), db=Depends(db_connection)):
     row = db.execute("SELECT a.username,COALESCE(p.display_name,''),p.photo,COALESCE(p.smart_assist,0),COALESCE(p.display_currency,'USD'),COALESCE(p.language,'en'),COALESCE(p.cloud_notice,0) FROM auth_accounts a LEFT JOIN account_profiles p ON p.account_id=a.account_id WHERE a.account_id=?", (account,)).fetchone()
     email = db.execute('SELECT email,verified FROM account_emails WHERE account_id=?', (account,)).fetchone()
     enabled = db.execute('SELECT enabled FROM account_mfa WHERE account_id=?', (account,)).fetchone()
+    from api.app.voice import available_provider
     return dict(username=row[0], display_name=row[1], photo=row[2], smart_assist=bool(row[3]), display_currency=row[4], language=row[5], email=email[0] if email else None,
-                cloud_notice=bool(row[6]),cloud_providers=gateway.disclosure(),email_verified=bool(email and email[1]), two_factor=bool(enabled and enabled[0]), email_service=mailer.configured(), simulation_only=True)
+                speech_provider=available_provider(),cloud_notice=bool(row[6]),cloud_providers=gateway.disclosure(),email_verified=bool(email and email[1]), two_factor=bool(enabled and enabled[0]), email_service=mailer.configured(), simulation_only=True)
 
 
 class ProfileUpdate(Contract):
