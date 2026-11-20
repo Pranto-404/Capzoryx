@@ -1,5 +1,6 @@
 import {PassportManager} from './Passport';
 import {NotificationInbox} from './NotificationInbox';
+import {CaptureSync,InstallControl} from './Pwa';
 import {Brand} from './Logo';
 import {QuickTour} from './QuickTour';
 import {LazyBoundary} from './LazyBoundary';
@@ -46,10 +47,10 @@ const AUDIT_TEXT:Record<string,string>={CUSTOMER_ADDED:T('Customer saved.'),CUST
 
 function WorkspaceContent({token,session,logout,expired,changeSession,setCurrency}:WorkspaceProps&{setCurrency:(currency:string)=>void}){
   const {currency,money,nativeMoney,parseMinor}=useCurrency();
-  const [chatOpen,setChatOpen]=useState(false);const [chatLoaded,setChatLoaded]=useState(false);
+  const [chatOpen,setChatOpen]=useState(false);const [chatLoaded,setChatLoaded]=useState(new URLSearchParams(location.search).get('open')==='ask');
   const chatButton=useRef<HTMLButtonElement>(null);
   function closeChat(){setChatOpen(false);chatButton.current?.focus();}
-  const [tab,setTab]=useState<Tab>('Overview');
+  const [tab,setTab]=useState<Tab>(()=>{const open=new URLSearchParams(location.search).get('open');return open==='bill'?'Data':open==='ask'?'Assistant':'Overview';});
   const tourNavigate=useCallback((page:string)=>{setTab(page as Tab);setSelected(null);setChatOpen(false);},[]);
   const [snapshot,setSnapshot]=useState<Snapshot|null>(null);
   const [invoices,setInvoices]=useState<Invoice[]>([]);
@@ -187,6 +188,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
           {!audit.events.length&&<p>{t('No activity yet.')}</p>}
           <ol className="audit-list">{audit.events.slice().reverse().map(event=>{const p=(event.payload||{}) as Record<string,unknown>;const who=event.actor_id===session.user_id?'You':t('A teammate');return <li key={event.event_id}><strong>{t(AUDIT_TEXT[event.kind]||'')||event.kind.replaceAll('_',' ').toLowerCase()}</strong><small>{formatTime(event.created_at)} · {who}{typeof p.note==='string'&&p.note?` · ${p.note}`:''}{event.kind==='EXECUTED'&&typeof p.cash_delta_minor==='number'?` · ${nativeMoney(Math.abs(p.cash_delta_minor))}`:''}{event.kind==='DENIED'?' · blocked by a safety rule':''}</small></li>;})}</ol>
           <details className="advanced"><summary>{t('For auditors')}</summary><p className="muted small">{t('Each entry is linked to the one before it and signed by the server, so any later change is detectable.')} {t('This is not a claim of protection from the system administrator.')}</p><button className="secondary" onClick={()=>save(new Blob([JSON.stringify(audit,null,2)],{type:'application/json'}),'capzoryx-activity-log.json')}>{t('Download the full signed log')}</button></details></>:<p>{t('Activity is unavailable. Refresh to try again.')}</p>}</Panel>}
+      {snapshot&&<CaptureSync session={session} currency={snapshot.currency} request={request} onSaved={refresh} onInvoices={()=>setTab('Invoices')}/>}
       {tab==='Data'&&<>
         <QuickAdd request={request} revision={revision} profile={profile} cloudAvailable={cloudAvailable} onSaved={async()=>{await refresh();}}/>
         <DataEntry events={events} session={session} revision={revision} snapshot={snapshot} busy={busy} submit={async body=>{let saved=false;await run(async()=>{await request('/workspace/records',body);saved=true;await refresh();setMessage(t('Record saved. Your balance, forecast and activity are updated.'));});if(!saved)throw new Error(t('The record was not saved. Check the message above and try again.'));}}/>
@@ -194,7 +196,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
       {chatLoaded&&<div id="workspace-assistant" hidden={tab!=='Assistant'&&!chatOpen} className={tab==='Assistant'?'assistant-page':'chat-float'} onKeyDown={(e:KeyboardEvent)=>{if(e.key==='Escape'&&tab!=='Assistant')closeChat();}}><LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening assistant…')}</section>}><Assistant visible={tab==='Assistant'||chatOpen} snapshot={snapshot} forecast={baselineMonth} week={week} events={events} invoices={invoices} session={session} profile={profile} cloudAvailable={cloudAvailable} revision={revision} request={request} onSaved={refresh} onNavigate={action=>{setTab(action);closeChat();}} onProposal={async()=>{await refresh();setTab('Approvals');closeChat();}} onClose={tab==='Assistant'?undefined:closeChat}/></Suspense></LazyBoundary></div>}
       {tab!=='Assistant'&&<button ref={chatButton} className="chat-launcher" aria-label={chatOpen?t('Close assistant'):t('Open assistant')} aria-expanded={chatOpen} aria-controls="workspace-assistant" onClick={()=>{setChatLoaded(true);setChatOpen(!chatOpen);}}><Icon name="spark"/> <span>{chatOpen?t('Close'):t('Assistant')}</span></button>}
-      <footer>{t('Capzoryx Copilot · Your records · A second person approves every payment · Nothing leaves your control')}</footer></main></div>;
+      <footer><InstallControl/>{t('Capzoryx Copilot · Your records · A second person approves every payment · Nothing leaves your control')}</footer></main></div>;
 }
 
 function ProposalDetails({proposal:p,number}:{proposal:Proposal;number:string}){

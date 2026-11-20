@@ -55,6 +55,28 @@ jobs:
           node scripts/extract_ui_strings.cjs --check
           python -m evals.run --suite smoke
 
+  app-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install test dependencies
+        run: |
+          pip install -r api/requirements.lock.txt
+          npm ci --prefix web
+      - name: Verify install prompt, offline records, shared text and logout
+        run: |
+          npm run build --prefix web
+          CHROMIUM_PATH="$(command -v google-chrome)" xvfb-run -a node scripts/check_pwa.cjs
+
   dependency-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
