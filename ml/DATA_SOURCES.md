@@ -12,3 +12,5 @@
 Keep consent records, contributor identities and private datasets outside Git. Each new source needs an entry recording ownership, permission or license, intended use and split before training or evaluating with it.
 
 The Hisab-LM archive consists of 3,600 project-generated financial instruction examples and includes its MIT license and split digests. The trainer ingests its train and validation splits. Its public synthetic test split measures template coverage. [Model card and reproduction steps](hisab_lm/MODEL_CARD.md)
+
+The downloadable `web/public/datasets/bangla-practice-v1.zip` bundles 30,000 synthetic token-labelled training examples (10,000 each in Bangla, Banglish and English) from the fixed seed 20261121, the private collection form and Bengali instructions. The manifest contains the training file's SHA-256. The 30 WAV files in `web/public/datasets/machine-voice-smoke-v1.zip` are machine-generated test inputs for audio transport. Human voices, transcripts and independent evaluation data must be kept private and separate from these public practice archives.
