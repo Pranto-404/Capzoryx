@@ -12,7 +12,7 @@ import {CashChart} from './Charts';
 import {CurrencyProvider,CurrencyControls,useCurrency,usePreferredCurrency} from './Currency';
 import {lazy,Suspense,useEffect,useRef,useState,useCallback,type ReactNode,type KeyboardEvent} from 'react';
 import {ApiError,client,accountRequest,currencyDigits,fxRate} from './api';
-import type {Audit,Forecast,Invoice,Profile,Proposal,Session,Snapshot,CashEvent,WorkspaceItem} from './types';
+import type {Audit,Forecast,Invoice,Profile,Proposal,Session,Snapshot,CashEvent,WorkspaceItem,NextCollection} from './types';
 import {ImportEvidence} from './ImportEvidence';
 import {sampleBusiness} from './sampleBusiness';
 import {Receivables} from './Receivables';
@@ -55,6 +55,18 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   function closeChat(){setChatOpen(false);chatButton.current?.focus();}
   const [tab,setTab]=useState<Tab>('Overview');
   const tourNavigate=useCallback((page:string)=>{setTab(page as Tab);setSelected(null);setChatOpen(false);},[]);
+  const [nextCollection,setNextCollection]=useState<NextCollection|null>(null);
+  const focusTarget=useRef<string|null>(null);
+  function showDashboardDestination(page:Tab,target='workspace-title'){
+    focusTarget.current=target;
+    if(page==='Invoices')setQuery('');
+    setTab(page);
+  }
+  useEffect(()=>{
+    const id=focusTarget.current;
+    if(id)document.getElementById(id)?.focus();
+    focusTarget.current=null;
+  },[tab]);
   const [snapshot,setSnapshot]=useState<Snapshot|null>(null);
   const [invoices,setInvoices]=useState<Invoice[]>([]);
   const [events,setEvents]=useState<CashEvent[]>([]);
@@ -83,14 +95,14 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   async function refresh(){
     const mine=scope.current;  // this call belongs to one mount: a newer mount must not make an aborted call look current
     try{
-      const data=await request<{dataset_revision:string;snapshot:Snapshot;invoices:Invoice[];events:CashEvent[];proposals:Proposal[];audit:Audit;week:Forecast;month:Forecast;policy:{reserve_minor:number;payment_limit_minor:number}}>('/workspace');
+      const data=await request<{next_collection?:NextCollection|null;dataset_revision:string;snapshot:Snapshot;invoices:Invoice[];events:CashEvent[];proposals:Proposal[];audit:Audit;week:Forecast;month:Forecast;policy:{reserve_minor:number;payment_limit_minor:number}}>('/workspace');
       if(mine.signal.aborted)return;
-      setRevision(data.dataset_revision);setSnapshot(data.snapshot);setCurrency(data.snapshot.currency);setInvoices(data.invoices);setEvents(data.events);setProposals(data.proposals);setAudit(data.audit);
+      setNextCollection(data.next_collection??null);setRevision(data.dataset_revision);setSnapshot(data.snapshot);setCurrency(data.snapshot.currency);setInvoices(data.invoices);setEvents(data.events);setProposals(data.proposals);setAudit(data.audit);
       setWeek(data.week);setForecast(data.month);setBaselineMonth(data.month);
       setReserve(String(data.policy.reserve_minor/10**currencyDigits(data.snapshot.currency)));setDelay('0');setMissing(false);
     }catch(e){
       if(mine.signal.aborted)return;
-      setSnapshot(null);setInvoices([]);setEvents([]);setProposals([]);setAudit(null);setWeek(null);setForecast(null);setBaselineMonth(null);
+      setNextCollection(null);setSnapshot(null);setInvoices([]);setEvents([]);setProposals([]);setAudit(null);setWeek(null);setForecast(null);setBaselineMonth(null);
       const noData=e instanceof ApiError&&e.code==='DATASET_NOT_FOUND';setMissing(noData);if(!noData)report(e);
     }
   }
@@ -144,7 +156,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {lists.workspaces.length>1&&<><label htmlFor="workspace-switch" className="sr-only">{t('Switch workspace')}</label><select id="workspace-switch" value={session.business_id} disabled={busy} onChange={e=>void switchTo(e.target.value)}>{lists.workspaces.map(w=><option key={w.business_id} value={w.business_id}>{workspaceLabel(w.name)}{w.currency?` · ${w.currency}`:''}{w.role!=='owner'?' · '+t('shared'):''}</option>)}</select></>}
       <LanguagePicker compact id="language-side" onPicked={code=>{void request('/account/profile',{language:code}).catch(()=>{});}}/>
       <button className="secondary" onClick={logout}>{t('Sign out')}</button></div></aside>
-    <main id="workspace"><header><div><p className="eyebrow">{workspaceLabel(session.workspace_name||'My workspace')}</p><h1>{t(pageTitle[tab])}</h1><p className="muted">{snapshot?t('Up to date as of {date} · {currency}',{date:formatDate(snapshot.as_of),currency}):t('Your business finances in one place')}</p></div>
+    <main id="workspace"><header><div><p className="eyebrow">{workspaceLabel(session.workspace_name||'My workspace')}</p><h1 tabIndex={-1} id="workspace-title">{t(pageTitle[tab])}</h1><p className="muted">{snapshot?t('Up to date as of {date} · {currency}',{date:formatDate(snapshot.as_of),currency}):t('Your business finances in one place')}</p></div>
       <div className="header-actions"><QuickTour ready={!!snapshot&&!busy} userId={session.user_id} currentPage={tab} navigate={tourNavigate}/><ThemeButton/><button className="secondary" disabled={busy||!snapshot||exporting} onClick={()=>void exportPdf()}>{exporting?t('Preparing PDF…'):t('Download PDF')}</button><button className="secondary" disabled={busy} onClick={()=>void run(refresh)}>{t('Refresh')}</button></div></header>
       <CurrencyControls key={currency} ready={!!snapshot}/>
       <div aria-live="polite" role="status">{busy&&<p className="notice">{t('Loading your latest data…')}</p>}{message&&<p className="success">{message}</p>}</div>
@@ -152,14 +164,14 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {profile&&profile.email&&!profile.email_verified&&profile.email_service&&tab!=='Settings'&&<p className="notice">{t('Verify your email so you can reset your password with a code.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Verify now')}</button></p>}
       {profile&&!profile.email&&tab==='Overview'&&<p className="notice">{t('Add an email address to reset your password with a code if you ever forget it.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Add email')}</button></p>}
       {missing&&<p className="notice">Nothing here yet. {session.role==='owner'?<button className="link" onClick={()=>setTab('Data')}>{t('Add your first record')}</button>:t('Ask the owner to add records.')}</p>}
-      {tab==='Overview'&&<Dashboard snapshot={snapshot} week={week} month={baselineMonth} invoices={invoices} events={events} proposals={proposals} audit={audit} navigate={t=>setTab(t as Tab)} openAssistant={()=>{setChatLoaded(true);setChatOpen(true);}} onSample={session.role==='owner'&&!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0?()=>void importRaw(sampleBusiness(snapshot.currency)).catch(e=>report(e)):undefined}/>}
+      {tab==='Overview'&&<Dashboard role={session.role} nextCollection={nextCollection} snapshot={snapshot} week={week} month={baselineMonth} invoices={invoices} events={events} proposals={proposals} audit={audit} navigate={showDashboardDestination} openAssistant={()=>{setChatLoaded(true);setChatOpen(true);}} onSample={session.role==='owner'&&!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0?()=>void importRaw(sampleBusiness(snapshot.currency)).catch(e=>report(e)):undefined}/>}
       {tab==='Invoices'&&session.role==='owner'&&<Receivables key={revision} request={request} onSaved={refresh}/>}
       {tab==='Invoices'&&session.role==='owner'&&snapshot?.currency==='BDT'&&<LazyBoundary><Suspense fallback={null}><WalletPayments request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary>}
       {tab==='Invoices'&&<Panel title={t('Invoices')}>
         <label htmlFor="invoice-search">{t('Search by supplier or invoice number')}</label><input id="invoice-search" type="search" value={query} onChange={e=>setQuery(e.target.value)}/>
         <p className="muted">{visible.length} {visible.length===1?'invoice':'invoices'}. A possible duplicate pauses payment until you review it.</p>
         <div className="table-wrap" tabIndex={0} role="region" aria-label={t('Scrollable table')}><table><caption className="sr-only">{t('Your supplier invoices')}</caption><thead><tr><th>{t('Supplier')}</th><th>{t('Invoice')}</th><th>{t('Due')}</th><th>{t('Amount')}</th><th>{t('Status')}</th></tr></thead><tbody>
-          {visible.map(i=><tr key={i.invoice_id}><td><strong>{prettyVendor(i.vendor_id)}</strong></td><td>{i.invoice_number}{i.memo&&<details><summary>{t('Note')}</summary><p>{i.memo}</p></details>}</td><td>{formatDate(i.due_on)}{i.status==='open'&&snapshot&&i.due_on<snapshot.as_of&&<small className="negative">{t('Overdue')}</small>}</td><td className="amount">{money(i.amount_minor)}</td>
+          {visible.map(i=><tr id={'bill-'+i.invoice_id} tabIndex={-1} key={i.invoice_id}><td><strong>{prettyVendor(i.vendor_id)}</strong></td><td>{i.invoice_number}{i.memo&&<details><summary>{t('Note')}</summary><p>{i.memo}</p></details>}</td><td>{formatDate(i.due_on)}{i.status==='open'&&snapshot&&i.due_on<snapshot.as_of&&<small className="negative">{t('Overdue')}</small>}</td><td className="amount">{money(i.amount_minor)}</td>
             <td><span className="badge">{i.status==='open'?t('To pay'):'Paid'}</span>
               {i.status==='open'&&session.role==='owner'&&<details><summary>{t('Supplier permission')}</summary><button className="secondary small" disabled={busy} onClick={()=>void run(async()=>{await request('/workspace/vendor-permission',{vendor_id:i.vendor_id,enabled:true});setMessage(t('This supplier can now be paid through approvals.'));})}>{t('Allow payments to this supplier')}</button><button className="secondary small" disabled={busy} onClick={()=>void run(async()=>{await request('/workspace/vendor-permission',{vendor_id:i.vendor_id,enabled:false});setMessage(t('Payments to this supplier are blocked.'));})}>{t('Block this supplier')}</button></details>}
               {i.status==='open'&&session.role==='approver'&&<small className="muted">{t('Approvers review payments the owner prepares.')}</small>}
@@ -172,7 +184,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
           <button disabled={busy||!snapshot}>{t('Update forecast')}</button></form>
         <p className="muted">{t('Try “what if” changes here. They never change your records.')}</p>
         {forecast&&<><div className="metrics"><Metric label={t('Balance in 30 days')} value={forecast.closing_balance_minor}/><Metric label={t('Lowest balance')} value={forecast.minimum_balance_minor}/><article className="metric"><p>{t('First time below your reserve')}</p><strong>{forecast.first_shortfall_on?formatDate(forecast.first_shortfall_on):t('Never')}</strong></article></div><CashChart forecast={forecast}/><Basis count={forecast.source_ids.length}/><Notes values={forecast.assumptions}/></>}</Panel>
-        {snapshot&&forecast&&<GapFixPanel key={revision+'-'+forecast.reserve_minor} request={request} asOf={snapshot.as_of} reserve={forecast.reserve_minor??0} owner={session.role==='owner'}/>}
+        {snapshot&&forecast&&<GapFixPanel onTasksChanged={setNextCollection} openTasksInitially={focusTarget.current==='collection-tasks'} key={revision+'-'+forecast.reserve_minor} request={request} asOf={snapshot.as_of} reserve={forecast.reserve_minor??0} owner={session.role==='owner'}/>}
         {forecast&&<Panel title={t('Warnings and daily detail')}>
           {forecast.risk_flags.map((risk,n)=><div className="notice" key={n}><strong>{risk.risk==='DUPLICATE_POSSIBLE'?t('Possible duplicate bill'):risk.risk==='DUPLICATE_EXACT'?t('Duplicate bill'):risk.risk.replaceAll('_',' ').toLowerCase()}</strong><p>{risk.invoice_ids.map(number).filter(Boolean).join(', ')} · {risk.execution_blocked?'Payment is paused until you review it.':t('Review before paying.')}</p></div>)}
           <div className="table-wrap" tabIndex={0} role="region" aria-label={t('Scrollable table')}><table><caption>{t('Next 30 days')}</caption><thead><tr><th>{t('Date')}</th><th>{t('In')}</th><th>{t('Out')}</th><th>{t('Balance')}</th></tr></thead><tbody>{forecast.days.map(d=><tr key={d.date}><td>{formatDate(d.date)}</td><td>{money(d.inflow_minor)}</td><td>{money(d.outflow_minor)}</td><td className={d.projected_balance_minor<0?'negative':''}>{money(d.projected_balance_minor)}</td></tr>)}</tbody></table></div></Panel>}</>}
@@ -181,7 +193,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
         <p>{t('A second person approves each payment you prepare. Approving records the payment in your books; no money moves from a bank. Proposals expire after 15 minutes.')}</p>
         {selected&&<ProposalDetails proposal={selected} number={number(selected.details.invoice_id)}/>}
         {!proposals.length&&<p>{t('Nothing to approve yet. Open')} <button className="link" onClick={()=>setTab('Invoices')}>{t('Invoices')}</button> {t('and choose Prepare payment.')}</p>}
-        <div className="proposal-list">{proposals.map(p=><article key={p.proposal_id} className="proposal"><div><span className="badge">{p.state==='AWAITING_APPROVAL'?t('Waiting'):p.state==='EXECUTED'?'Paid':p.state==='REJECTED'?t('Rejected'):p.state==='EXPIRED'?t('Expired'):p.state}</span><h3>{prettyVendor(p.details.vendor_id)} · {nativeMoney(p.details.amount_minor)}</h3><p>{number(p.details.invoice_id)&&`Invoice ${number(p.details.invoice_id)} · `}{t('Prepared by')} {p.details.proposer_id===session.user_id?t('you'):'a teammate'}</p>{p.state==='AWAITING_APPROVAL'&&<small>{t('Expires {time}',{time:formatTime(p.details.expires_at)})}</small>}</div>
+        <div className="proposal-list">{proposals.map(p=><article id={'payment-'+p.proposal_id} tabIndex={-1} key={p.proposal_id} className="proposal"><div><span className="badge">{p.state==='AWAITING_APPROVAL'?t('Waiting'):p.state==='EXECUTED'?'Paid':p.state==='REJECTED'?t('Rejected'):p.state==='EXPIRED'?t('Expired'):p.state}</span><h3>{prettyVendor(p.details.vendor_id)} · {nativeMoney(p.details.amount_minor)}</h3><p>{number(p.details.invoice_id)&&`Invoice ${number(p.details.invoice_id)} · `}{t('Prepared by')} {p.details.proposer_id===session.user_id?t('you'):'a teammate'}</p>{p.state==='AWAITING_APPROVAL'&&<small>{t('Expires {time}',{time:formatTime(p.details.expires_at)})}</small>}</div>
           <button className="secondary" onClick={()=>setSelected(p)}>{t('Details')}</button>{p.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<button disabled={busy} onClick={()=>setSelected(p)}>{t('Review and decide')}</button>}</article>)}</div>
         {selected&&selected.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<ApprovalDialog proposal={selected} number={number(selected.details.invoice_id)} error={error} balance={snapshot?.balance_minor} busy={busy} onClose={()=>setSelected(null)} onDecision={d=>void run(()=>decide(selected,d))}/>}</Panel>}
       {tab==='Audit'&&<NotificationInbox request={request} navigate={tourNavigate}/>}

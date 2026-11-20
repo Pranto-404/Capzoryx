@@ -3,14 +3,14 @@ import {useCurrency} from './Currency';
 import {CashChart} from './Charts';
 import {t} from './i18n';
 import {formatDate} from './format';
-import type {Forecast} from './types';
+import type {Forecast,NextCollection} from './types';
 
 type Request=<T,>(path:string,body?:unknown)=>Promise<T>;
 type Action={source_id:string;scheduled_on:string;collect_by:string;amount_minor:number};
 type Plan={id?:string;actions:Action[];original_gap_minor:number;remaining_gap_minor:number;forecast:Forecast};
 type Task={id:string;action:Action;due_on:string;status:string};
 
-export function GapFixPanel({request,asOf,reserve,owner}:{request:Request;asOf:string;reserve:number;owner:boolean}){
+export function GapFixPanel({request,asOf,reserve,owner,openTasksInitially,onTasksChanged}:{request:Request;asOf:string;reserve:number;owner:boolean;openTasksInitially:boolean;onTasksChanged:(next:NextCollection|null)=>void}){
   const {nativeMoney}=useCurrency();
   const [plan,setPlan]=useState<Plan|null>(null);
   const [searched,setSearched]=useState(false);
@@ -33,9 +33,17 @@ export function GapFixPanel({request,asOf,reserve,owner}:{request:Request;asOf:s
     const result=await request<{plan:Plan|null;peak_gap_minor:number}>('/copilot/gap-fix',{as_of:asOf,horizon_days:30,reserve_minor:reserve});
     if(live.current){setPlan(result.plan);setGap(result.peak_gap_minor);setSearched(true);setAccepted(false);}
   }
+  function updateTasks(rows:Task[]){
+    setTasks(rows);
+    const next=rows[0];
+    onTasksChanged(next?{due_on:next.due_on,amount_minor:next.action.amount_minor}:null);
+  }
+  useEffect(()=>{
+    if(owner && openTasksInitially)void run(reloadTasks);
+  },[]);
   async function reloadTasks(){
     const result=await request<{tasks:Task[]}>('/copilot/tasks');
-    if(live.current){setTasks(result.tasks);setShowTasks(true);}
+    if(live.current){updateTasks(result.tasks);setShowTasks(true);}
   }
   async function accept(){
     if(!plan?.id)return;
@@ -45,10 +53,10 @@ export function GapFixPanel({request,asOf,reserve,owner}:{request:Request;asOf:s
   }
   async function closeTask(id:string,status:'done'|'dismissed'){
     const result=await request<{tasks:Task[]}>('/copilot/tasks/'+id,{status});
-    if(live.current)setTasks(result.tasks);
+    if(live.current)updateTasks(result.tasks);
   }
-  return <section className="panel">
-    <h2>{t('Plan early collections')}</h2>
+  return <section id="collection-planner" className="panel" tabIndex={-1}>
+    <h2 id="collection-tasks" tabIndex={-1}>{t('Plan early collections')}</h2>
     <p>{t('Compare up to three early collections using your original receipt dates and a reserve of {amount}.',{amount:nativeMoney(reserve)})}</p>
     <div className="actions">
       <button type="button" disabled={busy} onClick={()=>void run(preview)}>{t('Find a collection plan')}</button>

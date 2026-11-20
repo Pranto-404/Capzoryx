@@ -191,14 +191,24 @@ def workspace_bundle(actor=Depends(principal),db=Depends(db_connection)):
         ds=sec.runtime_dataset(db,actor.business_id)
         rows=db.execute('SELECT * FROM proposals WHERE business_id=? ORDER BY rowid DESC LIMIT 200',(actor.business_id,)).fetchall()
         for row in rows:sec.verify_proposal(db,row)
-        policy=db.execute('SELECT reserve_minor,payment_limit_minor FROM security_policies WHERE business_id=?',(actor.business_id,)).fetchone()
+        # Return one owner's next collection alongside the existing policy read.
+        # The subquery uses the same transaction and current session as the snapshot.
+        policy=db.execute("""SELECT p.reserve_minor,p.payment_limit_minor,
+            (SELECT t.payload_json FROM copilot_tasks t
+             JOIN security_users u ON u.business_id=t.business_id AND u.role='owner' AND u.active=1
+             JOIN security_sessions s ON s.user_id=u.user_id AND s.token_hash=? AND s.expires_at>?
+             WHERE t.business_id=p.business_id AND t.status='open' AND t.kind='collect_early'
+             ORDER BY t.due_on,t.created_at,t.id LIMIT 1)
+            FROM security_policies p WHERE p.business_id=?""", (actor.token_hash,sec.now(),actor.business_id)).fetchone()
         if policy is None:sec.fail(409,'POLICY_NOT_CONFIGURED')
+        action=json.loads(policy[2]) if policy[2] else None
+        next_collection=dict(due_on=action['collect_by'],amount_minor=action['amount_minor']) if action else None
         receipts = open_receipts(db, actor.business_id)
         week=project_cashflow(ds,ScenarioRequest(as_of=ds.as_of,horizon_days=7,reserve_minor=policy[0],delay_inflows_days=0), receipts)
         month=project_cashflow(ds,ScenarioRequest(as_of=ds.as_of,horizon_days=30,reserve_minor=policy[0],delay_inflows_days=0), receipts)
         month["collection_plan"] = collection_plan(ds, month, receipts)
         notes=record_notes.read(db, actor.business_id, events)
-        return dict(dataset_revision=sec.fingerprint(sec.original_dataset(db,actor.business_id)),snapshot=snapshot(ds),invoices=[i.model_dump(mode='json') for i in ds.invoices],events=[dict(e.model_dump(mode='json'),note=notes.get(e.source_record_id,'')) for e in ds.events],proposals=[sec.proposal_view(row) for row in rows],audit=dict(events=events,chain_verified=True,tenant_chain_head=events[-1]['event_hash'] if events else '0'*64),week=week,month=month,policy=dict(reserve_minor=policy[0],payment_limit_minor=policy[1]),simulation_only=True)
+        return dict(next_collection=next_collection,dataset_revision=sec.fingerprint(sec.original_dataset(db,actor.business_id)),snapshot=snapshot(ds),invoices=[i.model_dump(mode='json') for i in ds.invoices],events=[dict(e.model_dump(mode='json'),note=notes.get(e.source_record_id,'')) for e in ds.events],proposals=[sec.proposal_view(row) for row in rows],audit=dict(events=events,chain_verified=True,tenant_chain_head=events[-1]['event_hash'] if events else '0'*64),week=week,month=month,policy=dict(reserve_minor=policy[0],payment_limit_minor=policy[1]),simulation_only=True)
 
 
 @router.get('/workspace/export')
