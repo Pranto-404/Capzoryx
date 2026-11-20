@@ -44,7 +44,9 @@ def signature(kind, value):
 def create_schema(db):
     from api.app.services.receivables import schema as customer_schema
     from api.app.gateway import schema as gateway_schema
+    from api.app.services.record_notes import schema as record_note_schema
     financial_schema(db)
+    record_note_schema(db)
     gateway_schema(db)
     from api.app.notifications.service import schema as notifications_schema
     notifications_schema(db)
@@ -83,6 +85,22 @@ def create_schema(db):
       event_id INTEGER PRIMARY KEY AUTOINCREMENT, business_id TEXT NOT NULL, trace_id TEXT NOT NULL,
       actor_id TEXT NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL, payload TEXT NOT NULL,
       previous_hash TEXT NOT NULL, event_hash TEXT NOT NULL, signature TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS audit_by_workspace ON audit_events(business_id,event_id);
+    CREATE TABLE IF NOT EXISTS audit_checkpoints(business_id TEXT NOT NULL,event_id INTEGER NOT NULL,
+      event_hash TEXT NOT NULL,signature TEXT NOT NULL,PRIMARY KEY(business_id,event_id));
+    CREATE TABLE IF NOT EXISTS audit_history_changes(business_id TEXT PRIMARY KEY);
+    CREATE TRIGGER IF NOT EXISTS audit_history_changed AFTER UPDATE ON audit_events BEGIN
+      INSERT OR IGNORE INTO audit_history_changes VALUES (OLD.business_id);
+      INSERT OR IGNORE INTO audit_history_changes VALUES (NEW.business_id); END;
+    CREATE TRIGGER IF NOT EXISTS audit_history_deleted AFTER DELETE ON audit_events BEGIN
+      INSERT OR IGNORE INTO audit_history_changes VALUES (OLD.business_id); END;
+    CREATE TRIGGER IF NOT EXISTS audit_history_backfilled AFTER INSERT ON audit_events
+      WHEN EXISTS (SELECT 1 FROM audit_checkpoints WHERE business_id=NEW.business_id AND event_id>=NEW.event_id)
+      BEGIN INSERT OR IGNORE INTO audit_history_changes VALUES (NEW.business_id); END;
+    CREATE TRIGGER IF NOT EXISTS immutable_checkpoint_update BEFORE UPDATE ON audit_checkpoints
+      BEGIN SELECT RAISE(ABORT,'immutable audit checkpoint'); END;
+    CREATE TRIGGER IF NOT EXISTS immutable_checkpoint_delete BEFORE DELETE ON audit_checkpoints
+      BEGIN SELECT RAISE(ABORT,'immutable audit checkpoint'); END;
     CREATE TABLE IF NOT EXISTS request_budgets(scope TEXT NOT NULL, window INTEGER NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(scope,window));
     CREATE TRIGGER IF NOT EXISTS immutable_proposal BEFORE UPDATE OF proposal_id,business_id,invoice_id,proposer_id,payload,action_hash,signature ON proposals BEGIN SELECT RAISE(ABORT,'immutable proposal'); END;
     CREATE TRIGGER IF NOT EXISTS immutable_approval_update BEFORE UPDATE ON approvals BEGIN SELECT RAISE(ABORT,'immutable approval'); END;
@@ -211,10 +229,20 @@ def audit(db, principal, trace, kind, payload):
                (principal.business_id,trace,principal.user_id,kind,data['created_at'],canonical(payload),previous,digest,signature('audit',digest)))
 
 
+def check_history_marker(db,business_id):
+    if db.execute('SELECT 1 FROM audit_history_changes WHERE business_id=?',(business_id,)).fetchone():
+        fail(409,'AUDIT_INTEGRITY_FAILURE')
+
+
 def verified_audit(db, business_id):
+    """Full-chain verification for audit display and export."""
     db.row_factory = sqlite3.Row
-    rows = db.execute('SELECT * FROM audit_events WHERE business_id=? ORDER BY event_id',(business_id,)).fetchall()
-    previous = '0'*64
+    check_history_marker(db,business_id)
+    rows = db.execute('SELECT * FROM audit_events WHERE business_id=? ORDER BY event_id',(business_id,))
+    return verify_rows(rows, '0'*64)
+
+
+def verify_rows(rows, previous):
     results = []
     for row in rows:
         try:
@@ -228,6 +256,34 @@ def verified_audit(db, business_id):
         previous = digest
         results.append(dict(event,event_id=row['event_id'],event_hash=digest))
     return results
+
+
+CHECKPOINT_INTERVAL = 32
+
+
+def verify_audit_head(db, business_id):
+    """In a write transaction, verify the immutable prefix anchor and every later event."""
+    if not db.in_transaction:
+        raise RuntimeError('Audit checkpoint requires a transaction')
+    db.row_factory = sqlite3.Row
+    check_history_marker(db,business_id)
+    anchor = db.execute("""SELECT c.event_id,c.event_hash,c.signature,e.event_hash FROM audit_checkpoints c
+      LEFT JOIN audit_events e ON c.event_id=e.event_id AND c.business_id=e.business_id
+      WHERE c.business_id=? ORDER BY c.event_id DESC LIMIT 1""",(business_id,)).fetchone()
+    last_id, last_hash = 0, '0'*64
+    if anchor:
+        last_id, last_hash, mac, stored_hash = anchor
+        expected = signature('audit-checkpoint-v1',[business_id,last_id,last_hash])
+        if stored_hash != last_hash or not hmac.compare_digest(expected,mac):
+            fail(409,'AUDIT_INTEGRITY_FAILURE')
+    rows = db.execute('SELECT * FROM audit_events WHERE business_id=? AND event_id>? ORDER BY event_id',
+                      (business_id,last_id))
+    verified = verify_rows(rows,last_hash)
+    if len(verified) >= CHECKPOINT_INTERVAL:
+        head = verified[-1]
+        values = [business_id,head['event_id'],head['event_hash']]
+        db.execute('INSERT INTO audit_checkpoints VALUES (?,?,?,?)',
+                   (*values,signature('audit-checkpoint-v1',values)))
 
 
 def deny_event(db, principal, trace, code):
@@ -378,7 +434,7 @@ def propose(db, principal, invoice_id, *, expected_runtime_sha=None, on_result=N
         with transaction(db):
             current=recheck(db,principal)
             if current.role not in {'owner','approver','agent'}:fail(403,'PROPOSAL_ROLE_REQUIRED')
-            verified_audit(db,current.business_id)
+            verify_audit_head(db,current.business_id)
             if expected_runtime_sha is not None and current!=principal:fail(409,'AI_IDENTITY_CONTEXT_CHANGED')
             if expected_runtime_sha is not None and fingerprint(runtime_dataset(db,current.business_id))!=expected_runtime_sha:fail(409,'AI_FACTS_STALE_REFRESH_REQUIRED')
             ds,invoice,preview=check_invoice_policy(db,current,invoice_id)
@@ -448,7 +504,7 @@ def decide(db, principal, proposal_id, request):
             payload=verify_proposal(db,row)
             if current.user_id==row['proposer_id']:fail(403,'INDEPENDENT_APPROVER_REQUIRED')
             if not hmac.compare_digest(request.proposal_hash,row['action_hash']):fail(409,'APPROVAL_HASH_MISMATCH')
-            verified_audit(db,current.business_id)
+            verify_audit_head(db,current.business_id)
             if row['state']=='EXECUTED':
                 if request.decision!='approve':fail(409,'DECISION_ALREADY_FINAL')
                 posting=db.execute('SELECT * FROM postings WHERE proposal_id=?',(proposal_id,)).fetchone()

@@ -447,6 +447,6 @@ def recover(body:RecoveryRequest,request:Request,response:Response,db=Depends(db
         db.execute('DELETE FROM security_sessions WHERE user_id IN (SELECT user_id FROM account_members WHERE account_id=?)',(row[0],))
         app_sessions.revoke_account(db,row[0])
         user=personal_member(db,row[0]);token=app_sessions.issue_client(db,request,response,user,SESSION_TTL)
-        actor=sec.authenticate(db,token);sec.verified_audit(db,actor.business_id)
+        actor=sec.authenticate(db,token);sec.verify_audit_head(db,actor.business_id)
         sec.audit(db,actor,'recovery-'+uuid.uuid4().hex,'ACCOUNT_RECOVERED',{'sessions_revoked':True})
     return dict(session_result(db,request,token),recovery_code=code)

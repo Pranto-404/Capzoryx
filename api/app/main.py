@@ -3,11 +3,13 @@ from contextlib import asynccontextmanager, closing
 import os
 import logging
 import sqlite3
+from uuid import uuid4
+from api.app.gateway import request_trace
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from api.app import app_sessions, security
+from api.app import app_sessions, quality, security
 from api.app.notifications.routes import router as notification_router
 from api.app.body_limit import BodyLimitMiddleware
 from api.app.ratelimit import limiter
@@ -65,6 +67,7 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(notification_router)
+app.include_router(quality.router)
 app.include_router(accounts.router)
 app.include_router(app_sessions.router)
 app.include_router(inputs.router)
@@ -111,7 +114,16 @@ async def headers(request, call_next):
     elif (os.environ.get('RENDER') or os.environ.get('VERCEL')) and request.url.path in {'/docs','/redoc','/openapi.json','/docs/oauth2-redirect'}:
         response=JSONResponse(status_code=404,content={'error':{'code':'NOT_FOUND'}})
     else:
-        response = await call_next(request)
+        if request.url.path.startswith('/api/assist/') or request.url.path == '/api/i18n':
+            trace = uuid4().hex
+            scope = request_trace.set(trace)
+            try:
+                response = await call_next(request)
+                response.headers['X-Capzoryx-Trace'] = trace
+            finally:
+                request_trace.reset(scope)
+        else:
+            response = await call_next(request)
     response.headers['X-Frame-Options']='DENY'
     response.headers['Permissions-Policy']='camera=(self), microphone=(self), geolocation=(), payment=()'
     if request.url.path.startswith('/api/'):

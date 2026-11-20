@@ -11,6 +11,7 @@ from api.app.services.finance import Dataset, FinancingRequest, compare_financin
 from api.app.services.gap_fix import collection_plan
 from api.app.services.receivables import open_receipts
 from api.app.services.storage import store_dataset
+from api.app.services import record_notes
 
 ProposalPath=Annotated[str,ApiPath(pattern=r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')]
 TracePath=Annotated[str,ApiPath(pattern=r'^[A-Za-z0-9-]{1,80}$')]
@@ -196,7 +197,7 @@ def workspace_bundle(actor=Depends(principal),db=Depends(db_connection)):
         week=project_cashflow(ds,ScenarioRequest(as_of=ds.as_of,horizon_days=7,reserve_minor=policy[0],delay_inflows_days=0), receipts)
         month=project_cashflow(ds,ScenarioRequest(as_of=ds.as_of,horizon_days=30,reserve_minor=policy[0],delay_inflows_days=0), receipts)
         month["collection_plan"] = collection_plan(ds, month, receipts)
-        notes={a['payload']['source_id']:a['payload'].get('note','') for a in events if a['kind']=='RECORD_ADDED'}
+        notes=record_notes.read(db, actor.business_id, events)
         return dict(dataset_revision=sec.fingerprint(sec.original_dataset(db,actor.business_id)),snapshot=snapshot(ds),invoices=[i.model_dump(mode='json') for i in ds.invoices],events=[dict(e.model_dump(mode='json'),note=notes.get(e.source_record_id,'')) for e in ds.events],proposals=[sec.proposal_view(row) for row in rows],audit=dict(events=events,chain_verified=True,tenant_chain_head=events[-1]['event_hash'] if events else '0'*64),week=week,month=month,policy=dict(reserve_minor=policy[0],payment_limit_minor=policy[1]),simulation_only=True)
 
 
@@ -214,7 +215,7 @@ def export_workspace(actor=Depends(principal),db=Depends(db_connection)):
             collections['settlements'] = [dict(row) for row in db.execute(
                 'SELECT id,receivable_id,amount_minor,cash_record_id,created_at FROM receivable_settlements WHERE business_id=? ORDER BY created_at,id',
                 (actor.business_id,))]
-        return dict(**collections,format_version=1,workspace_id=actor.business_id,original_dataset=original.model_dump(mode='json'),current_dataset=current.model_dump(mode='json'),audit_events=events,recordkeeping_only=True,simulation_only=True)
+        return dict(**collections, cash_notes=record_notes.read(db, actor.business_id, events),format_version=1,workspace_id=actor.business_id,original_dataset=original.model_dump(mode='json'),current_dataset=current.model_dump(mode='json'),audit_events=events,recordkeeping_only=True,simulation_only=True)
 
 
 @router.get('/agent/status')

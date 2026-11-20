@@ -6,6 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import Field
 from api.app import security as sec
+from api.app.services import record_notes
 from api.app.accounts import today_bd
 from api.app.contracts import Contract, PositiveMinor, ISODate, RecordId, Currency
 from api.app.routes import db_connection, principal
@@ -62,7 +63,7 @@ def add_record(body:InputRecord,actor=Depends(principal),db=Depends(db_connectio
     with sec.transaction(db):
         current=sec.recheck(db,actor)
         if current.role!='owner':sec.fail(403,'OWNER_REQUIRED')
-        sec.verified_audit(db,current.business_id)
+        sec.verify_audit_head(db,current.business_id)
         return append_record(db, current, body)
 
 
@@ -107,7 +108,8 @@ def append_record(db, current, body):
         from api.app.notifications.service import duplicate_notice
         duplicate_notice(db,current.business_id,runtime,record_id)
     db.execute('INSERT INTO workspace_input_requests VALUES (?,?,?)',(current.business_id,body.request_id,digest))
-    sec.audit(db,current,'input-'+body.request_id,'RECORD_ADDED',dict(source_id=record_id,kind=kind,previous_revision=fingerprint(ds),dataset_sha256=fingerprint(new),record_sha256=fingerprint(typed),payee_allowed=body.trust_vendor,note=body.memo))
+    note_fields = record_notes.store(db, current.business_id, record_id, kind, body.memo)
+    sec.audit(db,current,'input-'+body.request_id,'RECORD_ADDED',dict(source_id=record_id,kind=kind,previous_revision=fingerprint(ds),dataset_sha256=fingerprint(new),record_sha256=fingerprint(typed),payee_allowed=body.trust_vendor,**note_fields))
     return dict(source_id=record_id,replayed=False,simulation_only=True)
 
 
@@ -128,7 +130,7 @@ def import_initial(body:Dataset,actor=Depends(principal),db=Depends(db_connectio
     with sec.transaction(db):
         current=sec.recheck(db,actor)
         if current.role!='owner':sec.fail(403,'OWNER_REQUIRED')
-        sec.verified_audit(db,current.business_id)
+        sec.verify_audit_head(db,current.business_id)
         previous=sec.original_dataset(db,current.business_id)
         if has_financial_activity(db, current.business_id, previous):sec.fail(409,'WORKSPACE_NOT_EMPTY')
         new=validated(body)
@@ -153,7 +155,7 @@ def vendor_permission(body:VendorPermission,actor=Depends(principal),db=Depends(
     with sec.transaction(db):
         current=sec.recheck(db,actor)
         if current.role!='owner':sec.fail(403,'OWNER_REQUIRED')
-        sec.verified_audit(db,current.business_id)
+        sec.verify_audit_head(db,current.business_id)
         ds=sec.original_dataset(db,current.business_id)
         if not any(i.vendor_id==body.vendor_id for i in ds.invoices):sec.fail(404,'VENDOR_NOT_FOUND')
         db.execute('INSERT INTO trusted_vendors VALUES (?,?,?) ON CONFLICT(business_id,vendor_id) DO UPDATE SET enabled=excluded.enabled',(current.business_id,body.vendor_id,int(body.enabled)))
@@ -175,7 +177,7 @@ def set_currency(body:WorkspaceCurrency,actor=Depends(principal),db=Depends(db_c
     with sec.transaction(db):
         current=sec.recheck(db,actor)
         if current.role!='owner':sec.fail(403,'OWNER_REQUIRED')
-        sec.verified_audit(db,current.business_id)
+        sec.verify_audit_head(db,current.business_id)
         previous=sec.original_dataset(db,current.business_id)
         if fingerprint(previous)!=body.expected_revision:sec.fail(409,'DATA_CHANGED_REFRESH_REQUIRED')
         if body.currency==previous.currency:return dict(simulation_only=True)

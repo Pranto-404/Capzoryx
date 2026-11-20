@@ -51,7 +51,7 @@ def owner_transaction(db, actor):
         if db.execute('SELECT 1 FROM workspace_meta WHERE business_id=? AND archived_at IS NOT NULL',
                       (current.business_id,)).fetchone():
             sec.fail(403, 'WORKSPACE_CLEARED')
-        sec.verified_audit(db, current.business_id)
+        sec.verify_audit_head(db, current.business_id)
         yield current
 
 
