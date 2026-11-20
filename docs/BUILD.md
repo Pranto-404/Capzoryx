@@ -6,7 +6,7 @@ The application baseline includes owner accounts, two-step sign-in, workspace sh
 
 ## Staging
 
-Use the repository root on Vercel and branch v2 on Render. The frontend sends same-origin /api requests to the designated Render service. Configure SAFELEDGER_CORS_ORIGINS and SAFELEDGER_PUBLIC_URL with the exact new frontend origin. The service starts via bash render_start.sh. Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN for a new database and provide a stable SAFELEDGER_SIGNING_KEY of 64 lowercase hex characters. Keep secrets in the service dashboard.
+For the public website, import the repository root into Vercel and select main as its production branch. Develop the installable app on v2. The existing free Render staging API follows v2 and serves both clients. The frontend sends same-origin /api requests to the designated Render service. Configure SAFELEDGER_CORS_ORIGINS and SAFELEDGER_PUBLIC_URL with the exact new frontend origin. The service starts via bash render_start.sh. Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN for a new database and provide a stable SAFELEDGER_SIGNING_KEY of 64 lowercase hex characters. Keep secrets in the service dashboard.
 
 The pilot uses a sleeping Render free instance. Keep-alive workflows consume shared instance hours. The React build, local parser and financial calculations need no API credits. Smart assist starts off. Leave cloud credentials, translation billing and paid fallback unset on the free pilot. Stop at free-tier limits.
 

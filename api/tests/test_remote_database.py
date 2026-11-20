@@ -66,3 +66,11 @@ def test_constraint_rollback_and_baton_rotation():
 def test_vercel_never_falls_back_to_ephemeral_sqlite(monkeypatch,url,token):
  monkeypatch.setenv('VERCEL','1');monkeypatch.setenv('TURSO_DATABASE_URL',url);monkeypatch.setenv('TURSO_AUTH_TOKEN',token)
  with pytest.raises(sqlite3.DatabaseError):connect()
+
+
+def test_turso_auth_failure_reports_status_without_credentials():
+    db = client(lambda request: httpx.Response(401, text='private diagnostic'))
+    with pytest.raises(sqlite3.DatabaseError) as caught:
+        db.execute('SELECT 1')
+    assert str(caught.value) == 'Remote database operation failed (Turso HTTP 401)'
+    db.close()

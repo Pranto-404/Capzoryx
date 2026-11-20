@@ -44,4 +44,4 @@ node scripts/check_i18n.cjs
 node scripts/extract_ui_strings.cjs --check
 ```
 
-The development branch is `v2`. Local SQLite is sufficient for development. Hosted instances require a dedicated Turso database and a stable signing key. Deployment details and remaining product milestones are in [the build notes](docs/BUILD.md).
+The installable phone app is developed on `v2`. The browser website is released from `main`. Both clients use the same finance API. Local SQLite is sufficient for development. Hosted instances require a dedicated Turso database and a stable signing key. Deployment details and remaining product milestones are in [the build notes](docs/BUILD.md).

@@ -84,7 +84,9 @@ class RemoteConnection:
                 # A pooled connection the server already closed. Nothing has started on this stream yet, so one retry is safe.
                 if self.baton is not None:raise
                 response=self.client.post(self.base+'/v2/pipeline',json={'baton':self.baton,'requests':requests})
-            response.raise_for_status()
+            if not response.is_success:
+                self.failed = True
+                raise sqlite3.DatabaseError(f'Remote database operation failed (Turso HTTP {response.status_code})')
             body=response.json()
             baton=body['baton']
             if not allow_close and request['type']!='close' and not isinstance(baton,str):raise ValueError('Closed stream')
@@ -95,6 +97,9 @@ class RemoteConnection:
                     raise ValueError('Invalid routing URL')
                 self.base=body['base_url'].rstrip('/')
             if len(body['results'])!=len(requests):raise ValueError('Invalid result count')
+            if len(requests) > 1 and body['results'][0].get('type') == 'error':
+                self.failed = True
+                raise sqlite3.DatabaseError('Remote database operation failed (foreign key setup rejected)')
             if len(requests)>1 and (body['results'][0]['type']!='ok' or body['results'][0]['response']['type']!='execute'):raise ValueError('Foreign key configuration failed')
             result=body['results'][-1]
             if result['type']=='error':
@@ -102,15 +107,18 @@ class RemoteConnection:
                 if code.startswith('SQLITE_CONSTRAINT'):
                     # Constraint failure aborts the statement, not the stream. Caller rolls back.
                     raise sqlite3.IntegrityError('Database constraint rejected operation')
-                raise ValueError('Remote operation rejected')
+                self.failed = True
+                reason = code if code in {'SQLITE_READONLY', 'SQLITE_AUTH', 'SQLITE_PERM', 'SQLITE_BUSY', 'SQLITE_LOCKED', 'SQLITE_ERROR'} else 'statement rejected'
+                raise sqlite3.DatabaseError(f'Remote database operation failed ({reason})')
             if result['type']!='ok' or result['response']['type']!=request['type']:raise ValueError('Invalid response')
             return result['response']
         except sqlite3.IntegrityError:
             raise
-        except (httpx.HTTPError,ValueError,KeyError,TypeError):
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as error:
             # Never send a new null baton and silently continue a lost transaction.
             self.failed=True
-            raise sqlite3.DatabaseError('Remote database operation failed') from None
+            reason = type(error).__name__ if isinstance(error, httpx.HTTPError) else 'invalid pipeline response'
+            raise sqlite3.DatabaseError(f'Remote database operation failed ({reason})') from None
 
     def execute(self, sql, parameters=()):
         operation=sql.lstrip().split(None,1)[0].upper()
