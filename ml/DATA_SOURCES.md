@@ -1,0 +1,11 @@
+# Dataset inventory
+
+| Dataset | Origin and permitted use | Split and limitations |
+| --- | --- | --- |
+| `evals/fixtures/records.jsonl` | 18 fictional transactions authored for this repository, under its MIT license | Public synthetic regression examples in Bengali script, Banglish and English. The parser was improved using this set. |
+| `data/local_assistant/intents.json` | Project intent-training phrases, distributed with the repository under MIT | Used to train the local intent classifier. |
+| `data/local_assistant/heldout_eval*.json` | Fictional questions about a synthetic workspace, distributed with the repository under MIT | v1 and v2 are development sets. The v3 result is a small generalization check for the intent classifier. |
+| `data/fixtures/` | Project-generated business records from `scripts/build_fixtures.py`, under MIT | Financial engine fixtures generated with a fixed seed. |
+| Team-written extraction holdout | Voluntary contributions containing only invented businesses, transactions and names. Record the contributor's permission for internal evaluation separately. | Keep each contribution in the private test set. Record the digest of the frozen set before evaluating candidate models. |
+
+Keep consent records, contributor identities and private datasets outside Git. Each new source needs an entry recording ownership, permission or license, intended use and split before training or evaluating with it.
