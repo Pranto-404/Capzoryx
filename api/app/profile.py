@@ -10,7 +10,7 @@ import sqlite3
 import uuid
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field, StrictBool
-from api.app import mailer, mfa, security as sec
+from api.app import gateway, mailer, mfa, security as sec
 from api.app.accounts import (browser_origin, complete_login, failure_scopes, locked_out, normalize_email, password_hash, rate,
                               record_failure, reject_weak_password)
 from api.app.contracts import Contract
@@ -33,6 +33,11 @@ def schema(db):
     ''')
     have = {r[1] for r in db.execute('PRAGMA table_info(account_profiles)').fetchall()}
     if 'display_currency' not in have:db.execute("ALTER TABLE account_profiles ADD COLUMN display_currency TEXT NOT NULL DEFAULT 'USD'")
+    if 'cloud_notice' not in have:
+        with sec.transaction(db):
+            if 'cloud_notice' not in {r[1] for r in db.execute('PRAGMA table_info(account_profiles)')}:
+                db.execute("ALTER TABLE account_profiles ADD COLUMN cloud_notice INTEGER NOT NULL DEFAULT 0")
+                db.execute("UPDATE account_profiles SET cloud_notice=1,smart_assist=0 WHERE smart_assist=1")
     if 'language' not in have:db.execute("ALTER TABLE account_profiles ADD COLUMN language TEXT NOT NULL DEFAULT 'en'")
 
 
@@ -99,17 +104,17 @@ def spend_code(db, purpose, subject):
 # ---------- profile ----------
 @router.get('/auth/capabilities')
 def capabilities():
-    return dict(email_codes=mailer.configured(), cloud_assist=bool(os.environ.get('SAFELEDGER_LLM_API_KEY')), simulation_only=True)
+    return dict(email_codes=mailer.configured(), cloud_assist=any('question' in p['allowed'] for p in gateway.disclosure()), simulation_only=True)
 
 
 @router.get('/account/profile')
 def get_profile(actor=Depends(principal), db=Depends(db_connection)):
     account = account_of(db, actor)
-    row = db.execute("SELECT a.username,COALESCE(p.display_name,''),p.photo,COALESCE(p.smart_assist,0),COALESCE(p.display_currency,'USD'),COALESCE(p.language,'en') FROM auth_accounts a LEFT JOIN account_profiles p ON p.account_id=a.account_id WHERE a.account_id=?", (account,)).fetchone()
+    row = db.execute("SELECT a.username,COALESCE(p.display_name,''),p.photo,COALESCE(p.smart_assist,0),COALESCE(p.display_currency,'USD'),COALESCE(p.language,'en'),COALESCE(p.cloud_notice,0) FROM auth_accounts a LEFT JOIN account_profiles p ON p.account_id=a.account_id WHERE a.account_id=?", (account,)).fetchone()
     email = db.execute('SELECT email,verified FROM account_emails WHERE account_id=?', (account,)).fetchone()
     enabled = db.execute('SELECT enabled FROM account_mfa WHERE account_id=?', (account,)).fetchone()
     return dict(username=row[0], display_name=row[1], photo=row[2], smart_assist=bool(row[3]), display_currency=row[4], language=row[5], email=email[0] if email else None,
-                email_verified=bool(email and email[1]), two_factor=bool(enabled and enabled[0]), email_service=mailer.configured(), simulation_only=True)
+                cloud_notice=bool(row[6]),cloud_providers=gateway.disclosure(),email_verified=bool(email and email[1]), two_factor=bool(enabled and enabled[0]), email_service=mailer.configured(), simulation_only=True)
 
 
 class ProfileUpdate(Contract):
@@ -129,7 +134,7 @@ def update_profile(body: ProfileUpdate, actor=Depends(principal), db=Depends(db_
             if any(ord(ch) < 32 for ch in name):sec.fail(422, 'INVALID_NAME')
             db.execute('UPDATE account_profiles SET display_name=? WHERE account_id=?', (name, account))
         if body.smart_assist is not None:
-            db.execute('UPDATE account_profiles SET smart_assist=? WHERE account_id=?', (int(body.smart_assist), account))
+            db.execute('UPDATE account_profiles SET smart_assist=?,cloud_notice=0 WHERE account_id=?', (int(body.smart_assist), account))
         if body.display_currency is not None:
             db.execute('UPDATE account_profiles SET display_currency=? WHERE account_id=?', (body.display_currency, account))
         if body.language is not None:

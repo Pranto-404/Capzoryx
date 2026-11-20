@@ -43,7 +43,9 @@ def signature(kind, value):
 
 def create_schema(db):
     from api.app.services.receivables import schema as customer_schema
+    from api.app.gateway import schema as gateway_schema
     financial_schema(db)
+    gateway_schema(db)
     customer_schema(db)
     db.executescript('''
     CREATE TABLE IF NOT EXISTS security_users(

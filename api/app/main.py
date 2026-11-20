@@ -30,6 +30,8 @@ SCHEMA_VERSION = 1
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from api.app import gateway
+    gateway.reset()
     limiter.reset()
     mailer.reset_budget()
     with closing(connect()) as db:
@@ -92,7 +94,11 @@ async def database_error(request,exc):
 
 @app.middleware("http")
 async def headers(request, call_next):
-    if (os.environ.get('RENDER') or os.environ.get('VERCEL')) and request.url.path in {'/docs','/redoc','/openapi.json','/docs/oauth2-redirect'}:
+    if (os.getenv('SAFELEDGER_READ_ONLY') == '1' and request.method != 'GET'
+            and (request.url.path == '/api' or request.url.path.startswith('/api/'))
+            and not (request.method == 'POST' and request.url.path == '/api/auth/logout')):
+        response=JSONResponse(status_code=503,content={'error':{'code':'READ_ONLY_MODE'}})
+    elif (os.environ.get('RENDER') or os.environ.get('VERCEL')) and request.url.path in {'/docs','/redoc','/openapi.json','/docs/oauth2-redirect'}:
         response=JSONResponse(status_code=404,content={'error':{'code':'NOT_FOUND'}})
     else:
         response = await call_next(request)

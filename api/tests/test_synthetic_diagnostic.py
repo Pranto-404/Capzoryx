@@ -38,7 +38,7 @@ def test_diagnostic_requires_owner_and_explicit_confirmation(rig,monkeypatch):
 def test_provider_http_status_is_sanitized_and_no_error_body_is_exposed(world,monkeypatch):
     c,_=world;signup(c,'diagnostic_owner')
     from api.app.agents import diagnostic
-    def failure():raise ProviderError('AI_PROVIDER_REJECTED',http_status=404)
+    def failure(**kwargs):raise ProviderError('AI_PROVIDER_REJECTED',http_status=404)
     monkeypatch.setattr(diagnostic,'synthetic_check',failure)
     r=c.post('/api/agent/diagnostic',json={'confirm_synthetic_test':True})
     assert r.status_code==503 and r.json()['provider_http_status']==404

@@ -90,6 +90,7 @@ def test_language_and_display_currency_are_saved_on_the_account(world):
 
 def test_google_translation_is_used_when_a_key_is_set_and_is_fast(world, monkeypatch):
     c, _ = world
+    monkeypatch.setenv('SAFELEDGER_GOOGLE_TRANSLATE_FREE_CONFIRMED','1')
     monkeypatch.setenv('SAFELEDGER_GOOGLE_TRANSLATE_KEY', 'test-google-key')
     seen = []
     def handler(request):
@@ -111,6 +112,7 @@ def test_google_translation_is_used_when_a_key_is_set_and_is_fast(world, monkeyp
 
 def test_google_failure_falls_back_to_english_without_breaking(world, monkeypatch):
     c, _ = world
+    monkeypatch.setenv('SAFELEDGER_GOOGLE_TRANSLATE_FREE_CONFIRMED','1')
     monkeypatch.setenv('SAFELEDGER_GOOGLE_TRANSLATE_KEY', 'test-google-key')
     monkeypatch.setattr(i18n, 'GOOGLE_TRANSPORT', httpx.MockTransport(lambda r: httpx.Response(403, json={})))
     resp = c.get('/api/i18n?lang=de')

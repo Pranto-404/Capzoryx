@@ -64,6 +64,11 @@ function ProfileTab({session,profile,request,reloadProfile,cloudAvailable}:Setti
       <Notice m={mail.message}/>
     </Section>
     <Section title={t('Smart assist')} hint={t('Allow the configured online assistant to receive your question, recent chat and a summary of your figures. The provider may retain them. Photo reading runs on your device.')}>
+      {profile?.cloud_notice&&<p className="notice">{t('Online assistance was switched off when the provider policy changed. Review the available providers before enabling it again.')}</p>}
+      {profile?.cloud_providers?.map(provider=><p key={provider.host}><strong>{provider.label}</strong> · {provider.host} · {provider.model}<br/>
+        {provider.allowed.includes('record_data')?t('Receives selected records after consent. Training on records is disabled.'):
+          provider.allowed.includes('question')?t('Receives questions and a short financial summary after consent. The provider may review them or use them for training.'):
+          t('Receives interface labels only.')}</p>)}
       <label className="check"><input type="checkbox" checked={profile?.smart_assist??false} disabled={busy||!cloudAvailable} onChange={e=>void run(async()=>{await request('/account/profile',{smart_assist:e.target.checked});},info,e.target.checked?t('Smart assist is on.'):t('Smart assist is off.'))}/>{t('Allow online assistance')}</label>
       {!cloudAvailable&&<p className="small muted">{t('Smart assist is not available on this site right now.')}</p>}
     </Section>
