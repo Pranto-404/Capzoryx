@@ -1,5 +1,6 @@
 import {publicOrigin} from './apiBase';
 import {useCallback,useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
+import {ModelQuality} from './ModelQuality';
 import {CurrencySelect} from './Currency';
 import {PasswordStrength} from './PasswordStrength';
 import {formatTime,initials,prepareAvatar,workspaceLabel} from './format';
@@ -182,6 +183,7 @@ function DataTab({session,request,changeSession,lists,reloadLists,onExportPdf,on
       <div className="actions"><button disabled={exporting} onClick={()=>void onExportPdf()}>{exporting?t('Preparing…'):t('Download PDF report')}</button><button className="secondary" disabled={exporting} onClick={()=>void onExportJson()}>{t('Backup file (JSON)')}</button></div>
       <p className="small muted">{t('The PDF uses this workspace’s own currency. The backup file is a complete copy of your records and history, for safekeeping.')}</p>
     </Section>
+    {session.role==='owner'&&<ModelQuality request={request}/>}
     <Section title={t('Switch data')} hint={t('Each workspace keeps one currency, so your records never get mixed. Switch any time from the menu at the top.')}>
       <ul className="people">{lists.workspaces.map(w=><li key={w.business_id}><div><strong>{workspaceLabel(w.name)}{w.business_id===session.business_id&&' · open now'}</strong><small>{w.currency||'—'} · {w.role==='owner'?t('You own it'):w.role==='approver'?t('Shared with you (approver)'):t('Shared with you (viewer)')}</small></div>
         {w.business_id!==session.business_id&&<button className="secondary small" disabled={busy} onClick={()=>void act(async()=>{changeSession(await request<Session>('/account/switch',{business_id:w.business_id}));},t('Switched.'))}>{t('Open')}</button>}</li>)}</ul>
@@ -189,6 +191,7 @@ function DataTab({session,request,changeSession,lists,reloadLists,onExportPdf,on
       <form onSubmit={(e:FormEvent)=>{e.preventDefault();void act(async()=>{changeSession(await request<Session>('/account/workspaces',{kind:'personal',name:newName.trim()||newCurrency+' workspace',currency:newCurrency}));setNewName('');},'New workspace created.');}}><h3>{t('Add a workspace for another currency')}</h3>
         <div className="form-grid"><label>{t('Name (optional)')}<input value={newName} maxLength={60} onChange={e=>setNewName(e.target.value)} placeholder={t('e.g. Export sales')}/></label><label htmlFor="new-ws-currency">{t('Currency')}<CurrencySelect id="new-ws-currency" value={newCurrency} onChange={setNewCurrency}/></label></div><button className="secondary" disabled={busy}>{t('Create workspace')}</button></form>
     </Section>
+    <p className="muted">{t('Earlier notes may remain in signed activity history and invoice snapshots. Clearing a workspace keeps its financial history.')}</p>
     <Section title={t('Clear data')} hint={t('Hide the data of one or more currencies, or everything. Cleared data disappears from your account right away and can be restored for 30 days.')}>
       {!owned.length?<p className="muted">{t('You do not own any workspace that can be cleared.')}</p>:<>
         <label className="check"><input type="checkbox" checked={allPicked} onChange={e=>setPicked(e.target.checked?owned.map(w=>w.business_id):[])}/>{t('Select all')}</label>

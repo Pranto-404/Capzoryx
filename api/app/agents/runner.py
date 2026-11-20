@@ -48,7 +48,7 @@ def reserve_run(db,actor,request,provider):
         current=sec.recheck(db,actor)
         count=db.execute('SELECT count(*) FROM agent_runs WHERE business_id=? AND started_at>?',(current.business_id,sec.now()-3600)).fetchone()[0]
         if count>=20:sec.fail(429,'AI_HOURLY_REQUEST_BUDGET_EXCEEDED')
-        sec.verified_audit(db,current.business_id)
+        sec.verify_audit_head(db,current.business_id)
         mode='mock_test_only' if provider.is_mock else 'configured_live_provider'
         db.execute('INSERT INTO agent_runs VALUES (?,?,?,?,?,?,?,NULL)',(run_id,current.business_id,current.user_id,sec.now(),'STARTED',hashlib.sha256(request.task.encode()).hexdigest(),mode))
         sec.audit(db,current,run_id,'AGENT_STARTED',{'provider_mode':mode,'task_sha256':hashlib.sha256(request.task.encode()).hexdigest(),'external_ai_consent':request.external_ai_consent,'fallback_ai_consent':request.fallback_ai_consent})

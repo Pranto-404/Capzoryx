@@ -1,5 +1,6 @@
 """Privacy classification, quotas and routing for opt-in model inference."""
 from collections import OrderedDict, deque
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -15,6 +16,7 @@ from api.app import security as sec
 from api.app.agents.errors import ProviderError
 
 REGISTRY = json.loads(Path(__file__).with_name('gateway_routes.json').read_text())
+request_trace = ContextVar('gateway_request_trace', default=None)
 TASKS = REGISTRY['tasks']
 LOCK = threading.Lock()
 _cache = OrderedDict()
@@ -30,6 +32,8 @@ def schema(db):
         task TEXT NOT NULL,provider TEXT NOT NULL,model TEXT NOT NULL,data_class TEXT NOT NULL,
         fallback_depth INTEGER NOT NULL,latency_ms INTEGER NOT NULL,prompt_tokens INTEGER,
         completion_tokens INTEGER,ok INTEGER NOT NULL,created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS calls_by_workspace_time ON model_calls(business_hash,created_at);
+    CREATE INDEX IF NOT EXISTS calls_by_time ON model_calls(created_at);
     """)
 
 
@@ -185,7 +189,7 @@ def complete(task, messages, *, db, business_id, data_class, consent=False, trac
     raw = json.dumps([messages,schema,max_tokens], ensure_ascii=False, separators=(',',':')).encode()
     if len(raw) > (1900000 if vision else 65536):
         raise ProviderError('AI_INPUT_BUDGET_EXCEEDED')
-    trace = trace_id or uuid4().hex
+    trace = trace_id or request_trace.get() or uuid4().hex
     preferred = os.getenv('SAFELEDGER_VISION_MODEL') if vision else None
     deadline = time.monotonic() + spec['timeout']
     attempts = 0
@@ -249,5 +253,5 @@ def agent_call(db, provider, messages, *, business_id, trace_id, task, **options
 def translate_labels(db, batch, send):
     if os.getenv('SAFELEDGER_GOOGLE_TRANSLATE_FREE_CONFIRMED') != '1':
         raise ProviderError('AI_FREE_TIER_CONFIRMATION_REQUIRED')
-    return metered(db, 'translate_ui', 'system:translations', uuid4().hex, 'translate', 'standard',
+    return metered(db, 'translate_ui', 'system:translations', request_trace.get() or uuid4().hex, 'translate', 'standard',
                    'ui_text', sum(len(text.encode()) for text in batch), 0, 0, lambda:(send(), None))
