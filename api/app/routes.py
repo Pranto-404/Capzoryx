@@ -47,11 +47,15 @@ def principal(request: Request, db=Depends(db_connection)):
         raise
     sec.budget(db,'session:'+actor.token_hash,240 if request.method=='GET' else 60)
     from api.app.accounts import PUBLIC_TEMPLATES
-    meta=db.execute('SELECT kind,archived_at FROM workspace_meta WHERE business_id=?',(actor.business_id,)).fetchone()
+    from api.app.feature_flags import workspace_status
+    route = request.scope.get('route')
+    meta = workspace_status(db, actor.business_id, getattr(route, 'path', request.url.path))
     if actor.business_id in PUBLIC_TEMPLATES or (meta and meta[0]=='demo'):
         sec.fail(403,'ARCHIVED_EXAMPLE_WORKSPACE')
     if meta and meta[1]:
         sec.fail(403,'WORKSPACE_CLEARED')
+    if meta and not meta[2]:
+        sec.fail(503, 'FEATURE_PAUSED')
     return actor
 
 

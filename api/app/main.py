@@ -17,7 +17,7 @@ from api.app.body_limit import BodyLimitMiddleware
 from api.app.ratelimit import limiter
 from api.app.copilot import plans
 from api.app.routes import router
-from api.app import statements
+from api.app import feature_flags, statements
 from api.app.agents.schema import create_schema as agent_schema
 from api.app.agents.errors import ProviderError
 from api.app.copilot import books
@@ -63,6 +63,7 @@ async def lifespan(app: FastAPI):
         payments.schema(db)
         payment_profile.schema(db)
         statements.schema(db)
+        feature_flags.schema(db)
         accounts.archive_legacy_examples(db)
     yield
 
@@ -76,6 +77,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-SafeLedger-Client", "MCP-Protocol-Version"],
 )
 app.include_router(router)
+app.include_router(feature_flags.router)
 app.include_router(telegram.router)
 app.include_router(notification_router)
 app.include_router(quality.router)
