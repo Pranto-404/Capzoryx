@@ -6,7 +6,17 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://capzoryx-staging-api.onrender.com/api/:path*"
+      "destination": "https://capzoryx-staging-api.onrender.com/api/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "capzoryx-app.vercel.app"
+        }
+      ]
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "https://capzoryx-qa-api.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
