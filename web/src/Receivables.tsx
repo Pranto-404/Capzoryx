@@ -8,12 +8,24 @@ import {t} from './i18n';
 
 type Customer = {id:string; name:string|null; phone:string|null};
 type Debt = {id:string; customer_id:string; number:string|null; issued_on:string; due_on:string; amount_minor:number; open_minor:number};
-type Book = {customers:Customer[]; receivables:Debt[]};
+type Outlook={status:'estimated'|'insufficient_history';reason:string;history_count:number;customer_count:number;within_days_pct?:Record<'7'|'14'|'30',number>};
+type Book = {customers:Customer[]; receivables:Debt[]; collection_outlook?:Record<string,Outlook>};
 type Request = <T,>(path:string,body?:unknown)=>Promise<T>;
 type Props = {request:Request; onSaved:()=>Promise<void>};
 
 const today = () => new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Dhaka',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const emptyBook:Book = {customers:[],receivables:[]};
+
+function PaymentTiming({outlook}:{outlook?:Outlook}){
+  if(!outlook)return null;
+  return <details><summary>{t('Estimated collection timing')}</summary>
+    {outlook.within_days_pct?<><p>{t('Chance of full collection from today')}</p>
+      <ul>{(['7','14','30'] as const).map(day=><li key={day}>{t('Within {days} days',{days:day})} · {outlook.within_days_pct![day]}%</li>)}</ul>
+      <small>{outlook.customer_count?t('Based on {n} comparable paid bills for this customer, adjusted using your workspace history.',{n:outlook.customer_count}):t('Based on {n} comparable paid bills in this workspace.',{n:outlook.history_count})}</small>
+      <small>{t('This estimate uses previous bills that were eventually paid. A bill can remain unpaid.')}</small>
+    </>:<small>{t('Enter more completed receipts to estimate collection timing for bills of this age.')}</small>}
+  </details>;
+}
 
 export function Receivables({request,onSaved}:Props){
   const {currency,nativeMoney,parseMinor} = useCurrency();
@@ -104,7 +116,7 @@ export function Receivables({request,onSaved}:Props){
     {!!book.receivables.length&&<ul className="people">{book.receivables.map(debt=><li key={debt.id}>
       <div><strong>{names.get(debt.customer_id)}{debt.number&&' · '+debt.number}</strong>
       <small>{t('Due date')} {formatDate(debt.due_on)} · {t('Still owed')} {nativeMoney(debt.open_minor)} / {nativeMoney(debt.amount_minor)}</small>
-      {debt.open_minor>0&&<ReminderDraft key={debt.open_minor} request={request} id={debt.id}/>}</div>
+      {debt.open_minor>0&&<><PaymentTiming outlook={book.collection_outlook?.[debt.id]}/><ReminderDraft key={debt.open_minor} request={request} id={debt.id}/></>}</div>
       {debt.open_minor>0?<button type="button" className="secondary" disabled={busy} onClick={()=>{setSelected(debt);setMode('collect');}}>{t('Record receipt')}</button>:<span>{t('Paid in full')}</span>}
     </li>)}</ul>}
     {book.customers.some(c=>c.phone)&&<details><summary>{t('Customer contact details')}</summary>
