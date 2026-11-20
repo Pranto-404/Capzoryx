@@ -56,7 +56,10 @@ def parse_payment(text, today):
     if not (incoming ^ outgoing):
         raise ValueError('WALLET_DIRECTION_UNCLEAR')
     direction = 'in' if incoming else 'out'
-    if re.search(r'\b(?:failed|request(?:ed)?|pending|reversed|cancelled|declined|unsuccessful)\b|ব্যর্থ|বাতিল|অনুরোধ', text, re.I):
+    uncertain_status=(r"\b(?:failed|request(?:ed)?|pending|reversed|cancel(?:l)?ed|declined|unsuccessful|attempt(?:ed)?|"
+                      r"unconfirmed|never|not|unable|couldn['’]t|haven['’]t|hasn['’]t|didn['’]t)\b|"
+                      r"ব্যর্থ|বাতিল|অনুরোধ|চেষ্টা|পাননি|পান নাই|পাওয়া যায়নি|পাওয়া যায়নি|হয়নি|হয়নি")
+    if re.search(uncertain_status, text, re.I):
         flags.append('UNVERIFIED_STATUS')
     amounts = []
     balances = {}
