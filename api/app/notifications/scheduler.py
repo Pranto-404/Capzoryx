@@ -35,6 +35,8 @@ def run_workspace(db, business, at):
                            str(today) <= d['date'] <= str(today+timedelta(days=14))), None)
             if breach:
                 enqueue(db, business, 'cash_breach', breach, at=at)
+    from api.app.notifications import telegram
+    telegram.queue(db,business,at)
     # Dispatch once a deferred reminder can be shown. The transaction rechecks open balances and membership.
     pending = db.execute("""SELECT id FROM notification_jobs WHERE business_id=? AND channel='inapp' AND
                             ((status='queued' AND run_after<=?) OR (status='sending' AND claimed_until<=?))
@@ -51,7 +53,9 @@ def tick_business(db, business, at):
                                 WHERE last_slot<excluded.last_slot RETURNING business_id""", (business, at//1800)).fetchone()
         if claimed:
             run_workspace(db, business, at)
-        return bool(claimed)
+    from api.app.notifications import telegram
+    telegram.deliver(db,business,at)
+    return bool(claimed)
 
 
 def tick(db, at):
