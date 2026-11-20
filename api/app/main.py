@@ -17,6 +17,7 @@ from api.app.copilot import plans
 from api.app.routes import router
 from api.app.agents.schema import create_schema as agent_schema
 from api.app.agents.errors import ProviderError
+from api.app.copilot import books
 from api.app.database import connect
 from api.app import accounts, inputs, financing, profile, workspaces, fx, assist, i18n, mailer, passport, receivables, payments, payment_profile
 
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI):
         accounts.schema(db)
         app_sessions.schema(db)
         profile.schema(db)
+        books.schema(db)
         i18n.schema(db)
         passport.schema(db)
         plans.schema(db)
@@ -76,6 +78,7 @@ app.include_router(profile.router)
 app.include_router(workspaces.router)
 app.include_router(fx.router)
 app.include_router(assist.router)
+app.include_router(books.router)
 app.include_router(i18n.router)
 app.include_router(passport.router)
 app.include_router(plans.router)
