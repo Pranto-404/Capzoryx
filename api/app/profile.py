@@ -10,7 +10,7 @@ import sqlite3
 import uuid
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field, StrictBool
-from api.app import app_sessions, gateway, mailer, mfa, security as sec
+from api.app import app_sessions, gateway, keyring, mailer, mfa, security as sec
 from api.app.accounts import (browser_origin, complete_login, failure_scopes, locked_out, normalize_email, password_hash, rate,
                               record_failure, reject_weak_password)
 from api.app.contracts import Contract
@@ -68,10 +68,10 @@ def check_password(db, account, password):
 
 # ---------- email codes ----------
 def _code_hash(purpose, subject, code):
-    raw = os.environ.get('SAFELEDGER_SIGNING_KEY', '')
-    if len(raw) != 64:sec.fail(503, 'SIGNING_KEY_NOT_CONFIGURED')  # never fall back to a publicly known key
-    key = bytes.fromhex(raw)
-    return hmac.new(key, f'{purpose}:{subject}:{code}'.encode(), hashlib.sha256).hexdigest()
+    try:
+        return keyring.sign(f'{purpose}:{subject}:{code}'.encode())
+    except keyring.KeyUnavailable:
+        sec.fail(503,'SIGNING_KEY_NOT_CONFIGURED')
 
 
 def issue_code(db, purpose, subject):
@@ -90,7 +90,7 @@ def check_code(db, purpose, subject, code, consume=True):
     with sec.transaction(db):
         row = db.execute('SELECT code_id,code_hash,expires_at,attempts FROM email_codes WHERE purpose=? AND subject=? AND used=0 ORDER BY created_at DESC LIMIT 1', (purpose, subject)).fetchone()
         if not row or row[2] < sec.now() or row[3] >= 5:return False
-        ok = hmac.compare_digest(row[1], _code_hash(purpose, subject, code))
+        ok = keyring.verify(row[1], f'{purpose}:{subject}:{code}'.encode())
         if not ok:db.execute('UPDATE email_codes SET attempts=attempts+1 WHERE code_id=?', (row[0],))
         elif consume:db.execute('UPDATE email_codes SET used=1 WHERE code_id=?', (row[0],))
     return ok
@@ -256,8 +256,9 @@ def check_second_factor(db, account, code):
             if step is not None:
                 db.execute('UPDATE account_mfa SET last_step=? WHERE account_id=?', (step, account))
                 return True
-            digest, backups = mfa.hash_backup(code), json.loads(row[2])
-            if digest in backups:
+            backups = json.loads(row[2])
+            digest = next((value for value in backups if mfa.matches_backup(value,code)),None)
+            if digest is not None:
                 backups.remove(digest)
                 db.execute('UPDATE account_mfa SET backup_hashes=? WHERE account_id=?', (json.dumps(backups), account))
                 return True

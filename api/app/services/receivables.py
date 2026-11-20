@@ -6,7 +6,7 @@ from datetime import date
 from typing import NamedTuple
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from api.app import security as sec
+from api.app import keyring, security as sec
 
 
 class ExpectedReceipt(NamedTuple):
@@ -77,13 +77,31 @@ def key_tag(key):
     return sha256(key).hexdigest()
 
 
+def workspace_seal(label, business, plaintext, purpose):
+    ring = keyring.get()
+    raw, kid = ring.current()
+    wrapping = keyring.mac(raw,kid,(label+':'+sec.canonical(business)).encode())
+    return ring.label(seal(wrapping,plaintext,purpose))
+
+
+def workspace_unseal(label, business, encoded, purpose):
+    raw,kid,ciphertext = keyring.get().open(encoded)
+    wrapping = keyring.mac(raw,kid,(label+':'+sec.canonical(business)).encode())
+    return unseal(wrapping,ciphertext,purpose)
+
+
 def customer_key(db, business, create=False):
     row = db.execute("SELECT wrapped_key FROM customer_keys WHERE business_id=?", (business,)).fetchone()
-    wrapping_key = bytes.fromhex(sec.signature('customer-key-wrap-v1', business))
     if row:
-        return unseal(wrapping_key, row[0], business)
+        key = workspace_unseal('customer-key-wrap-v1',business,row[0],business)
+        ring = keyring.get()
+        if create and ring.versioned and ring.open(row[0])[1] != ring.active:
+            wrapped = workspace_seal('customer-key-wrap-v1',business,key,business)
+            db.execute('UPDATE customer_keys SET wrapped_key=? WHERE business_id=?',(wrapped,business))
+        return key
     if create:
         key = AESGCM.generate_key(bit_length=256)
-        db.execute('INSERT INTO customer_keys VALUES (?,?)', (business, seal(wrapping_key, key, business)))
+        wrapped = workspace_seal('customer-key-wrap-v1',business,key,business)
+        db.execute('INSERT INTO customer_keys VALUES (?,?)', (business,wrapped))
         return key
     return None

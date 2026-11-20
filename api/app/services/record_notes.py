@@ -1,8 +1,7 @@
 """Store cash notes outside the immutable audit payload; verify them on read."""
-import hmac
 from cryptography.exceptions import InvalidTag
 from api.app import security as sec
-from api.app.services.receivables import seal, unseal
+from api.app.services.receivables import workspace_seal, workspace_unseal
 
 
 def schema(db):
@@ -15,10 +14,10 @@ def schema(db):
 def store(db, business, source, kind, note):
     if not note:
         return {}
-    signature = sec.signature('private-record-note', [business,source,note])
+    signature = sec.signed('private-record-note', [business,source,note])
     if kind == 'event':
-        key = bytes.fromhex(sec.signature('cash-note-encryption-v1', business))
-        db.execute('INSERT INTO cash_notes VALUES (?,?,?)', (business,source,seal(key,note.encode(),source)))
+        blob = workspace_seal('cash-note-encryption-v1',business,note.encode(),source)
+        db.execute('INSERT INTO cash_notes VALUES (?,?,?)', (business,source,blob))
     return {'note_hash':signature}
 
 
@@ -28,12 +27,11 @@ def read(db, business, audit):
     expected = {entry['source_id']:entry['note_hash'] for entry in entries if entry.get('note_hash') and entry['kind']=='event'}
     if not expected:
         return notes
-    key = bytes.fromhex(sec.signature('cash-note-encryption-v1',business))
     for source, ciphertext in db.execute('SELECT source_id,ciphertext FROM cash_notes WHERE business_id=?',(business,)):
         try:
-            note = unseal(key,ciphertext,source).decode()
+            note = workspace_unseal('cash-note-encryption-v1',business,ciphertext,source).decode()
             digest = expected.pop(source)
-            if not hmac.compare_digest(sec.signature('private-record-note',[business,source,note]),digest):
+            if not sec.valid_signature(digest,'private-record-note',[business,source,note]):
                 raise ValueError()
         except (InvalidTag, ValueError, KeyError, UnicodeError):
             sec.fail(409,'RECORD_NOTE_INTEGRITY_FAILURE')

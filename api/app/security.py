@@ -11,6 +11,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from api.app import keyring
 from api.app.ratelimit import limiter
 from api.app.services.finance import analyze_duplicates, fingerprint, invoice_key, snapshot, validated
 from api.app.services.storage import create_schema as financial_schema, load_dataset
@@ -39,6 +40,20 @@ def signature(kind, value):
     if len(key) != 64 or any(c not in '0123456789abcdef' for c in key):
         fail(503, 'SIGNING_KEY_NOT_CONFIGURED')
     return hmac.new(bytes.fromhex(key), (kind + ':' + canonical(value)).encode(), hashlib.sha256).hexdigest()
+
+
+def signed(kind, value):
+    try:
+        return keyring.sign((kind+':'+canonical(value)).encode())
+    except keyring.KeyUnavailable:
+        fail(503,'SIGNING_KEY_NOT_CONFIGURED')
+
+
+def valid_signature(stored, kind, value):
+    try:
+        return keyring.verify(stored,(kind+':'+canonical(value)).encode())
+    except keyring.KeyUnavailable:
+        fail(503,'SIGNING_KEY_NOT_CONFIGURED')
 
 
 def create_schema(db):
@@ -226,7 +241,7 @@ def audit(db, principal, trace, kind, payload):
     data = dict(business_id=principal.business_id,trace_id=trace,actor_id=principal.user_id,kind=kind,created_at=now(),payload=payload,previous_hash=previous)
     digest = hashlib.sha256(canonical(data).encode()).hexdigest()
     db.execute('INSERT INTO audit_events(business_id,trace_id,actor_id,kind,created_at,payload,previous_hash,event_hash,signature) VALUES (?,?,?,?,?,?,?,?,?)',
-               (principal.business_id,trace,principal.user_id,kind,data['created_at'],canonical(payload),previous,digest,signature('audit',digest)))
+               (principal.business_id,trace,principal.user_id,kind,data['created_at'],canonical(payload),previous,digest,signed('audit',digest)))
 
 
 def check_history_marker(db,business_id):
@@ -249,7 +264,7 @@ def verify_rows(rows, previous):
             event = {key:row[key] for key in ('business_id','trace_id','actor_id','kind','created_at','previous_hash')}
             event['payload'] = json.loads(row['payload'])
             digest = hashlib.sha256(canonical(event).encode()).hexdigest()
-            if row['previous_hash'] != previous or digest != row['event_hash'] or not hmac.compare_digest(row['signature'],signature('audit',digest)):
+            if row['previous_hash'] != previous or digest != row['event_hash'] or not valid_signature(row['signature'],'audit',digest):
                 fail(409,'AUDIT_INTEGRITY_FAILURE')
         except (ValueError,TypeError):
             fail(409,'AUDIT_INTEGRITY_FAILURE')
@@ -273,8 +288,7 @@ def verify_audit_head(db, business_id):
     last_id, last_hash = 0, '0'*64
     if anchor:
         last_id, last_hash, mac, stored_hash = anchor
-        expected = signature('audit-checkpoint-v1',[business_id,last_id,last_hash])
-        if stored_hash != last_hash or not hmac.compare_digest(expected,mac):
+        if stored_hash != last_hash or not valid_signature(mac,'audit-checkpoint-v1',[business_id,last_id,last_hash]):
             fail(409,'AUDIT_INTEGRITY_FAILURE')
     rows = db.execute('SELECT * FROM audit_events WHERE business_id=? AND event_id>? ORDER BY event_id',
                       (business_id,last_id))
@@ -283,7 +297,7 @@ def verify_audit_head(db, business_id):
         head = verified[-1]
         values = [business_id,head['event_id'],head['event_hash']]
         db.execute('INSERT INTO audit_checkpoints VALUES (?,?,?,?)',
-                   (*values,signature('audit-checkpoint-v1',values)))
+                   (*values,signed('audit-checkpoint-v1',values)))
 
 
 def deny_event(db, principal, trace, code):
@@ -321,7 +335,7 @@ def verify_proposal(db, row, dataset=None):
     try:
         payload = json.loads(row['payload'])
         digest = hashlib.sha256(canonical(payload).encode()).hexdigest()
-        if digest != row['action_hash'] or not hmac.compare_digest(row['signature'],signature('proposal',digest)):
+        if digest != row['action_hash'] or not valid_signature(row['signature'],'proposal',digest):
             fail(409,'PROPOSAL_INTEGRITY_FAILURE')
         ds = dataset or original_dataset(db,row['business_id'])
         if fingerprint(ds)!=payload['dataset_sha256']:
@@ -356,7 +370,7 @@ def verify_approval(db, proposal, payload):
     if row is None:
         fail(409,'APPROVAL_REQUIRED')
     values = approval_values(row)
-    if row['decision'] != 'approve' or row['action_hash'] != proposal['action_hash'] or row['approver_id']==proposal['proposer_id'] or not payload['created_at'] <= row['decision_at'] < payload['expires_at'] or not hmac.compare_digest(row['signature'],signature('approval',values)):
+    if row['decision'] != 'approve' or row['action_hash'] != proposal['action_hash'] or row['approver_id']==proposal['proposer_id'] or not payload['created_at'] <= row['decision_at'] < payload['expires_at'] or not valid_signature(row['signature'],'approval',values):
         fail(409,'APPROVAL_INTEGRITY_FAILURE')
     return row
 
@@ -372,7 +386,7 @@ def verify_posting(db, row, dataset):
         fail(409,'LEDGER_INTEGRITY_FAILURE')
     payload=verify_proposal(db,proposal,dataset)
     approval=verify_approval(db,proposal,payload)
-    if row['invoice_id']!=payload['invoice_id'] or row['amount_minor']!=payload['amount_minor'] or not approval['decision_at'] <= row['created_at'] < payload['expires_at'] or not hmac.compare_digest(row['signature'],signature('posting',posting_values(row))):
+    if row['invoice_id']!=payload['invoice_id'] or row['amount_minor']!=payload['amount_minor'] or not approval['decision_at'] <= row['created_at'] < payload['expires_at'] or not valid_signature(row['signature'],'posting',posting_values(row)):
         fail(409,'LEDGER_INTEGRITY_FAILURE')
     entries=db.execute('SELECT account,delta_minor FROM ledger_entries WHERE posting_id=? ORDER BY account',(row['posting_id'],)).fetchall()
     if [(x[0],x[1]) for x in entries] != [('cash',-row['amount_minor']),('payables',row['amount_minor'])]:
@@ -453,7 +467,7 @@ def propose(db, principal, invoice_id, *, expected_runtime_sha=None, on_result=N
                          vendor_id=invoice.vendor_id,amount_minor=invoice.amount_minor,currency=invoice.currency,source_id=invoice.source_record_id,
                          source_sha256=fingerprint(invoice),dataset_sha256=fingerprint(ds),version=1,created_at=timestamp,expires_at=timestamp+900)
             digest=hashlib.sha256(canonical(payload).encode()).hexdigest()
-            db.execute('INSERT INTO proposals VALUES (?,?,?,?,?,?,?,?)',(trace,current.business_id,invoice_id,current.user_id,canonical(payload),digest,signature('proposal',digest),'AWAITING_APPROVAL'))
+            db.execute('INSERT INTO proposals VALUES (?,?,?,?,?,?,?,?)',(trace,current.business_id,invoice_id,current.user_id,canonical(payload),digest,signed('proposal',digest),'AWAITING_APPROVAL'))
             from api.app.notifications.service import enqueue
             enqueue(db,current.business_id,'approval_needed',trace)
             audit(db,current,trace,'PROPOSED',{'action_hash':digest,'source_id':invoice.source_record_id,'dataset_sha256':fingerprint(ds),'policy_preview':preview})
@@ -484,7 +498,7 @@ def execute_approved(db, principal, row, payload):
     principal=recheck(db,principal)
     if principal.role!='approver':fail(403,'HUMAN_APPROVER_REQUIRED')
     values=dict(posting_id=str(uuid.uuid4()),proposal_id=row['proposal_id'],business_id=principal.business_id,invoice_id=row['invoice_id'],amount_minor=payload['amount_minor'],created_at=now())
-    db.execute('INSERT INTO postings VALUES (?,?,?,?,?,?,?)',(*values.values(),signature('posting',values)))
+    db.execute('INSERT INTO postings VALUES (?,?,?,?,?,?,?)',(*values.values(),signed('posting',values)))
     for account,delta in [('cash',-payload['amount_minor']),('payables',payload['amount_minor'])]:
         db.execute('INSERT INTO ledger_entries VALUES (?,?,?,?)',(str(uuid.uuid4()),values['posting_id'],account,delta))
     db.execute("UPDATE proposals SET state='EXECUTED' WHERE proposal_id=?",(row['proposal_id'],))
@@ -515,7 +529,7 @@ def decide(db, principal, proposal_id, request):
             if row['state']!='AWAITING_APPROVAL':fail(409,'DECISION_ALREADY_FINAL')
             if now()>=payload['expires_at']:fail(409,'PROPOSAL_EXPIRED')
             values=dict(proposal_id=proposal_id,approver_id=current.user_id,decision=request.decision,action_hash=row['action_hash'],decision_at=now())
-            db.execute('INSERT INTO approvals VALUES (?,?,?,?,?,?)',(*values.values(),signature('approval',values)))
+            db.execute('INSERT INTO approvals VALUES (?,?,?,?,?,?)',(*values.values(),signed('approval',values)))
             new_state='APPROVED' if request.decision=='approve' else 'REJECTED'
             db.execute('UPDATE proposals SET state=? WHERE proposal_id=?',(new_state,proposal_id))
             audit(db,current,proposal_id,new_state,{'action_hash':row['action_hash'],'decision':request.decision})
