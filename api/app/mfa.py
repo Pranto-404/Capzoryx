@@ -2,19 +2,13 @@
 import base64
 import hashlib
 import hmac
-import os
+from api.app import keyring
 import secrets
 import struct
 import time
 
 STEP_SECONDS = 30
 ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'
-
-
-def _key(label):
-    signing = os.environ.get('SAFELEDGER_SIGNING_KEY', '')
-    if len(signing) != 64:raise ValueError('Signing key not configured')
-    return hmac.new(bytes.fromhex(signing), label, hashlib.sha256).digest()
 
 
 def new_secret():
@@ -31,16 +25,20 @@ def _stream(key, nonce, length):
 
 def seal(secret):
     """Encrypt-then-MAC with a key derived from the server signing key; the database alone cannot reveal secrets."""
-    key, nonce, plain = _key(b'safeledger-mfa-seal-v1'), secrets.token_bytes(12), secret.encode()
+    ring = keyring.get()
+    secret_key, kid = ring.current()
+    key = keyring.mac(secret_key,kid,b'safeledger-mfa-seal-v1')
+    nonce, plain = secrets.token_bytes(12), secret.encode()
     cipher = bytes(a ^ b for a, b in zip(plain, _stream(key, nonce, len(plain))))
     tag = hmac.new(key, nonce + cipher, hashlib.sha256).digest()[:16]
-    return (nonce + cipher + tag).hex()
+    return ring.label((nonce + cipher + tag).hex())
 
 
 def unseal(blob):
-    raw = bytes.fromhex(blob)
+    secret_key, kid, encoded = keyring.get().open(blob)
+    raw = bytes.fromhex(encoded)
     nonce, cipher, tag = raw[:12], raw[12:-16], raw[-16:]
-    key = _key(b'safeledger-mfa-seal-v1')
+    key = keyring.mac(secret_key,kid,b'safeledger-mfa-seal-v1')
     if not hmac.compare_digest(tag, hmac.new(key, nonce + cipher, hashlib.sha256).digest()[:16]):raise ValueError('Sealed secret failed verification')
     return bytes(a ^ b for a, b in zip(cipher, _stream(key, nonce, len(cipher)))).decode()
 
@@ -70,6 +68,21 @@ def new_backup_codes(count=10):
     return [''.join(secrets.choice(ALPHABET) for _ in range(4)) + '-' + ''.join(secrets.choice(ALPHABET) for _ in range(4)) for _ in range(count)]
 
 
-def hash_backup(code):
+def _backup_digest(key,kid,code):
     normal = ''.join(ch for ch in code.lower() if ch.isalnum())
-    return hmac.new(_key(b'safeledger-mfa-backup-v1'), normal.encode(), hashlib.sha256).hexdigest()
+    material = keyring.mac(key,kid,b'safeledger-mfa-backup-v1')
+    return hmac.new(material, normal.encode(), hashlib.sha256).hexdigest()
+
+
+def hash_backup(code):
+    ring = keyring.get()
+    key,kid = ring.current()
+    return ring.label(_backup_digest(key,kid,code))
+
+
+def matches_backup(stored, code):
+    try:
+        key,kid,value = keyring.get().open(stored)
+        return value.isascii() and hmac.compare_digest(value, _backup_digest(key,kid,code))
+    except keyring.KeyUnavailable:
+        return False

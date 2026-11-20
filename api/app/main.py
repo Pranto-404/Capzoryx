@@ -37,7 +37,9 @@ SCHEMA_VERSION = 1
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from api.app import gateway
+    from api.app import gateway, keyring
+    if os.getenv('SAFELEDGER_SIGNING_KEYS') or os.getenv('SAFELEDGER_ACTIVE_SIGNING_KEY_ID'):
+        keyring.get()
     gateway.reset()
     limiter.reset()
     mailer.reset_budget()
