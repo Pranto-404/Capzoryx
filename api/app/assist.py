@@ -16,6 +16,7 @@ from api.app.currencies import CURRENCIES, scale
 from api.app.provider_policy import record_provider
 from api.app.profile import Exact, account_of
 from api.app.routes import db_connection, principal
+from api.app.services.receivables import open_receipts
 from api.app.services.finance import project_cashflow, snapshot
 from api.app.contracts import ScenarioRequest
 
@@ -53,8 +54,9 @@ def facts_text(db, business):
     snap = snapshot(ds)
     policy = db.execute('SELECT reserve_minor FROM security_policies WHERE business_id=?', (business,)).fetchone()
     reserve = policy[0] if policy else 0
-    month = project_cashflow(ds, ScenarioRequest(as_of=ds.as_of, horizon_days=30, reserve_minor=reserve, delay_inflows_days=0))
-    week = project_cashflow(ds, ScenarioRequest(as_of=ds.as_of, horizon_days=7, reserve_minor=reserve, delay_inflows_days=0))
+    receipts = open_receipts(db, business)
+    month = project_cashflow(ds, ScenarioRequest(as_of=ds.as_of, horizon_days=30, reserve_minor=reserve, delay_inflows_days=0), receipts)
+    week = project_cashflow(ds, ScenarioRequest(as_of=ds.as_of, horizon_days=7, reserve_minor=reserve, delay_inflows_days=0), receipts)
     c = ds.currency
     open_bills = [i for i in ds.invoices if i.status == 'open']
     overdue = [i for i in open_bills if i.due_on < ds.as_of]
@@ -88,7 +90,10 @@ class AskBody(Exact):
 def ask(body: AskBody, actor=Depends(principal), db=Depends(db_connection)):
     require_smart(db, actor)
     sec.budgets(db, [('assist:' + actor.user_id, 12), ('assist-all', 40)])
-    messages = [{'role': 'system', 'content': SYSTEM_ASK + facts_text(db, actor.business_id)}]
+    db.execute('BEGIN')
+    with db:
+        facts = facts_text(db, actor.business_id)
+    messages = [{'role': 'system', 'content': SYSTEM_ASK + facts}]
     messages += [{'role': t.role, 'content': t.text} for t in body.history]
     messages.append({'role': 'user', 'content': body.question})
     answer = cloud.complete(messages, max_tokens=700)

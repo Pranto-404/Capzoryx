@@ -12,6 +12,7 @@ import {ApiError,client,accountRequest,currencyDigits,fxRate} from './api';
 import type {Audit,Forecast,Invoice,Profile,Proposal,Session,Snapshot,CashEvent,WorkspaceItem} from './types';
 import {ImportEvidence} from './ImportEvidence';
 import {sampleBusiness} from './sampleBusiness';
+import {Receivables} from './Receivables';
 import {DataEntry} from './DataEntry';
 import {Financing} from './Financing';
 import {QuickAdd} from './QuickAdd';
@@ -38,7 +39,7 @@ export default function Workspace(props:WorkspaceProps){
   return <CurrencyProvider currency={currency} fetchRate={(from,to)=>fxRate(from,to)} storageKey={`safeledger-currency-view-v2:${props.session.user_id}:${props.session.business_id}`}><WorkspaceContent {...props} setCurrency={setCurrency}/></CurrencyProvider>;
 }
 
-const AUDIT_TEXT:Record<string,string>={IMPORTED:T('Records imported'),RECORD_ADDED:T('Record added'),PROPOSED:T('Payment prepared for approval'),APPROVED:T('Payment approved'),REJECTED:T('Payment rejected'),EXECUTED:T('Payment recorded'),EXPIRED:T('A payment proposal expired'),DENIED:T('An action was blocked'),IDEMPOTENT_REPLAY:T('A repeated approval was ignored'),FINANCING_ANALYZED:T('Loan offers compared'),INVITATION_CREATED:T('Invitation created'),WORKSPACE_JOINED:T('Someone joined this workspace'),WORKSPACE_CREATED:T('Workspace created'),CURRENCY_CHANGED:T('Currency changed'),PAYEE_PERMISSION_CHANGED:T('Supplier permission changed'),ACCOUNT_RECOVERED:T('Account recovered'),MEMBER_REMOVED:T('Someone was removed'),MEMBER_ROLE_CHANGED:T('A role was changed'),MEMBER_LEFT:T('Someone left this workspace')};
+const AUDIT_TEXT:Record<string,string>={CUSTOMER_ADDED:T('Customer saved.'),CUSTOMER_PHONE_REMOVED:T('Phone number erased.'),RECEIVABLE_ADDED:T('Receivable saved.'),RECEIVABLE_SETTLED:T('Receipt recorded.'),IMPORTED:T('Records imported'),RECORD_ADDED:T('Record added'),PROPOSED:T('Payment prepared for approval'),APPROVED:T('Payment approved'),REJECTED:T('Payment rejected'),EXECUTED:T('Payment recorded'),EXPIRED:T('A payment proposal expired'),DENIED:T('An action was blocked'),IDEMPOTENT_REPLAY:T('A repeated approval was ignored'),FINANCING_ANALYZED:T('Loan offers compared'),INVITATION_CREATED:T('Invitation created'),WORKSPACE_JOINED:T('Someone joined this workspace'),WORKSPACE_CREATED:T('Workspace created'),CURRENCY_CHANGED:T('Currency changed'),PAYEE_PERMISSION_CHANGED:T('Supplier permission changed'),ACCOUNT_RECOVERED:T('Account recovered'),MEMBER_REMOVED:T('Someone was removed'),MEMBER_ROLE_CHANGED:T('A role was changed'),MEMBER_LEFT:T('Someone left this workspace')};
 
 function WorkspaceContent({token,session,logout,expired,changeSession,setCurrency}:WorkspaceProps&{setCurrency:(currency:string)=>void}){
   const {currency,money,nativeMoney,parseMinor}=useCurrency();
@@ -145,6 +146,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {profile&&!profile.email&&tab==='Overview'&&<p className="notice">{t('Add an email address to reset your password with a code if you ever forget it.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Add email')}</button></p>}
       {missing&&<p className="notice">Nothing here yet. {session.role==='owner'?<button className="link" onClick={()=>setTab('Data')}>{t('Add your first record')}</button>:t('Ask the owner to add records.')}</p>}
       {tab==='Overview'&&<Dashboard snapshot={snapshot} week={week} month={baselineMonth} invoices={invoices} events={events} proposals={proposals} audit={audit} navigate={t=>setTab(t as Tab)} openAssistant={()=>{setChatLoaded(true);setChatOpen(true);}} onSample={session.role==='owner'&&!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0?()=>void importRaw(sampleBusiness(snapshot.currency)).catch(e=>report(e)):undefined}/>}
+      {tab==='Invoices'&&session.role==='owner'&&<Receivables request={request} onSaved={refresh}/>}
       {tab==='Invoices'&&<Panel title={t('Invoices')}>
         <label htmlFor="invoice-search">{t('Search by supplier or invoice number')}</label><input id="invoice-search" type="search" value={query} onChange={e=>setQuery(e.target.value)}/>
         <p className="muted">{visible.length} {visible.length===1?'invoice':'invoices'}. A possible duplicate pauses payment until you review it.</p>

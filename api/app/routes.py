@@ -9,6 +9,7 @@ from api.app import security as sec
 from api.app.contracts import ApprovalRequest, Contract, PositiveMinor, ProposalRequest, ScenarioRequest
 from api.app.services.finance import Dataset, FinancingRequest, compare_financing, project_cashflow, snapshot
 from api.app.services.gap_fix import collection_plan
+from api.app.services.receivables import open_receipts
 from api.app.services.storage import store_dataset
 
 ProposalPath=Annotated[str,ApiPath(pattern=r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')]
@@ -90,9 +91,11 @@ def invoices(actor=Depends(principal),db=Depends(db_connection)):
 
 @router.post('/cashflow/scenarios')
 def cashflow(body: ScenarioRequest,actor=Depends(principal),db=Depends(db_connection)):
-    ds=sec.runtime_dataset(db,actor.business_id)
-    if body.as_of!=ds.as_of:sec.fail(409,'SNAPSHOT_DATE_CHANGED_REFRESH_REQUIRED')
-    return dict(project_cashflow(ds,body),simulation_only=True)
+    db.execute('BEGIN')
+    with db:
+        ds=sec.runtime_dataset(db,actor.business_id)
+        if body.as_of!=ds.as_of:sec.fail(409,'SNAPSHOT_DATE_CHANGED_REFRESH_REQUIRED')
+        return dict(project_cashflow(ds,body,open_receipts(db,actor.business_id)),simulation_only=True)
 
 
 @router.post('/copilot/gap-fix')
@@ -107,7 +110,8 @@ def gap_fix(body: ScenarioRequest, actor=Depends(principal), db=Depends(db_conne
             sec.fail(409, 'SNAPSHOT_DATE_CHANGED_REFRESH_REQUIRED')
         if body.delay_inflows_days:
             sec.fail(422, 'USE_BASELINE_RECEIPT_DATES')
-        return dict(collection_plan(dataset, project_cashflow(dataset, body)), simulation_only=True)
+        receipts = open_receipts(db, current.business_id)
+        return dict(collection_plan(dataset, project_cashflow(dataset, body, receipts), receipts), simulation_only=True)
 
 
 class CompareRequest(Contract):
@@ -184,9 +188,10 @@ def workspace_bundle(actor=Depends(principal),db=Depends(db_connection)):
         for row in rows:sec.verify_proposal(db,row)
         policy=db.execute('SELECT reserve_minor,payment_limit_minor FROM security_policies WHERE business_id=?',(actor.business_id,)).fetchone()
         if policy is None:sec.fail(409,'POLICY_NOT_CONFIGURED')
-        week=project_cashflow(ds,ScenarioRequest(as_of=ds.as_of,horizon_days=7,reserve_minor=policy[0],delay_inflows_days=0))
-        month=project_cashflow(ds,ScenarioRequest(as_of=ds.as_of,horizon_days=30,reserve_minor=policy[0],delay_inflows_days=0))
-        month["collection_plan"] = collection_plan(ds, month)
+        receipts = open_receipts(db, actor.business_id)
+        week=project_cashflow(ds,ScenarioRequest(as_of=ds.as_of,horizon_days=7,reserve_minor=policy[0],delay_inflows_days=0), receipts)
+        month=project_cashflow(ds,ScenarioRequest(as_of=ds.as_of,horizon_days=30,reserve_minor=policy[0],delay_inflows_days=0), receipts)
+        month["collection_plan"] = collection_plan(ds, month, receipts)
         notes={a['payload']['source_id']:a['payload'].get('note','') for a in events if a['kind']=='RECORD_ADDED'}
         return dict(dataset_revision=sec.fingerprint(sec.original_dataset(db,actor.business_id)),snapshot=snapshot(ds),invoices=[i.model_dump(mode='json') for i in ds.invoices],events=[dict(e.model_dump(mode='json'),note=notes.get(e.source_record_id,'')) for e in ds.events],proposals=[sec.proposal_view(row) for row in rows],audit=dict(events=events,chain_verified=True,tenant_chain_head=events[-1]['event_hash'] if events else '0'*64),week=week,month=month,policy=dict(reserve_minor=policy[0],payment_limit_minor=policy[1]),simulation_only=True)
 
@@ -198,7 +203,14 @@ def export_workspace(actor=Depends(principal),db=Depends(db_connection)):
         events=sec.verified_audit(db,actor.business_id)
         original=sec.original_dataset(db,actor.business_id)
         current=sec.runtime_dataset(db,actor.business_id)
-        return dict(format_version=1,workspace_id=actor.business_id,original_dataset=original.model_dump(mode='json'),current_dataset=current.model_dump(mode='json'),audit_events=events,recordkeeping_only=True,simulation_only=True)
+        collections = {}
+        if sec.recheck(db,actor).role == 'owner':
+            from api.app.receivables import customer_book
+            collections = customer_book(db,actor.business_id)
+            collections['settlements'] = [dict(row) for row in db.execute(
+                'SELECT id,receivable_id,amount_minor,cash_record_id,created_at FROM receivable_settlements WHERE business_id=? ORDER BY created_at,id',
+                (actor.business_id,))]
+        return dict(**collections,format_version=1,workspace_id=actor.business_id,original_dataset=original.model_dump(mode='json'),current_dataset=current.model_dump(mode='json'),audit_events=events,recordkeeping_only=True,simulation_only=True)
 
 
 @router.get('/agent/status')

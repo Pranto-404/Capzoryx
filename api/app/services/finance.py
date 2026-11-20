@@ -141,13 +141,13 @@ def snapshot(dataset: Dataset) -> dict:
             "dataset_sha256": fingerprint(ds), "assumptions": ["Cash basis; cleared income/expenses are cash movements, not accrual profit", "Opening balance is start-of-day opening_on; cleared events are included through end-of-day as_of"]}
 
 
-def project_cashflow(dataset: Dataset, request: ScenarioRequest) -> dict:
+def project_cashflow(dataset: Dataset, request: ScenarioRequest, receivables=()) -> dict:
     ds = validated(dataset)
     request = ScenarioRequest.model_validate(request.model_dump(mode="json"))
     if request.as_of != ds.as_of:
         raise ValueError("Scenario as_of must equal the immutable snapshot as_of")
     cash = snapshot(ds)["balance_minor"]
-    days = scheduled_movements(ds, request.delay_inflows_days)
+    days = scheduled_movements(ds, request.delay_inflows_days, receivables)
     result = []
     for offset in range(1, request.horizon_days + 1):
         day = request.as_of + timedelta(days=offset)
@@ -171,11 +171,14 @@ def project_cashflow(dataset: Dataset, request: ScenarioRequest) -> dict:
                             "Scheduled outflows assumed to occur on planned dates; no new sales, tax, interest or financing inferred"]}
 
 
-def scheduled_movements(dataset: Dataset, delay_inflows_days: int = 0) -> defaultdict:
+def scheduled_movements(dataset: Dataset, delay_inflows_days: int = 0, receivables=()) -> defaultdict:
     """Date -> [(direction, amount_minor, source_id)] for scheduled cash and unlinked open payables."""
     ds = dataset
     first = ds.as_of + timedelta(days=1)
     days = defaultdict(list)
+    for receipt in receivables:
+        day = max(first, receipt.due_on) + timedelta(days=delay_inflows_days)
+        days[day].append(("inflow", receipt.amount_minor, receipt.source_id))
     scheduled_keys = set()
     for event in ds.events:
         if event.status != "scheduled":
