@@ -48,3 +48,16 @@ def test_passport_verification(world, keyring, problem):
                 db.execute("UPDATE passports SET summary_json=replace(summary_json,'\"balance_minor\":0','\"balance_minor\":1')")
     client.cookies.clear()
     assert client.get(url).status_code in {404, 409}
+
+
+def test_clear_revokes_public_link_even_after_restore(world,keyring):
+    client,_=world
+    owner=signup(client,'passport_clear')
+    business=owner['business_id']
+    identity=client.post('/api/passport/create',json={}).json()['id']
+    endpoint='/api/public/passport/'+identity
+    assert client.get(endpoint).status_code==200
+    assert client.post('/api/account/workspaces/clear',json={'business_ids':[business],'erase_customer_details':True}).status_code==200
+    assert client.get(endpoint).status_code==404
+    assert client.post('/api/account/workspaces/restore',json={'business_id':business}).status_code==200
+    assert client.get(endpoint).status_code==404
