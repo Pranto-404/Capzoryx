@@ -4,7 +4,7 @@ import {useRef,useState} from 'react';
 import {useCurrency} from './Currency';
 import {DraftCard} from './DraftCard';
 import {prepareDocumentPhoto} from './format';
-import {parseRecordSentence} from './recordParser';
+import {parseRecordForDraft} from './recordParser';
 import type {Draft,Profile} from './types';
 import {t,useI18n} from './i18n';
 
@@ -35,7 +35,7 @@ export function QuickAdd({request,revision,onSaved,profile,cloudAvailable}:Props
   async function read(){
     const sentence=text.trim();if(!sentence)return;setError('');setDraft(null);setPhotoText('');setPreview('');setBusy('text');
     try{
-      const local=parseRecordSentence(sentence,{currency,digits});
+      const local=await parseRecordForDraft(sentence,{currency,digits});
       if(local){setDraft(local);return;}
       if(!smart)throw new Error(t('I could not understand that. Try something like "I paid Rahman 5000 for freight yesterday".'));
       const r=await request<{draft:Draft}>('/assist/extract',{text:sentence});

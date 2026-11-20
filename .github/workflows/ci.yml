@@ -49,6 +49,7 @@ jobs:
           node scripts/check_currency_ui.cjs
           node scripts/check_currency_view.cjs
           node scripts/check_record_parser.cjs
+          node scripts/check_hisab_tagger.cjs
           node scripts/check_site_guide.cjs
           node scripts/check_i18n.cjs
           node scripts/extract_ui_strings.cjs --check

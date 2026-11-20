@@ -1,4 +1,5 @@
 import type {Draft} from './types';
+import type {Model,TaggedFields} from './hisabTagger';
 
 /** Reads a sentence such as "I paid Rahman 5k for freight yesterday" into a draft record. Everything here is a
  *  suggestion shown to the user for confirmation; nothing is saved until the owner presses Save. */
@@ -87,22 +88,25 @@ function findParty(text:string,amountSpan:[number,number]):string{
   return title(named(tail)||named(head)||direct?.[1]||local?.[1]||'');
 }
 
-export function parseRecordSentence(raw:string,opts:{currency:string;digits:number;today?:Date}):Draft|null{
+type ParseOptions={currency:string;digits:number;today?:Date};
+export function parseRecordSentence(raw:string,opts:ParseOptions,tagged?:TaggedFields):Draft|null{
   const text=expandLocalAmounts(asciiDigits(raw.normalize('NFC'))).replace(/\s+/g,' ').trim();
   if(text.length<4||text.length>400||QUESTION.test(text))return null;
   const inflow=IN.test(text),outflow=OUT.test(text),invoice=INVOICE.test(text);
-  if(!inflow&&!outflow&&!invoice)return null;
-  const amount=findAmount(text,opts.digits);
+  if(!tagged&&!inflow&&!outflow&&!invoice)return null;
+  const ruleAmount=findAmount(text,opts.digits);
+  if(tagged&&ruleAmount&&tagged.amountMinor!==ruleAmount.minor)return null;
+  const amount=tagged?{minor:tagged.amountMinor,span:ruleAmount?.span||[0,0] as [number,number]}:ruleAmount;
   if(!amount||amount.minor<=0)return null;
   const today=opts.today||new Date();
   const {date,explicit}=findDate(text,today);
   const todayIso=iso(today);
-  const party=findParty(text,amount.span);
+  const party=tagged?.party||findParty(text,amount.span);
   const warnings:string[]=[];
   if(!explicit && /\bkal\b|কাল/i.test(text))warnings.push('Please confirm the date: kal can mean yesterday or tomorrow.');
   // "paid"/"gave" with a past action is cash out; "owe"/"due"/"bill" without a payment verb is an unpaid supplier bill.
   const paidAlready=/\b(?:paid|gave|dilam|diyechi|disi)\b|দিলাম|দিয়েছি|পরিশোধ/i.test(text);
-  const isInvoice=invoice&&!paidAlready&&!inflow;
+  const isInvoice=tagged?tagged.direction==='due':invoice&&!paidAlready&&!inflow;
   const memo=title(text).slice(0,200);
   const base={ok:true,currency:opts.currency,workspace_currency:opts.currency,currency_mismatch:false,can_save:true,confidence:0.8,memo};
   if(isInvoice){
@@ -114,11 +118,31 @@ export function parseRecordSentence(raw:string,opts:{currency:string;digits:numb
     const vendor=party;if(!vendor)warnings.push('Add the supplier name before saving.');
     return {...base,kind:'invoice',amount_minor:amount.minor,effective_on:issued,due_on:due,vendor_name:vendor,vendor_id:slug(vendor)||'unknown-vendor',invoice_number:'INV-'+issued.replaceAll('-',''),warnings:[...warnings,'No invoice number was given; one was made up from the date. Please check.']};
   }
-  const direction:'inflow'|'outflow'=inflow&&!outflow?'inflow':outflow&&!inflow?'outflow':/\b(?:paid me|from)\b/i.test(text)?'inflow':'outflow';
+  const direction:'inflow'|'outflow'=tagged&&tagged.direction!=='due'?tagged.direction:inflow&&!outflow?'inflow':outflow&&!inflow?'outflow':/\b(?:paid me|from)\b/i.test(text)?'inflow':'outflow';
   if(inflow&&outflow&&!/\bpaid me\b/i.test(text))warnings.push('Check the direction: it could be money in or money out.');
   const future=date>todayIso;
   if(future)warnings.push('The date is in the future, so this is saved as planned.');
   return {...base,kind:'cash',direction,status:future?'scheduled':'cleared',amount_minor:amount.minor,effective_on:date,vendor_name:party||undefined,memo:party&&!explicit?memo:memo,warnings,confidence:explicit?0.9:0.8};
+}
+
+let loadModel:Promise<Model|null>|undefined;
+
+/** Only a release with approved evaluation evidence configures a pinned tagger asset. */
+export async function parseRecordForDraft(raw:string,opts:ParseOptions):Promise<Draft|null>{
+  const sha=import.meta.env?.VITE_HISAB_TAGGER_SHA256;
+  const version=import.meta.env?.VITE_HISAB_TAGGER_VERSION;
+  if(sha&&version&&raw.length>=4&&raw.length<=400&&!QUESTION.test(raw.trim())){
+    try{
+      const crf=await import('./hisabTagger');
+      loadModel??=crf.loadCheckedModel(version,sha).catch(()=>null);
+      const model=await loadModel;
+      if(model){
+        const estimate=crf.interpret(crf.decode(raw,model),opts.digits);
+        if(estimate)return parseRecordSentence(raw,opts,estimate);
+      }
+    }catch{/* Unavailable models leave the deterministic parser available offline. */}
+  }
+  return parseRecordSentence(raw,opts);
 }
 
 export const slug=(name:string)=>name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60);
