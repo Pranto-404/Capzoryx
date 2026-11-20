@@ -56,6 +56,8 @@ def create(actor=Depends(principal), db=Depends(db_connection)):
         current = sec.recheck(db, actor)
         if current.role != 'owner':
             sec.fail(403, 'OWNER_REQUIRED')
+        if db.execute('SELECT 1 FROM workspace_meta WHERE business_id=? AND archived_at IS NOT NULL',(current.business_id,)).fetchone():
+            sec.fail(403,'WORKSPACE_CLEARED')
         sec.budget(db, 'passport-issue:' + current.user_id, 5)
         audit = sec.verified_audit(db, current.business_id)
         ds = sec.runtime_dataset(db, current.business_id)
@@ -121,7 +123,10 @@ def verify(request: Request, passport_id: Annotated[str, ApiPath(pattern=r'^[a-f
         key = Ed25519PublicKey.from_public_bytes(base64.b64decode(public_keys()[key_id], validate=True))
         key.verify(base64.b64decode(signature, validate=True), raw.encode())
         report = json.loads(raw)
-        if report['id'] != passport_id or report['key_id'] != key_id or report['expires_at'] <= sec.now():
+        if set(report)!={'id','format','key_id','issued_at','expires_at','start','as_of','currency','balance_minor','receipts_minor','expenses_minor','chain_head'}:
+            raise ValueError('Unexpected v1 fields')
+        if (sec.canonical(report)!=raw or report['format']!='capzoryx-passport-v1' or report['id'] != passport_id
+                or report['key_id'] != key_id or report['expires_at'] <= sec.now()):
             raise ValueError('Invalid binding')
     except (OSError, ValueError, KeyError, TypeError, InvalidSignature):
         sec.fail(409, 'PASSPORT_INVALID')
