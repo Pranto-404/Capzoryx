@@ -1,0 +1,92 @@
+name: Android app
+on:
+  push:
+    branches: [v2]
+    paths: ['web/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Build with the account owner's release signing key
+        type: boolean
+        default: false
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/v2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.release && 'android-release' || 'android-debug' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0' 'build-tools;36.0.0'
+      - run: npm ci --prefix web
+      - run: node scripts/check_native_session.cjs
+      - run: npm run build:native --prefix web
+      - name: Build debug APK
+        if: ${{ !inputs.release }}
+        run: gradle -p web/android :app:assembleDebug
+      - name: Check packaged UI on the Android emulator
+        if: ${{ !inputs.release }}
+        run: |
+          sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+          sdkmanager 'emulator' 'system-images;android-35;google_apis;x86_64'
+          echo no | avdmanager create avd --force -n capzoryx -k 'system-images;android-35;google_apis;x86_64'
+          "$ANDROID_HOME/emulator/emulator" -avd capzoryx -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator.log" 2>&1 &
+          trap 'adb emu kill >/dev/null 2>&1 || true' EXIT
+          timeout 300 bash -c 'until test "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = 1; do sleep 3; done'
+          adb shell svc wifi disable
+          adb shell svc data disable
+          gradle -p web/android :app:connectedDebugAndroidTest
+      - name: Verify and retain debug APK
+        if: ${{ !inputs.release }}
+        run: |
+          mkdir -p output
+          cp web/android/app/build/outputs/apk/debug/app-debug.apk output/capzoryx-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify output/capzoryx-debug.apk
+      - name: Build and verify release APK and bundle
+        if: inputs.release
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CAPZORYX_ANDROID_KEYSTORE_BASE64 }}
+          CAPZORYX_ANDROID_KEY_ALIAS: ${{ secrets.CAPZORYX_ANDROID_KEY_ALIAS }}
+          CAPZORYX_ANDROID_STORE_PASSWORD: ${{ secrets.CAPZORYX_ANDROID_STORE_PASSWORD }}
+          CAPZORYX_ANDROID_KEY_PASSWORD: ${{ secrets.CAPZORYX_ANDROID_KEY_PASSWORD }}
+          CAPZORYX_ANDROID_CERT_SHA256: ${{ vars.CAPZORYX_ANDROID_CERT_SHA256 }}
+        run: |
+          set -eu
+          umask 077
+          export CAPZORYX_ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/capzoryx-release.jks"
+          trap 'rm -f "$CAPZORYX_ANDROID_KEYSTORE_PATH"' EXIT
+          test -n "$KEYSTORE_BASE64"
+          test -n "$CAPZORYX_ANDROID_CERT_SHA256"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$CAPZORYX_ANDROID_KEYSTORE_PATH"
+          gradle -p web/android --no-daemon :app:assembleRelease :app:bundleRelease
+          mkdir -p output
+          cp web/android/app/build/outputs/apk/release/app-release.apk output/capzoryx.apk
+          cp web/android/app/build/outputs/bundle/release/app-release.aab output/capzoryx.aab
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs output/capzoryx.apk > "$RUNNER_TEMP/android-certificate.txt"
+          actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/android-certificate.txt" | tr '[:lower:]' '[:upper:]')
+          expected=$(printf '%s' "$CAPZORYX_ANDROID_CERT_SHA256" | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          test "$actual" = "$expected"
+          jarsigner -verify output/capzoryx.aab
+          node web/scripts/android-links.mjs output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capzoryx-android-${{ github.sha }}
+          path: output/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
