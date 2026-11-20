@@ -16,7 +16,7 @@ from api.app.routes import router
 from api.app.agents.schema import create_schema as agent_schema
 from api.app.agents.errors import ProviderError
 from api.app.database import connect
-from api.app import accounts, inputs, financing, profile, workspaces, fx, assist, i18n, mailer, passport, receivables
+from api.app import accounts, inputs, financing, profile, workspaces, fx, assist, i18n, mailer, passport, receivables, payments, payment_profile
 
 def _cors_origins() -> list[str]:
     """Read allowed origins from env; default to localhost dev ports only."""
@@ -49,6 +49,8 @@ async def lifespan(app: FastAPI):
         i18n.schema(db)
         passport.schema(db)
         plans.schema(db)
+        payments.schema(db)
+        payment_profile.schema(db)
         accounts.archive_legacy_examples(db)
     yield
 
@@ -75,6 +77,8 @@ app.include_router(i18n.router)
 app.include_router(passport.router)
 app.include_router(plans.router)
 app.include_router(receivables.router)
+app.include_router(payment_profile.router)
+app.include_router(payments.router)
 
 @app.exception_handler(ProviderError)
 async def ai_error(request,exc):
