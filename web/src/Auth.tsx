@@ -12,7 +12,7 @@ import {t,LanguagePicker,T,useI18n,defaultCurrency} from './i18n';
 
 type Mode='signup'|'login'|'forgot';
 type Forgot='choose'|'email'|'code'|'key'|'done';
-type Caps={email_codes:boolean;cloud_assist:boolean};
+type Caps={email_codes:boolean};
 
 const LAST_USER='capzoryx-last-user',KEEP='capzoryx-keep-signed-in';
 const stored=(key:string)=>{try{return localStorage.getItem(key)||'';}catch{return '';}};
@@ -42,23 +42,37 @@ function authMessage(e:unknown):string{
 
 /** Sign up, sign in (with a two-step code when it is on) and every way back into an account. */
 type Invite={workspace_name:string;role:string;invited_by:string};
-export function Auth({onSession,joinCode,notice}:{onSession:(s:Session)=>void;joinCode:string;notice:string}){
+export function Auth({onAuthStart,onSession,joinCode,notice}:{onAuthStart:()=>void;onSession:(s:Session)=>void;joinCode:string;notice:string}){
   const joinPending=!!joinCode;
   const [mode,setMode]=useState<Mode>(()=>!joinCode&&stored(LAST_USER)?'login':'signup');
   const [username,setUsername]=useState(()=>stored(LAST_USER));const [keep,setKeep]=useState(()=>stored(KEEP)==='1');
-  const [wait,setWait]=useState(0);const [slow,setSlow]=useState(false);const [waking,setWaking]=useState(false);const [capsSlow,setCapsSlow]=useState(false);const [email,setEmail]=useState('');const [password,setPassword]=useState('');const [show,setShow]=useState(false);const {code:language}=useI18n();const [currency,setCurrency]=useState(()=>defaultCurrency(language));
+  const [wait,setWait]=useState(0);const [slow,setSlow]=useState(false);const [waking,setWaking]=useState(false);const [email,setEmail]=useState('');const [password,setPassword]=useState('');const [show,setShow]=useState(false);const {code:language}=useI18n();const [currency,setCurrency]=useState(()=>defaultCurrency(language));
   const [challenge,setChallenge]=useState('');const [code,setCode]=useState('');
   const [forgot,setForgot]=useState<Forgot>('choose');const [resetCode,setResetCode]=useState('');const [second,setSecond]=useState('');const [needSecond,setNeedSecond]=useState(false);const [recoveryKey,setRecoveryKey]=useState('');
   const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [info,setInfo]=useState('');
-  const [caps,setCaps]=useState<Caps>({email_codes:false,cloud_assist:false});
-  useEffect(()=>{const c=new AbortController();const timer=window.setTimeout(()=>{if(!c.signal.aborted)setCapsSlow(true);},4000);void accountRequest<Caps>('/auth/capabilities',undefined,c.signal).then(setCaps).catch(()=>{}).finally(()=>{clearTimeout(timer);if(!c.signal.aborted)setCapsSlow(false);});return()=>{clearTimeout(timer);c.abort();};},[]);
+  const [emailRecovery,setEmailRecovery]=useState(false);
+  useEffect(()=>{
+    if(mode!=='forgot')return;
+    const controller=new AbortController();
+    async function checkRecoveryMethods(){
+      let available=false;
+      try{
+        available=(await accountRequest<Caps>('/auth/capabilities',undefined,controller.signal)).email_codes;
+      }catch{/* The local recovery key remains available. */}
+      if(controller.signal.aborted)return;
+      setEmailRecovery(available);
+      if(!available)setForgot(current=>current==='choose'?'key':current);
+    }
+    void checkRecoveryMethods();
+    return ()=>controller.abort();
+  },[mode]);
   // Counts down a lockout or slow-down so the person sees exactly how long to wait.
   useEffect(()=>{if(wait<=0)return;const id=window.setInterval(()=>setWait(w=>Math.max(0,w-1)),1000);return()=>clearInterval(id);},[wait>0]);
   const [invite,setInvite]=useState<Invite|'bad'|null>(null);
   useEffect(()=>{if(!joinCode)return;const c=new AbortController();void accountRequest<Invite>('/invitations/preview',{code:joinCode},c.signal).then(setInvite).catch(e=>{if(!c.signal.aborted)setInvite('bad');});return()=>c.abort();},[joinCode]);
   const go=(m:Mode)=>{setMode(m);setError('');setInfo('');setChallenge('');setCode('');setForgot('choose');setWait(0);};
   async function run(task:()=>Promise<void>){
-    if(busy)return;setBusy(true);setError('');setInfo('');
+    if(busy)return;onAuthStart();setBusy(true);setError('');setInfo('');
     const timer=window.setTimeout(()=>setSlow(true),3000);
     try{await task();}
     catch(e){
@@ -114,12 +128,12 @@ export function Auth({onSession,joinCode,notice}:{onSession:(s:Session)=>void;jo
             {mode==='login'&&<label className="check keep-signed-in" htmlFor="remember"><input id="remember" name="remember" type="checkbox" checked={keep} onChange={e=>setKeep(e.target.checked)} disabled={busy}/><span>{t('Keep me signed in')}<small>{t('Stay signed in on this device for 30 days. Use only on your own device.')}</small></span></label>}
             {mode==='signup'&&<><PasswordStrength password={password} username={username}/><label htmlFor="signup-currency">{t('Your business currency')}</label><CurrencySelect id="signup-currency" value={currency} onChange={setCurrency} disabled={busy}/><p className="small muted">{t('You can add more workspaces for other currencies later.')}</p></>}</>}
           {challenge&&<><label htmlFor="mfa-code">{t('Verification code')}</label><input id="mfa-code" name="code" autoComplete="one-time-code" inputMode="numeric" autoCapitalize="none" autoFocus required maxLength={12} value={code} onChange={e=>setCode(e.target.value)} disabled={busy}/></>}
-          <div className={mode==='login'?'auth-status reserve':'auth-status'} aria-live="polite">{info&&<p className="notice" role="status">{info}</p>}{error&&<p role="alert" className="error">{error}</p>}{wait>0&&!error&&<p className="notice" role="status">{t('Too many unsuccessful attempts. For your protection, try again in {time}.',{time:waitText(wait)})}</p>}{!error&&!info&&(slow||waking||capsSlow)&&<p className="notice" role="status">{t('Opening your workspace… The free server may need up to a minute to wake up the first time.')}</p>}</div>
+          <div className={mode==='login'?'auth-status reserve':'auth-status'} aria-live="polite">{info&&<p className="notice" role="status">{info}</p>}{error&&<p role="alert" className="error">{error}</p>}{wait>0&&!error&&<p className="notice" role="status">{t('Too many unsuccessful attempts. For your protection, try again in {time}.',{time:waitText(wait)})}</p>}{!error&&!info&&(slow||waking)&&<p className="notice" role="status">{t('Opening your workspace… The free server may need up to a minute to wake up the first time.')}</p>}</div>
           <button className="full-width" disabled={busy||wait>0}>{busy?t('Please wait…'):wait>0?t('Try again in {time}',{time:waitText(wait)}):challenge?t('Verify and sign in'):mode==='signup'?t('Create my workspace'):t('Sign in')}</button>{challenge&&<button type="button" className="link recovery-link" disabled={busy} onClick={()=>go('login')}>{t('Use a different account')}</button>}</form>
-        {mode==='login'&&!challenge&&<button type="button" className="link recovery-link" disabled={busy} onClick={()=>{setMode('forgot');setForgot(caps.email_codes?'choose':'key');setError('');setInfo('');}}>{t('Forgot your password?')}</button>}
+        {mode==='login'&&!challenge&&<button type="button" className="link recovery-link" disabled={busy} onClick={()=>{onAuthStart();setMode('forgot');setForgot('choose');setEmailRecovery(false);setError('');setInfo('');}}>{t('Forgot your password?')}</button>}
 </>}
       {mode==='forgot'&&<><h2>{t('Reset your password')}</h2>
-        {forgot==='choose'&&<><p className="muted">{t('Choose how you want to get back in.')}</p><div className="actions"><button onClick={()=>setForgot('email')}>{t('Email me a code')}</button><button className="secondary" onClick={()=>setForgot('key')}>{t('Use my recovery key')}</button></div></>}
+        {forgot==='choose'&&<><p className="muted">{t('Choose how you want to get back in.')}</p><div className="actions">{emailRecovery&&<button onClick={()=>setForgot('email')}>{t('Email me a code')}</button>}<button className="secondary" onClick={()=>setForgot('key')}>{t('Use my recovery key')}</button></div></>}
         {forgot==='email'&&<form onSubmit={requestCode}><label htmlFor="reset-email">{t('Your account email')}</label><input id="reset-email" type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)} disabled={busy}/>{error&&<p role="alert" className="error">{error}</p>}<button className="full-width" disabled={busy||!email}>{busy?t('Sending…'):t('Send my code')}</button></form>}
         {forgot==='code'&&<form onSubmit={confirmReset}>{info&&<p className="notice" role="status">{info}</p>}<label htmlFor="reset-code">{t('6-digit code')}</label><input id="reset-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} required value={resetCode} onChange={e=>setResetCode(e.target.value.replace(/\D/g,''))} disabled={busy}/>
           {needSecond&&<><label htmlFor="reset-second">{t('Authenticator or backup code')}</label><input id="reset-second" required value={second} onChange={e=>setSecond(e.target.value)} disabled={busy}/></>}
