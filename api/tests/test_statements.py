@@ -53,13 +53,14 @@ def test_ten_synthetic_statements(layout,headers,delimiter,descending):
         expected.append(value*100)
     if descending:rows.reverse();expected.reverse()
     result=decode(Upload(data=base64.b64encode(pack(layout,[headers]+rows,delimiter)).decode(),layout=layout,
-                         currency='BDT',account_label='Synthetic current account'))[1]
+                         currency='BDT',account_label='Synthetic current account',expected_business_id='test',expected_user_id='test'))[1]
     assert [r['signed'] for r in result]==expected
     assert not any('reason' in r for r in result)
 
 
 def upload(c,raw,**overrides):
-    body=dict(data=base64.b64encode(raw).decode(),layout='csv',currency='BDT',account_label='Current',date_order='DMY')
+    actor=c.get('/api/session').json()
+    body=dict(expected_business_id=actor['business_id'],expected_user_id=actor['user_id'],data=base64.b64encode(raw).decode(),layout='csv',currency='BDT',account_label='Current',date_order='DMY')
     return c.post('/api/statements/preview',json=dict(body,**overrides))
 
 
@@ -71,6 +72,7 @@ def decision(preview,index=0,verify=False):
 def test_review_replay_overlap_and_tenant_scope(world):
     c,_=world;signup(c,'statement_owner')
     raw=b'Date,Ref,Debit,Credit,Balance\n2026-11-01,A001,,120,120\n2026-11-02,A002,50,,70\n'
+    assert upload(c,raw,expected_business_id='previous').status_code==409
     preview=upload(c,raw)
     assert preview.status_code==200,preview.text
     preview=preview.json();assert all(r['status']=='new' for r in preview['rows'])

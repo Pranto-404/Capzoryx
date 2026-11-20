@@ -16,7 +16,7 @@ from pydantic import Field
 
 from api.app import security as sec
 from api.app.accounts import today_bd
-from api.app.contracts import Contract, Currency, ISODate
+from api.app.contracts import Contract, Currency, ISODate, RecordId
 from api.app.currencies import CURRENCIES
 from api.app.inputs import InputRecord, append_record
 from api.app.receivables import owner_transaction
@@ -41,6 +41,8 @@ def schema(db):
 
 
 class Upload(Contract):
+    expected_business_id: RecordId
+    expected_user_id: RecordId
     data: str = Field(min_length=1,max_length=4194000)
     layout: Literal['csv','xlsx','pdf']
     currency: Currency
@@ -114,10 +116,14 @@ def cash_keys(ds):
 @router.post('/preview')
 def preview(body: Upload,actor=Depends(principal),db=Depends(db_connection)):
     if actor.role!='owner':sec.fail(403,'OWNER_REQUIRED')
+    if actor.business_id!=body.expected_business_id or actor.user_id!=body.expected_user_id:
+        sec.fail(409,'STATEMENT_WORKSPACE_CHANGED')
     sec.budget(db,'statement-reader:'+actor.user_id,12)
     file_hash,decoded=decode(body)
     with owner_transaction(db,actor) as current:
         business=current.business_id
+        if business!=body.expected_business_id or current.user_id!=body.expected_user_id:
+            sec.fail(409,'STATEMENT_WORKSPACE_CHANGED')
         ds=sec.runtime_dataset(db,business)
         if ds.currency!=body.currency:sec.fail(422,'IMPORT_CURRENCY_MISMATCH')
         existing=cash_keys(ds)

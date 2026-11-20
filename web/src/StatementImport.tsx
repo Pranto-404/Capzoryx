@@ -41,7 +41,7 @@ async function readFile(file:File){
   return url.slice(url.indexOf(',')+1);
 }
 
-export default function StatementImport({request,onSaved}:{request:Request;onSaved:()=>Promise<void>}){
+export default function StatementImport({request,onSaved,businessId,userId}:{request:Request;onSaved:()=>Promise<void>;businessId:string;userId:string}){
   const {currency,nativeMoney}=useCurrency();
   const [bank,setBank]=useState('');
   const [file,setFile]=useState<File|null>(null);
@@ -57,7 +57,7 @@ export default function StatementImport({request,onSaved}:{request:Request;onSav
     if(!layout||!['csv','pdf','xlsx'].includes(layout)){setError(t('Choose a CSV, XLSX or PDF file.'));return;}
     setBusy(true);reset();
     try{
-      const data=await request<Preview>('/statements/preview',{layout,currency,date_order:order,account_label:bank,data:await readFile(file)});
+      const data=await request<Preview>('/statements/preview',{layout,currency,date_order:order,account_label:bank,data:await readFile(file),expected_business_id:businessId,expected_user_id:userId});
       setPreview(data);
     }catch(e){setError(errorMessage(e));}
     finally{setBusy(false);}
