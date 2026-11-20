@@ -241,6 +241,8 @@ def signup(body:SignupCredentials, request:Request, response:Response, db=Depend
             create_workspace_data(db,business,'personal','My workspace',body.currency)
             db.execute('INSERT INTO auth_recovery VALUES (?,?)',(account,hashlib.sha256(code.encode()).hexdigest()))
             token=app_sessions.issue_client(db,request,response,user,SESSION_TTL)
+            from api.app.notifications.device import observe
+            observe(db,user,account,request,response)
             sec.audit(db,sec.authenticate(db,token),'account-'+account,'WORKSPACE_CREATED',{'sample_data':False})
             if body.email:db.execute('INSERT INTO account_emails VALUES (?,?,0)',(account,body.email))
     except sqlite3.IntegrityError:sec.fail(409,'USERNAME_UNAVAILABLE')
@@ -282,6 +284,9 @@ def complete_login(db,request,response,account_id,remember=False):
         sec.prune_expired_sessions(db)
         member=personal_member(db,account_id)
         token=app_sessions.issue_client(db,request,response,member,ttl)
+        if request is not None:
+            from api.app.notifications.device import observe
+            observe(db,member,account_id,request,response)
         code=None
         if not db.execute('SELECT 1 FROM auth_recovery WHERE account_id=?',(account_id,)).fetchone():
             code=secrets.token_urlsafe(24)

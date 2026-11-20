@@ -46,6 +46,8 @@ def create_schema(db):
     from api.app.gateway import schema as gateway_schema
     financial_schema(db)
     gateway_schema(db)
+    from api.app.notifications.service import schema as notifications_schema
+    notifications_schema(db)
     customer_schema(db)
     db.executescript('''
     CREATE TABLE IF NOT EXISTS security_users(
@@ -396,6 +398,8 @@ def propose(db, principal, invoice_id, *, expected_runtime_sha=None, on_result=N
                          source_sha256=fingerprint(invoice),dataset_sha256=fingerprint(ds),version=1,created_at=timestamp,expires_at=timestamp+900)
             digest=hashlib.sha256(canonical(payload).encode()).hexdigest()
             db.execute('INSERT INTO proposals VALUES (?,?,?,?,?,?,?,?)',(trace,current.business_id,invoice_id,current.user_id,canonical(payload),digest,signature('proposal',digest),'AWAITING_APPROVAL'))
+            from api.app.notifications.service import enqueue
+            enqueue(db,current.business_id,'approval_needed',trace)
             audit(db,current,trace,'PROPOSED',{'action_hash':digest,'source_id':invoice.source_record_id,'dataset_sha256':fingerprint(ds),'policy_preview':preview})
             result=dict(proposal_view(get_proposal(db,current,trace)),preview=preview)
             if on_result is not None:on_result(result)

@@ -75,6 +75,9 @@ def append_record(db, current, body):
     # Validate all existing signed postings against the extended source before commit.
     runtime=sec.runtime_dataset(db,current.business_id)
     if len(runtime.events)>2000:sec.fail(409,'RUNTIME_EVENT_CAPACITY_EXCEEDED')
+    if kind=='invoice':
+        from api.app.notifications.service import duplicate_notice
+        duplicate_notice(db,current.business_id,runtime,record_id)
     db.execute('INSERT INTO workspace_input_requests VALUES (?,?,?)',(current.business_id,body.request_id,digest))
     sec.audit(db,current,'input-'+body.request_id,'RECORD_ADDED',dict(source_id=record_id,kind=kind,previous_revision=fingerprint(ds),dataset_sha256=fingerprint(new),record_sha256=fingerprint(typed),payee_allowed=body.trust_vendor,note=body.memo))
     return dict(source_id=record_id,replayed=False,simulation_only=True)
@@ -106,6 +109,8 @@ def import_initial(body:Dataset,actor=Depends(principal),db=Depends(db_connectio
         db.execute('UPDATE financial_datasets SET dataset_sha256=?,payload=? WHERE business_id=?',(fingerprint(new),new.model_dump_json(),current.business_id))
         for kind,record_id,record in [('invoice',i.invoice_id,i) for i in new.invoices]+[('event',e.event_id,e) for e in new.events]:
             db.execute('INSERT INTO source_records VALUES (?,?,?,?,?,?)',(current.business_id,record.source_record_id,kind,record_id,fingerprint(record),record.model_dump_json()))
+        from api.app.notifications.service import duplicate_notice
+        duplicate_notice(db,current.business_id,new)
         sec.audit(db,current,'import-'+uuid.uuid4().hex,'IMPORTED',dict(dataset_sha256=fingerprint(new),invoice_count=len(new.invoices),event_count=len(new.events),payees_allowlisted=False))
     return dict(dataset_sha256=fingerprint(new),simulation_only=True)
 
