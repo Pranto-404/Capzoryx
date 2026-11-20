@@ -25,7 +25,7 @@ export default function Settings(props:SettingsProps){
     <div className="settings-head"><Avatar profile={profile} name={name} size={56}/><div><h2>{name}</h2><p className="muted">{profile?.email||session.username}</p></div></div>
     <div className="settings-tabs" role="tablist" aria-label={t('Settings sections')}>{tabs.map(tb=><button key={tb} role="tab" aria-selected={tab===tb} className={tab===tb?'active':'secondary'} onClick={()=>setTab(tb)}>{t(tabNames[tb])}</button>)}</div>
     {tab==='Profile'&&<ProfileTab {...props}/>}
-    {tab==='Security'&&<SecurityTab {...props}/>}
+    {tab==='Security'&&<><SecurityTab {...props}/><AppDevices request={props.request}/></>}
     {tab==='Sharing'&&<SharingTab {...props}/>}
     {tab==='Data'&&<DataTab {...props}/>}
   </div>;
@@ -73,6 +73,35 @@ function ProfileTab({session,profile,request,reloadProfile,cloudAvailable}:Setti
       {!cloudAvailable&&<p className="small muted">{t('Smart assist is not available on this site right now.')}</p>}
     </Section>
   </>;
+}
+
+type AppDevice={family_id:string;device_label:string;expires_at:number;current:boolean};
+
+function AppDevices({request}:{request:Request}){
+  const [devices,setDevices]=useState<AppDevice[]|null>(null);
+  const [busy,setBusy]=useState(false);
+  const message=useMessage();
+  async function load(){
+    setBusy(true);
+    try{setDevices((await request<{devices:AppDevice[]}>('/account/app-devices')).devices);}
+    catch(e){message.fail(e);}finally{setBusy(false);}
+  }
+  async function revoke(device:AppDevice){
+    setBusy(true);
+    try{
+      await request('/account/app-devices/'+device.family_id+'/revoke',{});
+      setDevices(list=>list?.filter(row=>row.family_id!==device.family_id)??null);
+      message.ok(t('Device signed out.'));
+    }catch(e){message.fail(e);}finally{setBusy(false);}
+  }
+  return <Section title={t('Signed-in phones')}>
+    <button type="button" className="secondary" onClick={()=>void load()} disabled={busy}>{t('Show app sessions')}</button>
+    {devices?.length===0&&<p>{t('No phones are signed in.')}</p>}
+    {devices&&<ul className="people">{devices.map(device=><li key={device.family_id}>
+      <div><strong>{device.device_label}</strong><small>{t('Expires')} {formatTime(device.expires_at)} {device.current&&t('· This phone')}</small></div>
+      <button type="button" disabled={busy} className="secondary" onClick={()=>void revoke(device)}>{t('Sign out device')}</button>
+    </li>)}</ul>}<Notice m={message.message}/>
+  </Section>;
 }
 
 function SecurityTab({profile,request,reloadProfile}:SettingsProps){

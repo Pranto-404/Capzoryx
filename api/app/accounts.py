@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field, field_validator, model_validator
-from api.app import security as sec
+from api.app import app_sessions, security as sec
 from api.app.ratelimit import limiter
 from api.app.contracts import Contract, Currency
 from api.app.currencies import scale
@@ -80,8 +80,11 @@ def archive_legacy_examples(db):
 
 
 def browser_origin(request):
+    if app_sessions.native(request):return
     origin = request.headers.get('origin','')
     allowed = {o.strip().rstrip('/') for o in os.environ.get('SAFELEDGER_CORS_ORIGINS','').split(',') if o.strip()}
+    app_host = os.environ.get('CAPZORYX_APP_WEB_ORIGIN','').strip().rstrip('/')
+    if app_host:allowed.add(app_host)
     if not os.environ.get('RENDER') and not os.environ.get('VERCEL'):
         allowed.update({'http://127.0.0.1:5173','http://localhost:5173','http://127.0.0.1:4173','http://127.0.0.1:8000','http://localhost:8000','http://testserver'})
     if origin not in allowed or request.headers.get('X-SafeLedger-Client') != 'web':
@@ -153,11 +156,20 @@ def set_cookie(response, token, ttl=SESSION_TTL):
     response.set_cookie(COOKIE,token,max_age=ttl,httponly=True,secure=secure,samesite='lax',path='/')
 
 
+def client_ttl(request, default=SESSION_TTL):
+    return app_sessions.ACCESS_TTL if app_sessions.native(request) else default
+
+
 def current_ttl(db, request):
     """Lifetime left on the presented session, so switching workspace keeps a 'keep me signed in' session long."""
+    if app_sessions.native(request):return client_ttl(request)
     token=request.cookies.get(COOKIE)
     row=db.execute('SELECT expires_at FROM security_sessions WHERE token_hash=?',(hashlib.sha256(token.encode()).hexdigest(),)).fetchone() if token else None
     return min(REMEMBER_TTL,max(SESSION_TTL,row[0]-sec.now())) if row else SESSION_TTL
+
+
+def session_result(db, request, token):
+    return dict(identity(db,sec.authenticate(db,token)), **getattr(request.state,'app_tokens',{}))
 
 
 def identity(db, actor):
@@ -228,17 +240,16 @@ def signup(body:SignupCredentials, request:Request, response:Response, db=Depend
             db.execute('INSERT INTO account_members VALUES (?,?,?)',(account,business,user))
             create_workspace_data(db,business,'personal','My workspace',body.currency)
             db.execute('INSERT INTO auth_recovery VALUES (?,?)',(account,hashlib.sha256(code.encode()).hexdigest()))
-            token=issue(db,user)
+            token=app_sessions.issue_client(db,request,response,user,SESSION_TTL)
             sec.audit(db,sec.authenticate(db,token),'account-'+account,'WORKSPACE_CREATED',{'sample_data':False})
             if body.email:db.execute('INSERT INTO account_emails VALUES (?,?,0)',(account,body.email))
     except sqlite3.IntegrityError:sec.fail(409,'USERNAME_UNAVAILABLE')
     limiter.add_failure(['signup-created'])
-    set_cookie(response,token)
     verification_sent=False
     if body.email:
         from api.app import mailer,profile
         if mailer.configured() and mailer.reserve(body.email):verification_sent=mailer.send(body.email,*mailer.code_message('verify',profile.issue_code(db,'verify',account+':'+body.email)))
-    return dict(identity(db,sec.authenticate(db,token)),recovery_code=code,email_verification_sent=verification_sent)
+    return dict(session_result(db,request,token),recovery_code=code,email_verification_sent=verification_sent)
 
 
 @router.post('/auth/login')
@@ -261,22 +272,21 @@ def login(body:LoginCredentials,request:Request,response:Response,db=Depends(db_
     limiter.clear_failures([pair[0]])
     from api.app import profile
     if profile.mfa_enabled(db,row[0]):return profile.begin_challenge(db,row[0])
-    return complete_login(db,response,row[0],body.remember)
+    return complete_login(db,request,response,row[0],body.remember)
 
 
-def complete_login(db,response,account_id,remember=False):
+def complete_login(db,request,response,account_id,remember=False):
     """Issue the session after every required factor has been checked."""
     ttl=REMEMBER_TTL if remember else SESSION_TTL
     with sec.transaction(db):
         sec.prune_expired_sessions(db)
         member=personal_member(db,account_id)
-        token=issue(db,member,ttl)
+        token=app_sessions.issue_client(db,request,response,member,ttl)
         code=None
         if not db.execute('SELECT 1 FROM auth_recovery WHERE account_id=?',(account_id,)).fetchone():
             code=secrets.token_urlsafe(24)
             db.execute('INSERT INTO auth_recovery VALUES (?,?)',(account_id,hashlib.sha256(code.encode()).hexdigest()))
-    set_cookie(response,token,ttl)
-    result=identity(db,sec.authenticate(db,token))
+    result=session_result(db,request,token)
     if code:result['recovery_code']=code
     return result
 
@@ -288,8 +298,11 @@ def guest(request:Request):
 
 
 @router.post('/auth/logout')
-def logout(request:Request,response:Response,db=Depends(db_connection)):
+def logout(request:Request,response:Response,body: app_sessions.Logout | None = None,db=Depends(db_connection)):
     browser_origin(request)
+    if app_sessions.native(request):
+        app_sessions.logout(db,request,body)
+        return {'simulation_only':True}
     token=request.cookies.get(COOKIE)
     if token:
         with db:db.execute('DELETE FROM security_sessions WHERE token_hash=?',(hashlib.sha256(token.encode()).hexdigest(),))
@@ -304,11 +317,13 @@ class WorkspaceChoice(Contract):
 def switch(body:WorkspaceChoice,request:Request,response:Response,actor=Depends(principal),db=Depends(db_connection)):
     member=db.execute('SELECT account_id FROM account_members WHERE user_id=?',(actor.user_id,)).fetchone()
     if not member:sec.fail(403,'ACCOUNT_REQUIRED')
-    user=db.execute('SELECT m.user_id FROM account_members m JOIN security_users u ON u.user_id=m.user_id WHERE m.account_id=? AND m.business_id=? AND u.active=1 AND EXISTS (SELECT 1 FROM workspace_meta w WHERE w.business_id=m.business_id AND w.kind="personal" AND w.archived_at IS NULL)',(member[0],body.business_id)).fetchone()
-    if not user:sec.fail(403,'WORKSPACE_ACCESS_DENIED')
     ttl=current_ttl(db,request)
-    with db:token=issue(db,user[0],ttl)
-    set_cookie(response,token,ttl);return identity(db,sec.authenticate(db,token))
+    with sec.transaction(db):
+        sec.recheck(db,actor)
+        user=db.execute('SELECT m.user_id FROM account_members m JOIN security_users u ON u.user_id=m.user_id WHERE m.account_id=? AND m.business_id=? AND u.active=1 AND EXISTS (SELECT 1 FROM workspace_meta w WHERE w.business_id=m.business_id AND w.kind="personal" AND w.archived_at IS NULL)',(member[0],body.business_id)).fetchone()
+        if not user:sec.fail(403,'WORKSPACE_ACCESS_DENIED')
+        token=app_sessions.issue_client(db,request,response,user[0],ttl,switch_device=True)
+    return session_result(db,request,token)
 
 
 class AcceptRequest(Contract):
@@ -337,9 +352,9 @@ def join(body:AcceptRequest,request:Request,response:Response,actor=Depends(prin
             db.execute('INSERT INTO security_users VALUES (?,?,?,1)',(user,invitation[0],invitation[1]))
             db.execute('INSERT INTO account_members VALUES (?,?,?)',(member[0],invitation[0],user))
         db.execute('UPDATE workspace_invites SET used_by=? WHERE code_hash=?',(member[0],hashlib.sha256(body.code.encode()).hexdigest()))
-        token=issue(db,user,ttl)
+        token=app_sessions.issue_client(db,request,response,user,ttl,switch_device=True)
         sec.audit(db,sec.authenticate(db,token),'join-'+uuid.uuid4().hex,'WORKSPACE_JOINED',{'role':invitation[1],'invited_by':invitation[2]})
-    set_cookie(response,token,ttl);return identity(db,sec.authenticate(db,token))
+    return session_result(db,request,token)
 
 
 def today_bd():
@@ -385,10 +400,9 @@ def new_workspace(body:NewWorkspace,request:Request,response:Response,actor=Depe
         db.execute("INSERT INTO security_users VALUES (?,?,'owner',1)",(user,business))
         db.execute('INSERT INTO account_members VALUES (?,?,?)',(member[0],business,user))
         create_workspace_data(db,business,body.kind,body.name,body.currency)
-        token=issue(db,user,ttl)
+        token=app_sessions.issue_client(db,request,response,user,ttl,switch_device=True)
         sec.audit(db,sec.authenticate(db,token),'workspace-'+business,'WORKSPACE_CREATED',{'sample_data':False})
-    set_cookie(response,token,ttl)
-    return identity(db,sec.authenticate(db,token))
+    return session_result(db,request,token)
 
 
 class RecoveryRequest(Credentials):
@@ -426,8 +440,8 @@ def recover(body:RecoveryRequest,request:Request,response:Response,db=Depends(db
         db.execute('UPDATE auth_accounts SET password_hash=? WHERE account_id=?',(hashed,row[0]))
         db.execute('UPDATE auth_recovery SET code_hash=? WHERE account_id=?',(hashlib.sha256(code.encode()).hexdigest(),row[0]))
         db.execute('DELETE FROM security_sessions WHERE user_id IN (SELECT user_id FROM account_members WHERE account_id=?)',(row[0],))
-        user=personal_member(db,row[0]);token=issue(db,user)
+        app_sessions.revoke_account(db,row[0])
+        user=personal_member(db,row[0]);token=app_sessions.issue_client(db,request,response,user,SESSION_TTL)
         actor=sec.authenticate(db,token);sec.verified_audit(db,actor.business_id)
         sec.audit(db,actor,'recovery-'+uuid.uuid4().hex,'ACCOUNT_RECOVERED',{'sessions_revoked':True})
-    set_cookie(response,token)
-    return dict(identity(db,sec.authenticate(db,token)),recovery_code=code)
+    return dict(session_result(db,request,token),recovery_code=code)

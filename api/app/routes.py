@@ -24,7 +24,10 @@ def db_connection():
 
 
 def principal(request: Request, db=Depends(db_connection)):
+    from api.app.app_sessions import native
+    is_app = native(request)
     authorization=request.headers.get('Authorization','')
+    if is_app and not authorization:sec.fail(401,'AUTHENTICATION_REQUIRED')
     # Cheap in-memory ceiling first: a flood from one infrastructure-observed address never reaches the database.
     sec.budgets(db,[('request-edge:'+sec.client_keys(request)[1],1200)])
     try:

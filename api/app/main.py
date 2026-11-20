@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from api.app import security
+from api.app import app_sessions, security
 from api.app.body_limit import BodyLimitMiddleware
 from api.app.ratelimit import limiter
 from api.app.copilot import plans
@@ -24,7 +24,9 @@ def _cors_origins() -> list[str]:
     if not origins:
         origins = ["http://127.0.0.1:5173", "http://localhost:5173",
                    "http://127.0.0.1:4173", "http://localhost:4173"]
-    return origins
+    app_host=os.environ.get("CAPZORYX_APP_WEB_ORIGIN","").strip().rstrip("/")
+    if app_host:origins.append(app_host)
+    return [*origins,app_sessions.ORIGIN]
 
 SCHEMA_VERSION = 1
 
@@ -41,6 +43,7 @@ async def lifespan(app: FastAPI):
         security.create_schema(db)
         agent_schema(db)
         accounts.schema(db)
+        app_sessions.schema(db)
         profile.schema(db)
         i18n.schema(db)
         passport.schema(db)
@@ -59,6 +62,7 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(accounts.router)
+app.include_router(app_sessions.router)
 app.include_router(inputs.router)
 app.include_router(financing.router)
 app.include_router(profile.router)

@@ -10,7 +10,7 @@ import sqlite3
 import uuid
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field, StrictBool
-from api.app import gateway, mailer, mfa, security as sec
+from api.app import app_sessions, gateway, mailer, mfa, security as sec
 from api.app.accounts import (browser_origin, complete_login, failure_scopes, locked_out, normalize_email, password_hash, rate,
                               record_failure, reject_weak_password)
 from api.app.contracts import Contract
@@ -189,6 +189,7 @@ def change_password(body: PasswordChange, request: Request, actor=Depends(princi
     hashed = password_hash(body.new_password)
     with sec.transaction(db):
         db.execute('UPDATE auth_accounts SET password_hash=? WHERE account_id=?', (hashed, account))
+        app_sessions.revoke_account(db,account,keep=app_sessions.family_for(db,actor.token_hash))
         db.execute('DELETE FROM security_sessions WHERE token_hash<>? AND user_id IN (SELECT user_id FROM account_members WHERE account_id=?)', (actor.token_hash, account))
     return dict(other_sessions_signed_out=True, simulation_only=True)
 
@@ -339,7 +340,7 @@ def login_second_factor(body: Challenge, request: Request, response: Response, d
         sec.fail(401, 'INVALID_CODE')
     with sec.transaction(db):
         db.execute('DELETE FROM mfa_challenges WHERE token_hash=?', (digest,))
-    return complete_login(db, response, row[0], body.remember)
+    return complete_login(db, request, response, row[0], body.remember)
 
 
 # ---------- password reset by email ----------
@@ -399,5 +400,6 @@ def reset_confirm(body: ResetConfirm, request: Request, db=Depends(db_connection
     hashed = password_hash(body.new_password)
     with sec.transaction(db):
         db.execute('UPDATE auth_accounts SET password_hash=? WHERE account_id=?', (hashed, account))
+        app_sessions.revoke_account(db,account)
         db.execute('DELETE FROM security_sessions WHERE user_id IN (SELECT user_id FROM account_members WHERE account_id=?)', (account,))
     return dict(simulation_only=True)
