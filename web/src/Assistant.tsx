@@ -5,7 +5,7 @@ import {useCurrency} from './Currency';
 import {DraftCard} from './DraftCard';
 import {formatDate,prettyVendor} from './format';
 import {localAnswer,type AssistantAction} from './localAssistant';
-import {looksLikeTransaction,parseRecordSentence} from './recordParser';
+import {looksLikeTransaction,parseRecordForDraft} from './recordParser';
 import type {AgentResult,CashEvent,Draft,Forecast,Invoice,Profile,Session,Snapshot} from './types';
 import {t,T} from './i18n';
 
@@ -33,7 +33,7 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
     try{
       // 1. A sentence that describes a payment or a bill becomes a draft record to confirm.
       if(owner){
-        const draft=parseRecordSentence(q,{currency,digits});
+        const draft=await parseRecordForDraft(q,{currency,digits});
         if(draft){add({role:'assistant',kind:'device',text:draft.kind==='invoice'?t('I read this as a bill you still have to pay. Check it, then add it to your records.'):draft.direction==='inflow'?t('I read this as money you received. Check it, then add it to your records.'):t('I read this as a payment you made. Check it, then add it to your records.'),draft});return;}
       }
       // 2. Answers that need no cloud: balances, forecasts, invoices, how-to, definitions.
