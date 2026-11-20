@@ -10,3 +10,5 @@
 | Team-written extraction holdout | Voluntary contributions containing only invented businesses, transactions and names. Record the contributor's permission for internal evaluation separately. | Keep each contribution in the private test set. Record the digest of the frozen set before evaluating candidate models. |
 
 Keep consent records, contributor identities and private datasets outside Git. Each new source needs an entry recording ownership, permission or license, intended use and split before training or evaluating with it.
+
+The Hisab-LM archive consists of 3,600 project-generated financial instruction examples and includes its MIT license and split digests. The trainer ingests its train and validation splits. Its public synthetic test split measures template coverage. [Model card and reproduction steps](hisab_lm/MODEL_CARD.md)
