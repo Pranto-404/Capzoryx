@@ -115,12 +115,16 @@ def test_balance_flags_and_outgoing(world):
     c,_=world;signup(c,'wallet_flags')
     for raw in ['Rocket: received Tk 87. Old balance Tk 100. New balance Tk 10. TrxID BK473AE0',
                 'bKash: sent Tk 50. TrxID DGGA8532',
-                'Nagad: Request pending. Received Tk 48. TrxID TXA93866']:
+                'Nagad: Request pending. Received Tk 48. TrxID TXA93866',
+                'bKash: Tk 58 was not received. TrxID BK473AE001',
+                "Nagad: You haven’t received Tk 30. TrxID HELLO123",
+                'Rocket: attempted payment. Received Tk 45? TrxID 1234567890']:
         shared=share(c,raw)
         assert shared.status_code==201,shared.text
         key=shared.json()['id'];url=f'/api/payments/{key}'
         assert c.post(url+'/confirm',json=dict(checked_wallet=True)).status_code==409
         assert c.post(url+'/dismiss',json={}).status_code==200
+    assert share(c,'বিকাশ: আপনি ১৬ টাকা পাননি।').status_code==422
     uncertain=share(c,'You received Tk 15.').json()
     assert uncertain['provider']=='unknown' and 'UNKNOWN_PROVIDER' in uncertain['flags']
     invalid_id=share(c,'Rocket: received Tk 70. TxnID ABABC').json()
@@ -162,6 +166,8 @@ def test_reauthenticated_profile_and_member_notice(world):
     params=dict(merchants=[dict(provider='bkash',number='01700000000')],qr_payload=qr,merchant_id='M1234',expected_version=c.get('/api/payments/profile').json()['version'])
     assert c.post('/api/payments/profile',json=dict(params,password='invalid')).status_code==403
     assert c.post('/api/payments/profile',json=dict(params,password=PASSWORD,merchant_id='OTHER')).status_code==422
+    for provider,number in [('bkash','017000000000'),('nagad','017000000000'),('rocket','01700000000')]:
+        assert c.post('/api/payments/profile',json=dict(params,password=PASSWORD,merchants=[dict(provider=provider,number=number)])).status_code==422
     saved=c.post('/api/payments/profile',json=dict(params,password=PASSWORD))
     assert saved.status_code==200,saved.text
     assert c.post('/api/payments/profile',json=dict(params,password=PASSWORD)).status_code==409

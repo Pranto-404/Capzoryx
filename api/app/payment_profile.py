@@ -7,7 +7,7 @@ import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from api.app import security as sec
 from api.app.contracts import Contract
@@ -75,6 +75,14 @@ class QR(Contract):
 class Merchant(Contract):
     provider: Literal['bkash','nagad','rocket']
     number: str = Field(pattern=r'^(?:\+?88)?01[3-9][0-9]{8}[0-9]?$')
+
+    @model_validator(mode='after')
+    def validate_wallet_length(self):
+        national=re.sub(r'^\+?88','',self.number)
+        required=12 if self.provider=='rocket' else 11
+        if len(national)!=required:
+            raise ValueError('Check the merchant number length for this wallet.')
+        return self
 
 
 class ProfileChange(Exact):
