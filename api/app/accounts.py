@@ -47,6 +47,13 @@ def schema(db):
     CREATE TABLE IF NOT EXISTS workspace_meta(business_id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('personal','demo')));
     CREATE TABLE IF NOT EXISTS workspace_input_requests(business_id TEXT NOT NULL, request_id TEXT NOT NULL, body_sha256 TEXT NOT NULL, PRIMARY KEY(business_id,request_id));
     CREATE TABLE IF NOT EXISTS workspace_invites(code_hash TEXT PRIMARY KEY, business_id TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('approver','viewer')), created_by TEXT NOT NULL, expires_at INTEGER NOT NULL, used_by TEXT);
+    CREATE TABLE IF NOT EXISTS bookkeeper_invites(
+      code_hash TEXT PRIMARY KEY REFERENCES workspace_invites(code_hash) ON DELETE CASCADE);
+    CREATE VIEW IF NOT EXISTS effective_workspace_invites AS
+      SELECT i.code_hash,i.business_id,
+        CASE WHEN i.role='viewer' AND b.code_hash IS NOT NULL THEN 'bookkeeper' ELSE i.role END AS role,
+        i.created_by,i.expires_at,i.used_by
+      FROM workspace_invites i LEFT JOIN bookkeeper_invites b ON b.code_hash=i.code_hash;
     ''')
     if 'archived_at' not in {r[1] for r in db.execute('PRAGMA table_info(workspace_meta)').fetchall()}:
         db.execute('ALTER TABLE workspace_meta ADD COLUMN archived_at INTEGER')
@@ -342,7 +349,8 @@ def join(body:AcceptRequest,request:Request,response:Response,actor=Depends(prin
     sec.budget(db,'join:'+actor.user_id,10)
     ttl=current_ttl(db,request)
     with sec.transaction(db):
-        invitation=db.execute('SELECT business_id,role,created_by FROM workspace_invites WHERE code_hash=? AND expires_at>? AND used_by IS NULL',(hashlib.sha256(body.code.encode()).hexdigest(),sec.now())).fetchone()
+        sec.recheck(db, actor)
+        invitation=db.execute('SELECT business_id,role,created_by FROM effective_workspace_invites WHERE code_hash=? AND expires_at>? AND used_by IS NULL',(hashlib.sha256(body.code.encode()).hexdigest(),sec.now())).fetchone()
         if not invitation or not db.execute("SELECT 1 FROM workspace_meta WHERE business_id=? AND kind='personal' AND archived_at IS NULL",(invitation[0],)).fetchone():sec.fail(409,'INVITATION_INVALID_OR_EXPIRED')
         past=db.execute('SELECT m.user_id,u.role,u.active FROM account_members m JOIN security_users u ON u.user_id=m.user_id WHERE m.account_id=? AND m.business_id=?',(member[0],invitation[0])).fetchone()
         if past and (past[2] or past[1]=='owner'):sec.fail(409,'ALREADY_A_WORKSPACE_MEMBER')
@@ -351,11 +359,12 @@ def join(body:AcceptRequest,request:Request,response:Response,actor=Depends(prin
         if past:
             # Someone the owner removed (or who left) and who was invited again: switch their old seat back on with the new role.
             user=past[0]
-            db.execute('UPDATE security_users SET active=1,role=? WHERE user_id=?',(invitation[1],user))
+            db.execute('UPDATE security_users SET active=1,role=? WHERE user_id=?',(sec.stored_role(invitation[1]),user))
         else:
             user='user-'+uuid.uuid4().hex
-            db.execute('INSERT INTO security_users VALUES (?,?,?,1)',(user,invitation[0],invitation[1]))
+            db.execute('INSERT INTO security_users VALUES (?,?,?,1)',(user,invitation[0],sec.stored_role(invitation[1])))
             db.execute('INSERT INTO account_members VALUES (?,?,?)',(member[0],invitation[0],user))
+        sec.grant_bookkeeper(db, user, invitation[1])
         db.execute('UPDATE workspace_invites SET used_by=? WHERE code_hash=?',(member[0],hashlib.sha256(body.code.encode()).hexdigest()))
         token=app_sessions.issue_client(db,request,response,user,ttl,switch_device=True)
         sec.audit(db,sec.authenticate(db,token),'join-'+uuid.uuid4().hex,'WORKSPACE_JOINED',{'role':invitation[1],'invited_by':invitation[2]})

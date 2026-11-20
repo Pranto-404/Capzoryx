@@ -160,7 +160,7 @@ def ask(body:Question,actor=Depends(principal),db=Depends(db_connection)):
     db.execute('BEGIN')
     with db:
         current=sec.recheck(db,actor)
-        if current.role not in ('owner','approver','viewer'):
+        if current.role not in ('owner','approver','viewer','bookkeeper'):
             sec.fail(403,'MEMBER_REQUIRED')
         sec.verified_audit(db,current.business_id)
         return answer(db,current.business_id,current.role,body.question)

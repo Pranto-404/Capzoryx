@@ -104,7 +104,7 @@ def cashflow(body: ScenarioRequest,actor=Depends(principal),db=Depends(db_connec
 
 @router.post('/copilot/gap-fix')
 def gap_fix(body: ScenarioRequest, actor=Depends(principal), db=Depends(db_connection)):
-    if actor.role not in {'owner', 'approver', 'viewer'}:
+    if actor.role not in {'owner', 'approver', 'viewer', 'bookkeeper'}:
         sec.fail(403, 'MEMBER_REQUIRED')
     with sec.transaction(db):
         current = sec.recheck(db, actor)

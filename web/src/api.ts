@@ -80,6 +80,7 @@ const friendly: Record<string,string> = {
   OWNER_CANNOT_LEAVE: 'Owners cannot leave their own workspace. Clear it instead.',
   MEMBER_NOT_FOUND: 'That person is no longer in this workspace.',
   WORKSPACE_CLEARED: 'This workspace was cleared. Choose another one.',
+  RECORDKEEPER_REQUIRED: 'The owner and bookkeepers can add records.',
   WORKSPACE_OWNER_REQUIRED: 'Only the owner of a workspace can do this.',
   RESTORE_WINDOW_ENDED: 'This data was cleared more than 30 days ago and can no longer be restored.',
   SMART_ASSIST_OFF: 'Smart assist is turned off. Turn it on in Settings to use this.',

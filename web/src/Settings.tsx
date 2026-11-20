@@ -2,7 +2,7 @@ import {useCallback,useEffect,useRef,useState,type FormEvent,type ReactNode} fro
 import {ModelQuality} from './ModelQuality';
 import {CurrencySelect} from './Currency';
 import {PasswordStrength} from './PasswordStrength';
-import {formatTime,initials,prepareAvatar,workspaceLabel} from './format';
+import {formatTime,initials,prepareAvatar,roleLabel,workspaceLabel} from './format';
 import {Avatar} from './Avatar';
 import type {Invitation,Member,Profile,Session,WorkspaceItem} from './types';
 import {t,T,LanguagePicker} from './i18n';
@@ -143,7 +143,7 @@ const age=(expires:number)=>{const h=Math.max(1,Math.round((expires*1000-Date.no
 function SharingTab({session,request,changeSession}:SettingsProps){
   const msg=useMessage();
   const [members,setMembers]=useState<Member[]>([]);const [invites,setInvites]=useState<Invitation[]>([]);const [loaded,setLoaded]=useState(false);
-  const [role,setRole]=useState<'approver'|'viewer'>('approver');const [hours,setHours]=useState(72);const [email,setEmail]=useState('');
+  const [role,setRole]=useState<'approver'|'bookkeeper'|'viewer'>('approver');const [hours,setHours]=useState(72);const [email,setEmail]=useState('');
   const [link,setLink]=useState('');const [copied,setCopied]=useState(false);const [busy,setBusy]=useState(false);
   const owner=session.role==='owner';
   const load=useCallback(async()=>{try{const r=await request<{members:Member[];invitations:Invitation[]}>('/account/members');setMembers(r.members);setInvites(r.invitations);}catch(e){msg.fail(e);}finally{setLoaded(true);}},[request]);// eslint-disable-line react-hooks/exhaustive-deps
@@ -151,20 +151,20 @@ function SharingTab({session,request,changeSession}:SettingsProps){
   async function act(task:()=>Promise<void>,done:string){setBusy(true);msg.clear();try{await task();await load();msg.ok(done);}catch(e){msg.fail(e);}finally{setBusy(false);}}
   const label=(m:Member)=>m.display_name||m.username;
   return <>
-    <Section title={t('People in this workspace')} hint={owner?'Invite a teammate or your accountant. An approver can approve payments you prepare; a viewer can only look.':t('You are in this workspace as ')+session.role+'.'}>
-      {!loaded?<p role="status">{t('Loading…')}</p>:<ul className="people">{members.map(m=><li key={m.member_id}><span className="avatar avatar-initials" aria-hidden="true">{initials(label(m))}</span><div><strong>{label(m)}{m.you&&' (you)'}</strong><small>@{m.username} · {m.role==='owner'?t('Owner'):m.role==='approver'?t('Approver'):t('Viewer')}</small></div>
-        {owner&&m.role!=='owner'&&<div className="actions"><select aria-label={`Role for ${label(m)}`} value={m.role} disabled={busy} onChange={e=>void act(async()=>{await request('/account/members/role',{member_id:m.member_id,role:e.target.value});},t('Role updated.'))}><option value="approver">{t('Approver')}</option><option value="viewer">{t('Viewer')}</option></select><button className="secondary small" disabled={busy} onClick={()=>{if(confirm(`Remove ${label(m)} from this workspace?`))void act(async()=>{await request('/account/members/remove',{member_id:m.member_id});},t('Removed.'));}}>{t('Remove')}</button></div>}</li>)}</ul>}
+    <Section title={t('People in this workspace')} hint={owner?t('Bookkeepers add cash records and supplier bills. Approvers review payments. Viewers can read the books.'):t('Your workspace role is {role}.',{role:roleLabel(session.role)})}>
+      {!loaded?<p role="status">{t('Loading…')}</p>:<ul className="people">{members.map(m=><li key={m.member_id}><span className="avatar avatar-initials" aria-hidden="true">{initials(label(m))}</span><div><strong>{label(m)}{m.you&&' (you)'}</strong><small>@{m.username} · {roleLabel(m.role)}</small></div>
+        {owner&&m.role!=='owner'&&<div className="actions"><select aria-label={`Role for ${label(m)}`} value={m.role} disabled={busy} onChange={e=>void act(async()=>{await request('/account/members/role',{member_id:m.member_id,role:e.target.value});},t('Role updated.'))}><option value="approver">{t('Approver')}</option><option value="bookkeeper">{t('Bookkeeper')}</option><option value="viewer">{t('Viewer')}</option></select><button className="secondary small" disabled={busy} onClick={()=>{if(confirm(`Remove ${label(m)} from this workspace?`))void act(async()=>{await request('/account/members/remove',{member_id:m.member_id});},t('Removed.'));}}>{t('Remove')}</button></div>}</li>)}</ul>}
       {!owner&&<button className="secondary" disabled={busy} onClick={()=>{if(confirm(t('Leave this workspace? You can be invited again later.')))void act(async()=>{changeSession(await request<Session>('/account/leave',{}));},t('You left the workspace.'));}}>{t('Leave this workspace')}</button>}
       <Notice m={msg.message}/>
     </Section>
     {owner&&<Section title={t('Invite someone')} hint={t('Send them a link. They sign in or create a free account and are added automatically.')}>
       <form onSubmit={(e:FormEvent)=>{e.preventDefault();void act(async()=>{const r=await request<{code:string;emailed:boolean}>('/account/invitations',{role,hours,...(email.trim()?{email:email.trim()}:{})});setLink(`${window.location.origin}/?join=${r.code}`);setCopied(false);setEmail('');if(email.trim()&&!r.emailed)throw new Error('The invitation link is ready below, but we could not email it. Copy the link and send it yourself.');},'Invitation ready. Copy the link below.');}}>
-        <div className="form-grid"><label>{t('They can')}<select value={role} onChange={e=>setRole(e.target.value as 'approver'|'viewer')}><option value="approver">{t('Approve payments')}</option><option value="viewer">{t('View only')}</option></select></label>
+        <div className="form-grid"><label>{t('They can')}<select value={role} onChange={e=>setRole(e.target.value as 'approver'|'bookkeeper'|'viewer')}><option value="approver">{t('Approve payments')}</option><option value="bookkeeper">{t('Add records')}</option><option value="viewer">{t('View only')}</option></select></label>
           <label>{t('Link works for')}<select value={hours} onChange={e=>setHours(Number(e.target.value))}><option value={24}>{t('1 day')}</option><option value={72}>{t('3 days')}</option><option value={168}>{t('7 days')}</option></select></label></div>
         <label htmlFor="invite-email">{t('Their email (optional, we will email the link)')}</label><input id="invite-email" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder={t('friend@example.com')}/>
         <button disabled={busy}>{t('Create invitation')}</button></form>
       {link&&<div className="invite-code"><label htmlFor="invite-link">{t('Invitation link')}</label><input id="invite-link" readOnly value={link} onFocus={e=>e.currentTarget.select()}/><button className="secondary" onClick={()=>void navigator.clipboard.writeText(link).then(()=>setCopied(true)).catch(()=>msg.fail(new Error(t('Select the link and copy it manually.'))))}>{copied?t('Copied'):t('Copy link')}</button></div>}
-      {!!invites.length&&<><h3>{t('Open invitations')}</h3><ul className="people">{invites.map(i=><li key={i.invite_id}><div><strong>{i.role==='approver'?t('Approver'):t('Viewer')} {t('invitation')}</strong><small>{t('Expires in {time}',{time:age(i.expires_at)})}</small></div><button className="secondary small" disabled={busy} onClick={()=>void act(async()=>{await request('/account/invitations/revoke',{invite_id:i.invite_id});},t('Invitation cancelled.'))}>{t('Cancel')}</button></li>)}</ul></>}
+      {!!invites.length&&<><h3>{t('Open invitations')}</h3><ul className="people">{invites.map(i=><li key={i.invite_id}><div><strong>{roleLabel(i.role)} {t('invitation')}</strong><small>{t('Expires in {time}',{time:age(i.expires_at)})}</small></div><button className="secondary small" disabled={busy} onClick={()=>void act(async()=>{await request('/account/invitations/revoke',{invite_id:i.invite_id});},t('Invitation cancelled.'))}>{t('Cancel')}</button></li>)}</ul></>}
     </Section>}
   </>;
 }

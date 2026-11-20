@@ -8,9 +8,9 @@ from api.app import security as sec
 
 KINDS = {
     'approval_needed': (('approver',), 'Approvals'),
-    'new_device': (('owner', 'approver', 'viewer'), 'Settings'),
+    'new_device': (('owner', 'approver', 'viewer', 'bookkeeper'), 'Settings'),
     'payment_shared': (('owner',), 'Invoices'),
-    'payment_profile_changed': (('owner', 'approver', 'viewer'), 'Invoices'),
+    'payment_profile_changed': (('owner', 'approver', 'viewer', 'bookkeeper'), 'Invoices'),
     'duplicate_bill': (('owner',), 'Invoices'),
     'bill_due': (('owner',), 'Invoices'),
     'customer_overdue': (('owner',), 'Invoices'),
@@ -88,7 +88,7 @@ def dispatch(db, identity, at):
                                      (identity,)).fetchone()
     payload = json.loads(raw)
     kind = payload['kind']
-    role = db.execute('SELECT role FROM security_users WHERE business_id=? AND user_id=? AND active=1',
+    role = db.execute('SELECT role FROM effective_security_users WHERE business_id=? AND user_id=? AND active=1',
                       (business, user)).fetchone()
     enabled, start, end = pref(db, business, user)
     ready = at if kind == 'new_device' else deliver_after(at, start, end)
@@ -106,7 +106,7 @@ def enqueue(db, business, kind, record_id, *, at=None, recipients=None, period='
         raise RuntimeError('Enqueue inside the source transaction')
     at = sec.now() if at is None else at
     roles, page = KINDS[kind]
-    members = db.execute('SELECT user_id,role FROM security_users WHERE business_id=? AND active=1', (business,)).fetchall()
+    members = db.execute('SELECT user_id,role FROM effective_security_users WHERE business_id=? AND active=1', (business,)).fetchall()
     for user, role in members:
         if role not in roles or (recipients is not None and user not in recipients):
             continue

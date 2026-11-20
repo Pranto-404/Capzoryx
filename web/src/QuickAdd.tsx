@@ -9,17 +9,17 @@ import {parseRecordForDraft} from './recordParser';
 import type {Draft,Profile} from './types';
 import {t,useI18n} from './i18n';
 
-type Props={request:<T>(path:string,body?:unknown)=>Promise<T>;revision:string;onSaved:()=>Promise<void>|void;profile:Profile|null;cloudAvailable:boolean};
+type Props={request:<T>(path:string,body?:unknown)=>Promise<T>;revision:string;onSaved:()=>Promise<void>|void;profile:Profile|null;owner:boolean;cloudAvailable:boolean};
 
 /** The fast way to add records: photograph a bill or receipt, or just type or say what happened. */
-export function QuickAdd({request,revision,onSaved,profile,cloudAvailable}:Props){
+export function QuickAdd({request,revision,onSaved,profile,owner,cloudAvailable}:Props){
   const {currency,digits}=useCurrency();
   const {code}=useI18n();
   const [photoText,setPhotoText]=useState('');
   const [text,setText]=useState('');const [busy,setBusy]=useState<''|'photo'|'text'>('');const [error,setError]=useState('');
   const [draft,setDraft]=useState<Draft|null>(null);const [preview,setPreview]=useState('');
   const file=useRef<HTMLInputElement>(null);const gallery=useRef<HTMLInputElement>(null);
-  const smart=!!profile?.smart_assist&&cloudAvailable;
+  const smart=owner&&!!profile?.smart_assist&&cloudAvailable;
   async function scan(f:File|undefined){
     if(!f)return;setError('');setDraft(null);setPhotoText('');setPreview('');setBusy('photo');
     try{
@@ -62,11 +62,11 @@ export function QuickAdd({request,revision,onSaved,profile,cloudAvailable}:Props
         <label htmlFor="quick-text" className="sr-only">{t('Describe the payment or bill')}</label>
         <textarea id="quick-text" rows={3} maxLength={400} value={text} onChange={e=>setText(e.target.value)} placeholder={'e.g. "I paid Rahman 5000 for freight yesterday"\n"Received 20,000 from Karim Traders"\n"Bill from Dhaka Packaging 12000 due in 10 days"'}/>
         <LocalVoice onText={setText}/>
-        {profile?.smart_assist&&profile.speech_provider&&<VoiceCapture provider={profile.speech_provider} request={request} onText={setText}/> }
+        {owner&&profile?.smart_assist&&profile.speech_provider&&<VoiceCapture provider={profile.speech_provider} request={request} onText={setText}/> }
         <button disabled={busy!==''||!text.trim()} onClick={()=>void read()}>{busy==='text'?t('Reading…'):t('Read it')}</button>
       </div>
     </div>
     {error&&<p className="error" role="alert">{error}</p>}
-    {draft&&<div className={preview?'scan-compare has-photo':'scan-compare'}>{preview&&<figure className="scan-photo"><img src={preview} alt={t('Your photo')}/><figcaption className="small muted">{t('Compare with your photo before adding')}</figcaption></figure>}<DraftCard key={JSON.stringify(draft)} draft={draft} revision={revision} request={request} onDiscard={()=>{setDraft(null);setPreview('');}} onSaved={async()=>{await onSaved();setText('');setPreview('');}}/></div>}
+    {draft&&<div className={preview?'scan-compare has-photo':'scan-compare'}>{preview&&<figure className="scan-photo"><img src={preview} alt={t('Your photo')}/><figcaption className="small muted">{t('Compare with your photo before adding')}</figcaption></figure>}<DraftCard canTrustVendor={owner} key={JSON.stringify(draft)} draft={draft} revision={revision} request={request} onDiscard={()=>{setDraft(null);setPreview('');}} onSaved={async()=>{await onSaved();setText('');setPreview('');}}/></div>}
   </section>;
 }

@@ -6,11 +6,11 @@ import {prettyVendor,todayIso} from './format';
 import type {Draft} from './types';
 import {t} from './i18n';
 
-type Props={draft:Draft;revision:string;request:<T>(path:string,body?:unknown)=>Promise<T>;onSaved:()=>Promise<void>|void;onDiscard:()=>void;compact?:boolean};
+type Props={draft:Draft;revision:string;request:<T>(path:string,body?:unknown)=>Promise<T>;onSaved:()=>Promise<void>|void;onDiscard:()=>void;canTrustVendor:boolean;compact?:boolean};
 const major=(minor:number,currency:string)=>{const d=currencyDigits(currency);return (minor/10**d).toFixed(d);};
 
 /** A suggestion read from a photo or a sentence. Nothing is saved until the owner checks it and presses Save. */
-export function DraftCard({draft,revision,request,onSaved,onDiscard,compact}:Props){
+export function DraftCard({draft,revision,request,onSaved,onDiscard,canTrustVendor,compact}:Props){
   const currency=draft.workspace_currency;
   const [kind,setKind]=useState(draft.kind);
   const [amount,setAmount]=useState(major(draft.amount_minor,currency));
@@ -32,7 +32,7 @@ export function DraftCard({draft,revision,request,onSaved,onDiscard,compact}:Pro
         if(!number.trim())throw new Error('Enter the invoice number.');
         if(date>today)throw new Error('The bill date cannot be in the future.');
         if(due<date)throw new Error('The due date cannot be before the bill date.');
-        fields={kind:'invoice',amount_minor:minor,effective_on:date,vendor_id:id,invoice_number:number.trim(),due_on:due,memo:memo.slice(0,2000),trust_vendor:allow};
+        fields={kind:'invoice',amount_minor:minor,effective_on:date,vendor_id:id,invoice_number:number.trim(),due_on:due,memo:memo.slice(0,2000),trust_vendor:canTrustVendor&&allow};
       }else{
         const effective=date>today&&status==='cleared'?'scheduled':status;
         fields={kind:'cash',amount_minor:minor,effective_on:date,direction,status:effective,memo:memo.slice(0,2000)};
@@ -67,7 +67,7 @@ export function DraftCard({draft,revision,request,onSaved,onDiscard,compact}:Pro
       </>}
     </div>
     <label>{t('Note')}<input value={memo} maxLength={200} onChange={e=>setMemo(e.target.value)}/></label>
-    {kind==='invoice'&&<label className="check"><input type="checkbox" checked={allow} onChange={e=>setAllow(e.target.checked)}/>{t('Allow payments to this supplier (a second person must still approve each one).')}</label>}
+    {kind==='invoice'&&canTrustVendor&&<label className="check"><input type="checkbox" checked={allow} onChange={e=>setAllow(e.target.checked)}/>{t('Allow payments to this supplier (a second person must still approve each one).')}</label>}
     {error&&<p className="error" role="alert">{error}</p>}
     <div className="actions"><button disabled={busy} onClick={()=>void save()}>{busy?t('Saving…'):t('Add to my records')}</button><button className="secondary" disabled={busy} onClick={onDiscard}>{t('Discard')}</button></div>
   </div>;

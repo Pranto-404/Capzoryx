@@ -24,7 +24,7 @@ def _currency_of(db, business):
 @router.get('/account/workspaces')
 def workspaces(actor=Depends(principal), db=Depends(db_connection)):
     account = account_of(db, actor)
-    rows = db.execute("SELECT m.business_id,u.role,COALESCE(w.name,'My workspace'),w.archived_at FROM account_members m JOIN security_users u ON u.user_id=m.user_id JOIN workspace_meta w ON w.business_id=m.business_id WHERE m.account_id=? AND u.active=1 AND w.kind='personal' ORDER BY m.rowid", (account,)).fetchall()
+    rows = db.execute("SELECT m.business_id,u.role,COALESCE(w.name,'My workspace'),w.archived_at FROM account_members m JOIN effective_security_users u ON u.user_id=m.user_id JOIN workspace_meta w ON w.business_id=m.business_id WHERE m.account_id=? AND u.active=1 AND w.kind='personal' ORDER BY m.rowid", (account,)).fetchall()
     active, archived = [], []
     for business, role, name, archived_at in rows:
         entry = dict(business_id=business, role=role, name=name, kind='personal', currency=_currency_of(db, business))
@@ -43,6 +43,7 @@ def rename(body: Rename, actor=Depends(principal), db=Depends(db_connection)):
     name = ' '.join(body.name.split())
     if not name or any(ord(ch) < 32 for ch in name):sec.fail(422, 'INVALID_NAME')
     with sec.transaction(db):
+        if sec.recheck(db, actor).role != 'owner':sec.fail(403, 'OWNER_REQUIRED')
         db.execute('UPDATE workspace_meta SET name=? WHERE business_id=?', (name, actor.business_id))
     return dict(simulation_only=True)
 
@@ -51,16 +52,16 @@ def rename(body: Rename, actor=Depends(principal), db=Depends(db_connection)):
 @router.get('/account/members')
 def members(actor=Depends(principal), db=Depends(db_connection)):
     account_of(db, actor)
-    rows = db.execute("SELECT u.user_id,u.role,a.username,COALESCE(p.display_name,'') FROM security_users u JOIN account_members m ON m.user_id=u.user_id JOIN auth_accounts a ON a.account_id=m.account_id LEFT JOIN account_profiles p ON p.account_id=a.account_id WHERE u.business_id=? AND u.active=1 ORDER BY CASE u.role WHEN 'owner' THEN 0 ELSE 1 END,a.username", (actor.business_id,)).fetchall()
+    rows = db.execute("SELECT u.user_id,u.role,a.username,COALESCE(p.display_name,'') FROM effective_security_users u JOIN account_members m ON m.user_id=u.user_id JOIN auth_accounts a ON a.account_id=m.account_id LEFT JOIN account_profiles p ON p.account_id=a.account_id WHERE u.business_id=? AND u.active=1 ORDER BY CASE u.role WHEN 'owner' THEN 0 ELSE 1 END,a.username", (actor.business_id,)).fetchall()
     people = [dict(member_id=r[0], role=r[1], username=r[2], display_name=r[3], you=r[0] == actor.user_id) for r in rows]
     invites = []
     if actor.role == 'owner':
-        invites = [dict(invite_id=r[0][:16], role=r[1], expires_at=r[2]) for r in db.execute('SELECT code_hash,role,expires_at FROM workspace_invites WHERE business_id=? AND used_by IS NULL AND expires_at>? ORDER BY expires_at', (actor.business_id, sec.now())).fetchall()]
+        invites = [dict(invite_id=r[0][:16], role=r[1], expires_at=r[2]) for r in db.execute('SELECT code_hash,role,expires_at FROM effective_workspace_invites WHERE business_id=? AND used_by IS NULL AND expires_at>? ORDER BY expires_at', (actor.business_id, sec.now())).fetchall()]
     return dict(members=people, invitations=invites, your_role=actor.role, simulation_only=True)
 
 
 class InviteRequest(Exact):
-    role: str = Field(pattern='^(approver|viewer)$', default='approver')
+    role: str = Field(pattern='^(approver|bookkeeper|viewer)$', default='approver')
     hours: int = Field(default=72, ge=1, le=168, strict=True)
     email: str | None = Field(default=None, max_length=254)
 
@@ -75,17 +76,21 @@ def invite(body: InviteRequest, actor=Depends(principal), db=Depends(db_connecti
     if body.email:
         try:email = normalize_email(body.email)
         except ValueError:sec.fail(422, 'INVALID_EMAIL')
-    if db.execute('SELECT count(*) FROM workspace_invites WHERE business_id=? AND used_by IS NULL AND expires_at>?', (actor.business_id, sec.now())).fetchone()[0] >= 20:sec.fail(409, 'TOO_MANY_OPEN_INVITATIONS')
     code = secrets.token_urlsafe(24)
     expires = sec.now() + body.hours * 3600
     with sec.transaction(db):
-        db.execute('INSERT INTO workspace_invites(code_hash,business_id,role,created_by,expires_at,used_by,created_at) VALUES (?,?,?,?,?,NULL,?)', (hashlib.sha256(code.encode()).hexdigest(), actor.business_id, body.role, actor.user_id, expires, sec.now()))
+        if sec.recheck(db, actor).role != 'owner':sec.fail(403, 'WORKSPACE_OWNER_REQUIRED')
+        if db.execute('SELECT count(*) FROM workspace_invites WHERE business_id=? AND used_by IS NULL AND expires_at>?', (actor.business_id, sec.now())).fetchone()[0] >= 20:sec.fail(409, 'TOO_MANY_OPEN_INVITATIONS')
+        code_hash = hashlib.sha256(code.encode()).hexdigest()
+        db.execute('INSERT INTO workspace_invites(code_hash,business_id,role,created_by,expires_at,used_by,created_at) VALUES (?,?,?,?,?,NULL,?)', (code_hash, actor.business_id, sec.stored_role(body.role), actor.user_id, expires, sec.now()))
+        if body.role == 'bookkeeper':
+            db.execute('INSERT INTO bookkeeper_invites(code_hash) VALUES (?)', (code_hash,))
         sec.audit(db, actor, 'invite-' + uuid.uuid4().hex, 'INVITATION_CREATED', {'role': body.role, 'expires_in_hours': body.hours, 'emailed': bool(email)})
     emailed = False
     base = os.environ.get('SAFELEDGER_PUBLIC_URL', '').rstrip('/')
     if email and base and mailer.configured() and mailer.reserve(email):
         name = db.execute("SELECT COALESCE(NULLIF(p.display_name,''),a.username) FROM auth_accounts a LEFT JOIN account_profiles p ON p.account_id=a.account_id WHERE a.account_id=?", (account,)).fetchone()[0]
-        role_text = 'approve payments' if body.role == 'approver' else 'view the records'
+        role_text = {'approver': 'approve payments', 'bookkeeper': 'add cash records and supplier bills', 'viewer': 'view the records'}[body.role]
         emailed = mailer.send(email, f'{name} invited you to a Capzoryx Copilot workspace', f'{name} invited you to {role_text} in their Capzoryx Copilot workspace.\n\nOpen this link, sign in or create a free account, and you will be added:\n{base}/?join={code}\n\nThe invitation expires in {body.hours} hours and works once.')
     return dict(code=code, role=body.role, expires_at=expires, expires_in_seconds=body.hours * 3600, emailed=emailed, simulation_only=True)
 
@@ -100,7 +105,7 @@ def preview_invitation(body: InvitePreview, request: Request, db=Depends(db_conn
     from api.app.accounts import rate
     browser_origin(request)
     rate(request, db, 'invprev', 20, 60, 120)
-    row = db.execute("SELECT w.name,i.role,COALESCE(NULLIF(p.display_name,''),a.username) FROM workspace_invites i JOIN workspace_meta w ON w.business_id=i.business_id AND w.kind='personal' AND w.archived_at IS NULL "
+    row = db.execute("SELECT w.name,i.role,COALESCE(NULLIF(p.display_name,''),a.username) FROM effective_workspace_invites i JOIN workspace_meta w ON w.business_id=i.business_id AND w.kind='personal' AND w.archived_at IS NULL "
                      "LEFT JOIN account_members m ON m.user_id=i.created_by LEFT JOIN auth_accounts a ON a.account_id=m.account_id LEFT JOIN account_profiles p ON p.account_id=a.account_id "
                      "WHERE i.code_hash=? AND i.expires_at>? AND i.used_by IS NULL", (hashlib.sha256(body.code.encode()).hexdigest(), sec.now())).fetchone()
     if not row:sec.fail(404, 'INVITATION_INVALID_OR_EXPIRED')
@@ -115,6 +120,7 @@ class InviteId(Exact):
 def revoke(body: InviteId, actor=Depends(principal), db=Depends(db_connection)):
     if actor.role != 'owner':sec.fail(403, 'WORKSPACE_OWNER_REQUIRED')
     with sec.transaction(db):
+        if sec.recheck(db, actor).role != 'owner':sec.fail(403, 'WORKSPACE_OWNER_REQUIRED')
         db.execute('DELETE FROM workspace_invites WHERE business_id=? AND used_by IS NULL AND substr(code_hash,1,16)=?', (actor.business_id, body.invite_id))
     return dict(simulation_only=True)
 
@@ -124,7 +130,7 @@ class MemberId(Exact):
 
 
 def _member(db, actor, member_id):
-    row = db.execute('SELECT u.role,u.active FROM security_users u JOIN account_members m ON m.user_id=u.user_id WHERE u.user_id=? AND u.business_id=?', (member_id, actor.business_id)).fetchone()
+    row = db.execute('SELECT u.role,u.active FROM effective_security_users u JOIN account_members m ON m.user_id=u.user_id WHERE u.user_id=? AND u.business_id=?', (member_id, actor.business_id)).fetchone()
     if not row or not row[1]:sec.fail(404, 'MEMBER_NOT_FOUND')
     if row[0] == 'owner':sec.fail(409, 'OWNER_CANNOT_BE_CHANGED')
     return row
@@ -134,6 +140,7 @@ def _member(db, actor, member_id):
 def remove_member(body: MemberId, actor=Depends(principal), db=Depends(db_connection)):
     if actor.role != 'owner':sec.fail(403, 'WORKSPACE_OWNER_REQUIRED')
     with sec.transaction(db):
+        if sec.recheck(db, actor).role != 'owner':sec.fail(403, 'WORKSPACE_OWNER_REQUIRED')
         _member(db, actor, body.member_id)
         db.execute('UPDATE security_users SET active=0 WHERE user_id=?', (body.member_id,))
         app_sessions.revoke_member(db,body.member_id)
@@ -144,15 +151,17 @@ def remove_member(body: MemberId, actor=Depends(principal), db=Depends(db_connec
 
 class MemberRole(Exact):
     member_id: str = Field(min_length=5, max_length=80)
-    role: str = Field(pattern='^(approver|viewer)$')
+    role: str = Field(pattern='^(approver|bookkeeper|viewer)$')
 
 
 @router.post('/account/members/role')
 def change_role(body: MemberRole, actor=Depends(principal), db=Depends(db_connection)):
     if actor.role != 'owner':sec.fail(403, 'WORKSPACE_OWNER_REQUIRED')
     with sec.transaction(db):
+        if sec.recheck(db, actor).role != 'owner':sec.fail(403, 'WORKSPACE_OWNER_REQUIRED')
         _member(db, actor, body.member_id)
-        db.execute('UPDATE security_users SET role=? WHERE user_id=?', (body.role, body.member_id))
+        db.execute('UPDATE security_users SET role=? WHERE user_id=?', (sec.stored_role(body.role), body.member_id))
+        sec.grant_bookkeeper(db, body.member_id, body.role)
         app_sessions.revoke_member(db,body.member_id)
         db.execute('DELETE FROM security_sessions WHERE user_id=?', (body.member_id,))
         sec.audit(db, actor, 'member-' + uuid.uuid4().hex, 'MEMBER_ROLE_CHANGED', {'user': body.member_id, 'role': body.role})
