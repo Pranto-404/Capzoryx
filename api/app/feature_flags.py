@@ -11,6 +11,7 @@ from api.app.routes import db_connection, principal
 router = APIRouter(prefix='/api/workspace/features')
 
 ROUTES = {
+    '/api/workspace/cash-corrections': 'cash_corrections',
     '/api/assist/voice': 'voice',
     '/api/assist/scan': 'bill_scan',
     '/api/assist/ask': 'assistant',
