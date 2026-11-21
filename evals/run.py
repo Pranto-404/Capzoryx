@@ -125,7 +125,7 @@ def leakage_check(cases, training_path):
 
 def node(script, args=(), stdin=None):
     result = subprocess.run(["node", str(ROOT/script), *args], cwd=ROOT, input=stdin,
-                            capture_output=True, text=True, env={**os.environ, "TZ": "Asia/Dhaka"})
+                            capture_output=True, encoding="utf-8", env={**os.environ, "TZ": "Asia/Dhaka"})
     if result.returncode:
         # Some legacy scripts print source sentences on failure. Keep them out of reports.
         raise ValueError(f"{script} failed (status {result.returncode}). Check the installed web dependencies and run the suite locally.")

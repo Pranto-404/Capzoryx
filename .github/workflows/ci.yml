@@ -64,7 +64,7 @@ jobs:
           python -m pip install -r api/requirements.lock.txt
           web/node_modules/.bin/playwright install --with-deps chromium
           node scripts/check_rahim_browser.cjs
-          node scripts/check_pwa.cjs
+          CHROMIUM_PATH="$(command -v google-chrome)" xvfb-run -a node scripts/check_pwa.cjs
 
   dependency-audit:
     runs-on: ubuntu-latest
