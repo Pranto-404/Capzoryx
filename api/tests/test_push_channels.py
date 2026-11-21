@@ -3,7 +3,7 @@ import base64
 import json
 import sqlite3
 from datetime import timedelta
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -33,15 +33,18 @@ def vapid(monkeypatch):
     return key.public_key()
 
 
-def test_private_push_subscription_limits_quiet_and_revoke(world,vapid,monkeypatch):
+@pytest.mark.parametrize('endpoint', [
+    'https://updates.push.services.mozilla.com/wpush/v2/fixture-token',
+    'https://wns2-test.notify.windows.com/w/?token=fixture-token',
+])
+def test_private_push_subscription_limits_quiet_and_revoke(world,vapid,monkeypatch,endpoint):
     c,path=world
     actor=signup(c,'push_owner')
     business=actor['business_id']
     route='/api/notifications/subscriptions'
-    endpoint='https://updates.push.services.mozilla.com/wpush/v2/fixture-token'
     def sub(url=endpoint):
         return c.post(route,json={'kind':'webpush','endpoint':url})
-    for bad in ['https://example.invalid/a','https://fcm.googleapis.com:1234/a','https://xx@fcm.googleapis.com/a']:
+    for bad in ['https://example.invalid/a','https://notnotify.windows.com/w/','https://fcm.googleapis.com:1234/a','https://xx@fcm.googleapis.com/a']:
         assert sub(bad).status_code==422
     ident=sub().json()['id']
     assert sub().json()['id']==ident
@@ -53,7 +56,7 @@ def test_private_push_subscription_limits_quiet_and_revoke(world,vapid,monkeypat
         sig=decode(sig)
         vapid.verify(utils.encode_dss_signature(int.from_bytes(sig[:32],'big'),int.from_bytes(sig[32:],'big')),
                      (a+'.'+b).encode(),ec.ECDSA(hashes.SHA256()))
-        assert json.loads(decode(b))['aud']=='https://updates.push.services.mozilla.com'
+        assert json.loads(decode(b))['aud']=='https://'+urlsplit(endpoint).netloc
         delivered.append(True)
         return httpx.Response(201)
     monkeypatch.setattr(wire,'TRANSPORT',httpx.MockTransport(handle))
