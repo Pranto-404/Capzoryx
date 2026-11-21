@@ -7,3 +7,5 @@ Set a fresh random secret of at least 32 characters as `CAPZORYX_TICK_SECRET` on
 The optional backup workflow runs at minutes 7 and 37 UTC on the default branch. Set the repository variable `CAPZORYX_ENABLE_NOTIFICATION_BACKUP` to `1`. For each deployed environment, configure its GitHub environment with `CAPZORYX_TICK_ORIGIN` as an HTTPS origin and `CAPZORYX_TICK_SECRET` as an environment secret. Environments without a configured origin skip delivery. Keep separate secrets for independent API deployments.
 
 The inbox uses Asia/Dhaka time and defaults to quiet hours from 21:00 to 08:00. New-browser sign-in alerts appear immediately. Bills and customer balances are rechecked before deferred delivery. Customer reminders are drafted and shared separately by the owner.
+
+The staging window and expected website and API revisions are recorded in `.github/staging-website.json`. Publishing a new manifest exercises a synthetic QA workspace once. Scheduled runs check those revisions and Turso readiness until the UTC expiry.

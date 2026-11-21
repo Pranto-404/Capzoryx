@@ -2,6 +2,9 @@ name: Notification scheduler backup
 on:
   schedule:
     - cron: '7,37 * * * *'
+  push:
+    branches: [main]
+    paths: ['.github/staging-website.json']
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,8 +27,8 @@ jobs:
         id: window
         env:
           ENVIRONMENT: ${{ matrix.environment }}
-          UNTIL: ${{ vars.CAPZORYX_QA_UNTIL_UTC }}
         run: |
+          UNTIL=$(jq -er .until .github/staging-website.json)
           active=false
           if [ "$ENVIRONMENT" = production ]; then
             active=true
@@ -33,20 +36,16 @@ jobs:
             active=true
           fi
           echo "active=$active" >> "$GITHUB_OUTPUT"
-      - name: Verify the staged app and Turso schema
+      - name: Verify website, API and database on staging
         if: matrix.environment == 'staging' && steps.window.outputs.active == 'true'
         env:
-          EXPECTED: ${{ vars.CAPZORYX_QA_COMMIT }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          set -eu
-          origin=https://capzoryx-qa.vercel.app
-          fetch_json() { curl --fail --silent --show-error --max-time 100 --retry 2 "$origin/api/$1"; }
-          health=$(fetch_json health)
-          ready=$(fetch_json ready)
-          test -n "$EXPECTED"
-          echo "$health" | jq -e --arg sha "$EXPECTED" '.status == "ok" and .build_commit == $sha' >/dev/null
-          echo "$ready" | jq -e '.status == "ready" and .database == "libsql"' >/dev/null
-          echo "Verified staging commit \`$EXPECTED\` with Turso at $(date -u +%FT%TZ)." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$EVENT_NAME" = push ]; then
+            node scripts/check_staged_website.mjs --exercise
+          else
+            node scripts/check_staged_website.mjs
+          fi
       - name: Deliver in-app reminders
         if: steps.window.outputs.active == 'true'
         env:
