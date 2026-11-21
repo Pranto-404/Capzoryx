@@ -468,3 +468,11 @@ main.welcome>.welcome-story>.scroll-cue{order:8;align-self:flex-start;margin-top
 .passport-page dd { font-weight: 700; }
 .passport-print { display: block; margin-top: 1rem; }
 @media print { .passport-print { display: none; } .passport-page { margin: 0 auto; } }
+
+.record-demo{padding:1.1rem;display:grid;gap:.7rem}
+.record-demo label{font-weight:650}
+.record-demo input{width:100%;min-width:0}
+.record-demo small{color:var(--muted)}
+.record-result{display:grid;grid-template-columns:1fr auto;gap:.35rem;border-top:1px solid var(--line);padding-top:.7rem}
+.record-result small{grid-column:1/-1}
+main.welcome .welcome-story>*,main.welcome .welcome-entry{animation:none}
