@@ -13,7 +13,7 @@ from api.app import app_sessions, mcp_read, quality, security
 from api.app.notifications import telegram
 from api.app.notifications import push
 from api.app.notifications.routes import router as notification_router
-from api.app import khata
+from api.app import corrections, khata
 from api.app.body_limit import BodyLimitMiddleware
 from api.app.ratelimit import limiter
 from api.app.copilot import plans
@@ -88,6 +88,7 @@ app.include_router(khata.router)
 app.include_router(accounts.router)
 app.include_router(app_sessions.router)
 app.include_router(inputs.router)
+app.include_router(corrections.router)
 app.include_router(financing.router)
 app.include_router(mcp_read.router)
 app.include_router(profile.router)

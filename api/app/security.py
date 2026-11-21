@@ -109,6 +109,7 @@ def create_schema(db):
       actor_id TEXT NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL, payload TEXT NOT NULL,
       previous_hash TEXT NOT NULL, event_hash TEXT NOT NULL, signature TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS audit_by_workspace ON audit_events(business_id,event_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS one_cash_correction_request ON audit_events(business_id,trace_id) WHERE kind='CASH_CORRECTED';
     CREATE TABLE IF NOT EXISTS audit_checkpoints(business_id TEXT NOT NULL,event_id INTEGER NOT NULL,
       event_hash TEXT NOT NULL,signature TEXT NOT NULL,PRIMARY KEY(business_id,event_id));
     CREATE TABLE IF NOT EXISTS audit_history_changes(business_id TEXT PRIMARY KEY);
@@ -414,11 +415,13 @@ def verify_posting(db, row, dataset):
     return payload
 
 
-def runtime_dataset(db, business_id):
+def runtime_dataset(db, business_id, *, verified_history=None):
     ds = original_dataset(db,business_id)
     db.row_factory=sqlite3.Row
     postings=db.execute('SELECT * FROM postings WHERE business_id=? ORDER BY created_at,posting_id',(business_id,)).fetchall()
     raw=ds.model_dump(mode='json')
+    from api.app.services.cash_corrections import effective_events
+    effective_events(db, business_id, raw, verified_history)
     for posting in postings:
         payload=verify_posting(db,posting,ds)
         invoice=next(x for x in ds.invoices if x.invoice_id==posting['invoice_id'])
@@ -428,7 +431,7 @@ def runtime_dataset(db, business_id):
             if inv['invoice_id'] in targets:inv['status']='paid'
         raw['events']=[x for x in raw['events'] if not (x.get('invoice_id') in targets and x['status']=='scheduled')]
         day=datetime.fromtimestamp(posting['created_at'],timezone(timedelta(hours=6))).date()
-        raw['as_of']=max(ds.as_of,day).isoformat()
+        raw['as_of']=max(raw['as_of'],day.isoformat())
         identity='posted-'+posting['posting_id']
         raw['events'].append(dict(source_record_id=identity,event_id=identity,direction='outflow',status='cleared',effective_on=max(ds.as_of,day).isoformat(),amount_minor=payload['amount_minor'],currency=ds.currency,invoice_id=invoice.invoice_id))
     try:
