@@ -13,7 +13,6 @@ from pydantic import Field, StrictBool
 
 from api.app import security as sec
 from api.app.agents.errors import ProviderError
-from api.app.agents.provider import strict_json
 from api.app.accounts import today_bd
 from api.app.assist import BANGLA_DIGITS, normalize_draft, parse_amount
 from api.app.contracts import Contract
@@ -48,7 +47,7 @@ def facts(sentence, today):
     if len(dates) > 1 or len(amounts) != 1 or re.search(r"(?<!\d)-\s*\d", numeric):
         return None
     amount = amounts.pop()
-    if amount is None or not Decimal("0") < amount <= Decimal("10000000000"):
+    if amount is None or not 0 < amount <= Decimal("10000000000") or amount != amount.quantize(Decimal("0.01")):
         return None
     try:
         day = date.fromisoformat(dates[0]) if dates else today - timedelta(days=int(bool(YESTERDAY.search(text))))
@@ -61,6 +60,8 @@ def facts(sentence, today):
 
 def hosted_extract(sentence):
     """Keep the Space credential server-side and accept only the private endpoint's result."""
+    from api.app.agents.provider import strict_json
+
     key = os.environ.get("CAPZORYX_HISAB_HF_TOKEN", "").strip()
     if not key:
         raise ProviderError("HISAB_NOT_AVAILABLE")
