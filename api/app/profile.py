@@ -104,7 +104,8 @@ def spend_code(db, purpose, subject):
 # ---------- profile ----------
 @router.get('/auth/capabilities')
 def capabilities():
-    return dict(email_codes=mailer.configured(), cloud_assist=any('question' in p['allowed'] for p in gateway.disclosure()), simulation_only=True)
+    from api.app.hisab_hosted import configured as hisab_configured
+    return dict(hisab_lm=hisab_configured(), email_codes=mailer.configured(), cloud_assist=any('question' in p['allowed'] for p in gateway.disclosure()), simulation_only=True)
 
 
 @router.get('/account/profile')
