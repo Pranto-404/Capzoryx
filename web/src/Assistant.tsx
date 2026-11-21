@@ -9,28 +9,37 @@ import {looksLikeTransaction,parseRecordForDraft} from './recordParser';
 import type {AgentResult,CashEvent,Draft,Forecast,Invoice,Profile,Session,Snapshot} from './types';
 import {t,T} from './i18n';
 
-type Props={snapshot:Snapshot|null;forecast:Forecast|null;week:Forecast|null;events:CashEvent[];invoices:Invoice[];session:Session;profile:Profile|null;cloudAvailable:boolean;revision:string;request:<T>(path:string,body?:unknown)=>Promise<T>;onSaved:()=>Promise<void>;onProposal:()=>Promise<void>;onNavigate:(action:AssistantAction)=>void;onClose?:()=>void;visible:boolean};
-type Message={id:number;role:'user'|'assistant';text:string;kind?:'device'|'smart';actions?:AssistantAction[];draft?:Draft;agent?:AgentResult;offTopic?:string;retry?:string};
+type Props={snapshot:Snapshot|null;forecast:Forecast|null;week:Forecast|null;events:CashEvent[];invoices:Invoice[];session:Session;profile:Profile|null;cloudAvailable:boolean;hisabAvailable:boolean;revision:string;request:<T>(path:string,body?:unknown)=>Promise<T>;onSaved:()=>Promise<void>;onProposal:()=>Promise<void>;onNavigate:(action:AssistantAction)=>void;onClose?:()=>void;visible:boolean};
+type Message={id:number;role:'user'|'assistant';text:string;kind?:'device'|'smart'|'hisab';actions?:AssistantAction[];draft?:Draft;agent?:AgentResult;offTopic?:string;retry?:string};
+type AskMode='default'|'off-topic'|'hisab';
 const hints=[T('What is my balance?'),T('I paid Rahman 5000 for freight yesterday'),T('Which loan fits my cash flow?'),T('Which bills are overdue?')];
 
-export default function Assistant({snapshot,forecast,week,events,invoices,session,profile,cloudAvailable,revision,request,onSaved,onProposal,onNavigate,onClose,visible}:Props){
+export default function Assistant({snapshot,forecast,week,events,invoices,session,profile,cloudAvailable,hisabAvailable,revision,request,onSaved,onProposal,onNavigate,onClose,visible}:Props){
   const {currency,digits,nativeMoney:money}=useCurrency();
   const [messages,setMessages]=useState<Message[]>([]);const [task,setTask]=useState('');const [busy,setBusy]=useState(false);
   const [picking,setPicking]=useState(false);const [target,setTarget]=useState('');
   const lastIntent=useRef('');const nextId=useRef(0);const mounted=useRef(true);const pending=useRef(false);
   const log=useRef<HTMLDivElement>(null);const input=useRef<HTMLTextAreaElement>(null);
   const owner=session.role==='owner';const canAddRecords=owner||session.role==='bookkeeper';const smart=!!profile?.smart_assist&&cloudAvailable;
+  const canUseHisab=owner&&hisabAvailable&&currency==='BDT';
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   useEffect(()=>{if(visible)input.current?.focus();},[visible]);
   useEffect(()=>{if(log.current)log.current.scrollTop=log.current.scrollHeight;},[messages,busy]);
   const add=(...m:Omit<Message,'id'>[])=>setMessages(cur=>[...cur,...m.map(x=>({...x,id:nextId.current++}))].slice(-40));
   const openBills=invoices.filter(i=>i.status==='open');
 
-  async function ask(question:string,force=false){
-    const q=question.trim();if(!q||pending.current)return;
+  async function ask(question:string,mode:AskMode='default'){
+    const q=question.trim();
+    const useHisab=mode==='hisab';
+    if(!q||pending.current||(useHisab&&(!canUseHisab||q.length>400)))return;
     pending.current=true;setBusy(true);setTask('');
-    add({role:'user',text:q});
+    add({role:'user',text:q,kind:useHisab?'hisab':undefined});
     try{
+      if(useHisab){
+        const result=await request<{draft:Draft}>('/assist/hisab',{text:q,consent:true});
+        if(mounted.current)add({role:'assistant',kind:'hisab',text:t('Draft prepared by Hisab-LM.'),draft:result.draft});
+        return;
+      }
       // 1. A sentence that describes a payment or a bill becomes a draft record to confirm.
       if(canAddRecords){
         const draft=await parseRecordForDraft(q,{currency,digits});
@@ -43,20 +52,25 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
       if(blocked){add({role:'assistant',kind:'device',text:local.text});return;}
       // 3. Everything else goes to smart assist, if it is on.
       const offTopic=local.intent==='out_of_domain';
-      if(offTopic&&!force){add({role:'assistant',kind:'device',text:local.text,offTopic:q});return;}
+      if(offTopic&&mode!=='off-topic'){add({role:'assistant',kind:'device',text:local.text,offTopic:q});return;}
       if(!smart){add({role:'assistant',kind:'device',text:profile&&!profile.smart_assist?t('I can only answer that with smart assist. You can turn it on in Settings.'):t('Smart assist is not available right now. I can still help with your balance, invoices, cash flow, loans and adding records.')});return;}
       if(owner&&looksLikeTransaction(q)){
         const r=await request<{draft:Draft}>('/assist/extract',{text:q});
         if(!mounted.current)return;
         if(r.draft.ok){add({role:'assistant',kind:'smart',text:t('I read this from your message. Check it, then add it to your records.'),draft:r.draft});return;}
       }
-      const history=messages.filter(m=>!m.draft&&!m.agent).slice(-4).map(m=>({role:m.role,text:m.text.slice(0,500)}));
+      const history=messages.filter(m=>m.kind!=='hisab'&&!m.draft&&!m.agent).slice(-4).map(m=>({role:m.role,text:m.text.slice(0,500)}));
       const r=await request<{answer:string}>('/assist/ask',{question:q,history});
       if(mounted.current)add({role:'assistant',kind:'smart',text:r.answer});
     }catch(e){
       if(!mounted.current)return;
-      const text=e instanceof ApiError&&(e.code==='AI_QUOTA_EXHAUSTED'||e.status===503)?t('Smart assist is busy right now. Please try again in a minute. Your balance, invoices and cash-flow questions still work.'):e instanceof Error?e.message:t('Something went wrong. Please try again.');
-      add({role:'assistant',kind:'device',text,retry:q});
+      let text=e instanceof Error?e.message:t('Something went wrong. Please try again.');
+      if(useHisab&&e instanceof ApiError&&e.status===503){
+        text=t('Hisab-LM is temporarily unavailable. You can send your message normally.');
+      }else if(!useHisab&&e instanceof ApiError&&(e.code==='AI_QUOTA_EXHAUSTED'||e.status===503)){
+        text=t('Smart assist is busy right now. Please try again in a minute. Your balance, invoices and cash-flow questions still work.');
+      }
+      add({role:'assistant',kind:useHisab?'hisab':'device',text,retry:q});
     }finally{pending.current=false;if(mounted.current){setBusy(false);input.current?.focus();}}
   }
   async function prepare(){
@@ -74,12 +88,12 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
     <div className="chat-log" ref={log} role="log" aria-label={t('Conversation')} aria-live="polite">
       {!messages.length&&<div className="chat-welcome"><span aria-hidden="true"><Icon name="spark"/></span><h3>{t('How can I help?')}</h3><p>{t('Ask a question, or tell me what you paid or received. I can add records for you, explain your numbers and compare loan offers.')}</p><div className="chat-suggestions">{hints.filter(h=>canAddRecords||!/^I paid/.test(h)).map(h=><button key={h} className="secondary" onClick={()=>void ask(h)}>{t(h)}</button>)}</div></div>}
       {messages.map(m=><article className={'chat-message '+m.role} key={m.id}>
-        {m.role==='assistant'&&<small>{m.kind==='smart'?t('Smart answer'):'Assistant'}</small>}
+        {m.role==='assistant'&&<small>{m.kind==='hisab'?'Hisab-LM':m.kind==='smart'?t('Smart answer'):'Assistant'}</small>}
         {m.text.split('\n\n').map((para,i)=><p key={i}>{para}</p>)}
         {m.draft&&canAddRecords&&<DraftCard canTrustVendor={owner} compact draft={m.draft} revision={revision} request={request} onSaved={onSaved} onDiscard={()=>setMessages(cur=>cur.map(x=>x.id===m.id?{...x,draft:undefined,text:t('Discarded. Nothing was added.')}:x))}/>}
         {!!m.actions?.length&&<div className="chat-actions">{m.actions.map(a=><button className="secondary" key={a} onClick={()=>onNavigate(a)}>{({Financing:t('Open Loans'),Data:t('Open Add records'),Audit:t('Open Activity')} as Record<string,string>)[a]||`Open ${a}`}</button>)}</div>}
-        {m.offTopic&&smart&&<div className="chat-actions"><button className="secondary" disabled={busy} onClick={()=>void ask(m.offTopic!,true)}>{t('It is about my business: try anyway')}</button></div>}
-        {m.retry&&<div className="chat-actions"><button className="secondary" disabled={busy} onClick={()=>void ask(m.retry!)}>{t('Try again')}</button></div>}
+        {m.offTopic&&smart&&<div className="chat-actions"><button className="secondary" disabled={busy} onClick={()=>void ask(m.offTopic!,'off-topic')}>{t('It is about my business: try anyway')}</button></div>}
+        {m.retry&&(m.kind!=='hisab'||canUseHisab)&&<div className="chat-actions"><button className="secondary" disabled={busy} aria-describedby={m.kind==='hisab'?'assistant-hisab-privacy':undefined} onClick={()=>void ask(m.retry!,m.kind==='hisab'?'hisab':'default')}>{m.kind==='hisab'?t('Retry with Hisab-LM'):t('Try again')}</button></div>}
         {m.agent?.proposal&&<button onClick={()=>void onProposal()}>{t('Open payment approval')}</button>}
         {m.agent&&!!m.agent.limitations.length&&<details><summary>{t('Good to know')}</summary>{m.agent.limitations.map((v,i)=><p key={i}>{v}</p>)}</details>}
         {m.kind==='smart'&&!m.draft&&!m.agent&&<small className="muted">{t('Please double-check important decisions.')}</small>}
@@ -89,6 +103,10 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
     {picking&&<div className="chat-pick"><label htmlFor="agent-bill">{t('Which bill?')}</label><select id="agent-bill" value={target} onChange={e=>setTarget(e.target.value)}><option value="">{t('Choose a bill')}</option>{openBills.map(i=><option key={i.invoice_id} value={i.invoice_id}>{prettyVendor(i.vendor_id)} · {i.invoice_number} · {money(i.amount_minor)} · due {formatDate(i.due_on)}</option>)}</select><div className="actions"><button disabled={!target||busy} onClick={()=>void prepare()}>{t('Prepare for approval')}</button><button className="secondary" onClick={()=>setPicking(false)}>{t('Cancel')}</button></div></div>}
     {owner&&!!openBills.length&&smart&&!picking&&<div className="chat-chips"><button className="secondary small" disabled={busy} onClick={()=>setPicking(true)}>{t('Prepare a payment…')}</button></div>}
     <form className="chat-compose" onSubmit={(e:FormEvent)=>{e.preventDefault();void ask(task);}}><label htmlFor="agent-task" className="sr-only">{t('Message the assistant')}</label><textarea ref={input} id="agent-task" rows={2} placeholder={t('Ask, or say what you paid…')} maxLength={800} value={task} disabled={busy} onChange={e=>setTask(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form?.requestSubmit();}}}/><button disabled={busy||!task.trim()} aria-label={t('Send message')}>{busy?'…':<Icon name="send"/>}</button></form>
+    {canUseHisab&&<div className="chat-hisab">
+      <button className="secondary small" type="button" disabled={busy||!task.trim()||task.trim().length>400} aria-describedby="assistant-hisab-privacy" onClick={()=>void ask(task,'hisab')}>{t('Use Hisab-LM')}</button>
+      <p id="assistant-hisab-privacy" className="small muted">{task.trim().length>400?t('Use 400 characters or fewer with Hisab-LM.'):t('Hisab-LM sends this sentence to a private Hugging Face service to draft one BDT cash record. Review it before saving.')}</p>
+    </div>}
     <p className="chat-footnote">{smart?t('Smart assist is on · simple questions are answered on your device'):t('Answers on your device · turn on smart assist in Settings for more')}</p>
   </section>;
 }
