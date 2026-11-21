@@ -1,6 +1,6 @@
 """In-app reminders computed in Bangladesh local time from existing records."""
 from datetime import date, datetime, timedelta
-import json
+import os
 
 from api.app import security as sec
 from api.app.contracts import ScenarioRequest
@@ -26,6 +26,12 @@ def run_workspace(db, business, at):
         enqueue(db, business, 'customer_overdue', customer, at=at, period=str(today))
     receipts = open_receipts(db, business)
     if ds.events or ds.invoices or receipts or ds.opening_balance_minor:
+        season_date = today + timedelta(days=30)
+        if (season_date.month, season_date.day) == (4, 14):
+            enqueue(db, business, 'boishakh_planning', str(season_date), at=at)
+        eid_dates = os.environ.get('CAPZORYX_EID_PLANNING_DATES', '').split(',')
+        if season_date.isoformat() in {value.strip() for value in eid_dates}:
+            enqueue(db, business, 'eid_planning', str(season_date), at=at)
         if now.hour >= 8:
             enqueue(db, business, 'morning_briefing', str(today), at=at)
         reserve = db.execute('SELECT reserve_minor FROM security_policies WHERE business_id=?', (business,)).fetchone()

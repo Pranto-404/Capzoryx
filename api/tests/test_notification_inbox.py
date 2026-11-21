@@ -1,5 +1,5 @@
 """In-app scheduling, notification ownership, and the Turso claim result contract."""
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 import json
 import sqlite3
 
@@ -112,3 +112,17 @@ def test_authenticated_scheduler_and_new_browser_notice(world,monkeypatch):
     assert c.post('/api/auth/logout',json={}).status_code==200
     assert c.post('/api/auth/login',json={'username':'scheduler_notify','password':PASSWORD}).status_code==200
     assert len(c.get('/api/notifications').json()['items'])==1
+
+def test_season_planning_uses_dhaka_dates_and_one_alert_per_event(world,monkeypatch):
+    c,path=world
+    owner=signup(c,'season_owner')
+    assert record(c)[0].status_code==201
+    monkeypatch.setenv('CAPZORYX_EID_PLANNING_DATES','2030-04-20')
+    with sqlite3.connect(path) as db:
+        for day in (date(2030,3,15),date(2030,3,21)):
+            for hour in (9,12):
+                tick_business(db,owner['business_id'],local(day,hour))
+        alerts=[json.loads(raw)['kind'] for raw, in db.execute(
+            "SELECT payload_json FROM notification_jobs WHERE channel='inapp' AND status='sent'")]
+    assert alerts.count('boishakh_planning')==1
+    assert alerts.count('eid_planning')==1
