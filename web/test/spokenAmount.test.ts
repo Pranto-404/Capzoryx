@@ -25,6 +25,19 @@ describe('currency-bound amounts in editable voice transcripts',()=>{
   ])('leaves ambiguous or inapplicable speech editable: %s',text=>{
     expect(normalizeSpokenAmount(text,'BDT')).toBe(text);
   });
+  it.each([
+    ['Received five dollars and fifty','USD'],['Received five dollars fifty','USD'],
+    ['Received five dollars and 50','USD'],['Received five dollars and Fifty More','USD'],['Received five dollars or ten','USD'],
+    ['I did not pay five dollars','USD'],['I didn’t pay five dollars','USD'],['Received five dollars in JPY','USD'],['পাঁচ টাকা পঞ্চাশ পেলাম','BDT'],
+    ['করিমকে পাঁচশ টাকা নয়, ছয়শ দিলাম','BDT'],['পাঁচশ টাকা না ছয়শ দিলাম','BDT'],
+    ['পাঁচশ টাকা দিলাম আর ২০ চেঞ্জ পেলাম','BDT'],['এক হাজার টাকা চেঞ্জ চাই','BDT'],['পাঁচশ টাকা চেঞ্জটা ফেরত পেলাম','BDT'],['করিমকে এক হাজার টাকা দিইনি','BDT'],
+    ['পাঁচশ টাকা দিলাম, চারশো পেলাম','BDT'],['Paid 50, received one hundred taka','BDT'],
+    ['Received five dollars plus one euro','USD'],['I paid five dollars and ten rupees','USD'],
+    ['পাঁচশ টাকা আর দশ রুপি পেলাম','BDT'],['Received five dollars Canadian','USD'],
+    ['করিমের কাছ থেকে পাঁচশ টাকা পেলাম','USD'],['Paid five hundred dollars','BDT'],
+  ])('abstains on fractions, other quantities, corrections and currency changes: %s',(text,currency)=>{
+    expect(normalizeSpokenAmount(text,currency)).toBe(text);
+  });
   it('honours the selected workspace currency',()=>{
     expect(normalizeSpokenAmount('Paid five hundred dollars','USD')).toBe('Paid 500 dollars');
   });

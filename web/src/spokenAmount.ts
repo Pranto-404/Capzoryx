@@ -1,3 +1,6 @@
+import {currencies} from './currencies';
+import {asciiDigits} from './recordParser';
+
 // Only the span immediately before a named currency is eligible. Keep the original transcript on ambiguity.
 const numbers=new Map<string,number>();
 function add(words:string,start:number,step=1){
@@ -22,9 +25,12 @@ const hundred=new Set(['hundred','শ','শো','শত']);
 const thousand=new Set(['thousand','হাজার']);
 const currencyNames:Record<string,string>={'টাকা':'BDT','taka':'BDT','bdt':'BDT','dollar':'USD','dollars':'USD',
   'usd':'USD','euro':'EUR','euros':'EUR','eur':'EUR','pound':'GBP','pounds':'GBP','gbp':'GBP'};
-const uncertainPrefix=new Set(
-  'or to between minus negative plus point half quarter about around approximately under over than less million lakh crore বা অথবা প্রায় সাড়ে পৌনে সোয়া দেড় আড়াই লক্ষ লাখ কোটি দশমিক নয় কম বেশি'.normalize('NFC').split(' ')
+const uncertain=new Set(
+  ('or between minus negative plus point half quarter about around approximately under over instead less not no never actually change cents cent penny pennies pence paisa poisha poysha '+
+   'বা অথবা প্রায় সাড়ে পৌনে সোয়া দেড় আড়াই দশমিক নয় না নই নেই করিনি দিইনি দেইনি পাইনি বরং কম বেশি পরিবর্তে বাদ চেঞ্জ খুচরা পয়সা').normalize('NFC').split(' ')
 );
+const otherUnits=new Set('million lakh crore লক্ষ লাখ কোটি rupee rupees রুপি রূপি ডলার ইউরো পাউন্ড cad aud inr yuan yen canadian australian'.normalize('NFC').split(' '));
+const currencyCodes=new Set<string>(currencies.map(item=>item.code));
 const value=(word:string)=>numbers.get(word)??0;
 const cardinal=(word:string)=>numbers.has(word)||hundreds.has(word)||hundred.has(word)||thousand.has(word)||word==='and';
 
@@ -44,6 +50,21 @@ function group(words:string[]):number {
   return 0;
 }
 
+function hasAnotherAmount(fragment:string):boolean {
+  // ISO and slash dates cannot be another currency amount. Preserve their original spelling in the transcript.
+  const outside=asciiDigits(fragment).replace(/(?<!\d)\d{1,4}[-/]\d{1,2}[-/]\d{1,4}(?!\d)/g,' ');
+  const tokens=outside.match(/[\p{L}\p{M}\p{N}]+/gu)||[];
+  return tokens.some((token,i)=>{
+    if(/\p{N}/u.test(token))return true;
+    const word=token.toLowerCase().normalize('NFC');
+    if(!value(word)&&!hundreds.has(word)&&!hundred.has(word)&&!thousand.has(word))return false;
+    // Preserve explicit party names such as "Two Brothers" and "One Market".
+    const followsPartyCue=['from','to','paid','by','at','for'].includes(tokens[i-1]?.toLowerCase());
+    return !(followsPartyCue&&/^[A-Z][a-z]+$/.test(token)&&/^[A-Z][a-z]+$/.test(tokens[i+1]||'')
+      &&!cardinal(tokens[i+1].toLowerCase()));
+  });
+}
+
 export function normalizeSpokenAmount(text:string,currency:string):string {
   const tokens=[...text.matchAll(/[\p{L}\p{M}\p{N}]+/gu)];
   const words=tokens.map(token=>token[0].toLowerCase().normalize('NFC'));
@@ -59,13 +80,13 @@ export function normalizeSpokenAmount(text:string,currency:string):string {
   if(start===end)return text;
   const before=words[start-1]||'';
   const left=text.slice(0,tokens[start].index);
-  // Reject partial parses of ranges, negatives, fractions, larger scales and compound currencies.
-  if(cardinal(before)||/\p{N}/u.test(before)||/[\d০-৯–—+−-]\s*$/u.test(left)
-    ||uncertainPrefix.has(before)
-    ||(before==='of'&&!['amount','bill','total','payment','sum'].includes(words[start-2]))
-    ||words.some(word=>/^(?:paisa|poysha|poisha|cents?|পয়সা|পয়সা)$/u.test(word)))return text;
-  if(before==='থেকে'&&start>=2&&(cardinal(words[start-2])||/\p{N}/u.test(words[start-2])))return text;
-  if(words.slice(end+1).some(word=>['plus','minus','instead','less','বাদ','কম','বেশি'].includes(word)))return text;
+  // A second quantity, qualification, currency or correction invalidates the whole candidate.
+  if(cardinal(before)||before==='to'||/[–—+−-]\s*$/u.test(left)||/[৳$€£₹¥±~%]/u.test(text)
+    ||/\b[a-z]+n['’]t\b/i.test(text)||words.some(word=>uncertain.has(word)||otherUnits.has(word)||/^(?:চেঞ্জ|খুচর|পয়সা)/u.test(word))
+    ||tokens.some(token=>currencyCodes.has(token[0])&&token[0]!==currency)
+    ||(before==='of'&&!['amount','bill','total','payment','sum'].includes(words[start-2])))return text;
+  const right=text.slice(tokens[end].index!+tokens[end][0].length);
+  if(hasAnotherAmount(left)||hasAnotherAmount(right))return text;
   const digits=words.slice(start,end);
   if(digits.some(word=>/[a-z]/.test(word))&&digits.some(word=>/[\u0980-\u09ff]/u.test(word)))return text;
   const split=digits.findIndex(word=>thousand.has(word));
