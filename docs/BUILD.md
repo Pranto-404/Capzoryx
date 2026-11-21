@@ -38,6 +38,19 @@ The release checklist includes organizer confirmation of code-reuse rules before
 - **Mobile app** development, including the install manifest and its offline screen, lives on the v2 branch. The main branch builds the responsive website.
 - **Cloud privacy** starts with Smart assist off. The on-device parser and bill reader work without an account at an AI provider. Remote extraction and planning require a compatible provider explicitly cleared for free, no-training processing. The staging service has no AI billing credentials.
 
+## Website qualification · 21 November
+
+The public landing page previews Bangla, Banglish and English cash entries locally. A visitor can try the example at `/#try-record` while the API wakes up. Signed-in website changes are available on the isolated QA site during the release check.
+
+| Where to look | What to verify |
+| --- | --- |
+| Overview → Cash briefing | Compare the current cash, customer dues and seven-day forecast with the workspace records. Select an income or expense total to see its source entries. |
+| Add records → cash corrections | Replace or void a standalone manual cash entry. Confirm the change and check the balance, forecast and signed history. |
+| Settings → Profile | Turn on reduced background downloads. |
+| Settings → Data & workspaces → Workspace features | Pause issuance of a new passport. Existing public verification and owner revocation remain available. |
+
+The [staging workflow](https://github.com/Pranto-404/Capzoryx/actions/runs/44891914051) checked both deployed revisions, Turso readiness, signup, a BDT 500 entry corrected to BDT 450, the resulting briefing, workspace settings and logout. The scheduled checks use the release window in `.github/staging-website.json`.
+
 ## Free-tier release gates
 
 See docs/RESOURCES.md for the website, app and isolated QA environments. A local keypair can be used in a separate development checkout by replacing the public key map and setting the corresponding private key through the environment.

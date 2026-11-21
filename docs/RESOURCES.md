@@ -7,7 +7,7 @@
 | Live API | Render capzoryx-staging-api | Despite its historical service name, this service and its Turso database serve the live website and app. Synthetic tests run locally or against an isolated QA origin. |
 | QA | Vercel capzoryx-qa and Render capzoryx-qa-api | Dedicated API on the free Singapore instance. Supply its own Turso URL/token and independent signing key. Verify the deployed commit and libSQL readiness before starting its 24-hour soak. |
 | Model evaluation | Local CPU | The browser parser and deterministic finance engine work without external keys. Train the optional tagger locally. Independently written samples can be collected at /field-kit/index.html. |
-| Optional QLoRA | Free CUDA notebook session | Run ml/hisab_lm/train.ipynb only on a free CUDA allocation. Keep adapters and model credentials outside the public repository. |
+| Optional QLoRA | Owner’s local RTX 5060 Ti, or a free CUDA notebook | Compare the base models on the validation split before tuning. Use the final test split after selection. Keep weights, model credentials and private evaluation files outside the public repository. |
 | Optional notifications | Cloudflare Workers Free and GitHub Actions | Set separate staging and live tick secrets using the deployment instructions in infra/notification-tick. New alerts are readable in Activity. |
 | Optional delivery | VAPID, Firebase or Telegram | Configure only a channel chosen by the owner. Device and recipient consent are required before delivery. |
 

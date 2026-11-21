@@ -12,4 +12,6 @@ The repository owner decides whether to pause a feature or restore a deployment.
 
 Restore the previous verified website deployment in Vercel and check the canonical alias. On Render, restore a deployment that understands the current financial history. Once a signed cash correction exists, the first compatible API release or a newer one is required to produce correct balances. Freeze writes and deploy a forward fix if the previous API cannot read those receipts. Use the isolated QA service and a synthetic workspace for rollback rehearsals. Verify the build revision, database readiness, corrected balance and audit chain before enabling writes.
 
+A local recovery drill on 21 November used a synthetic SQLite database, the same signing key throughout, and a BDT 500 cash entry corrected to BDT 450. Release `666fe64`, its correction-compatible predecessor `5369497` in read-only mode, and the restored `666fe64` each returned BDT 450 and a verified audit chain. The predecessor rejected writes while frozen. Earlier releases predating signed corrections require a forward fix when the database already contains a correction.
+
 If personal data was involved, the owner assesses the incident and notifies affected users within 72 hours under the project's response plan. Record timing and impact privately.
