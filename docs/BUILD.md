@@ -61,7 +61,7 @@ In **Add records → Import a bank or wallet statement**, a positive row can sug
 
 In **Add records → Voice**, the website first checks for a local browser language pack. If needed, the owner can download the pretrained Bengali Vosk pack (about 106 MB) or the English Whisper pack (about 116 MB). Both transcribe on-device. Review the draft, including names and numeric amounts, before recording a transaction. Existing machine-voice fixtures verified the capture and recognition paths. Human speech accuracy remains unmeasured.
 
-Visit `/#agentic-demo` to move the expected receipt date in a fictional cash forecast and compare the original and proposed collection. The public example runs locally in the browser.
+The public landing page introduces Agentic Mode. Collection suggestions and reminder approvals are available from the signed-in Overview.
 
 ## Free-tier release gates
 

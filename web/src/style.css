@@ -307,7 +307,7 @@ nav.land-nav .land-links .link{text-align:center;color:var(--text);padding:8px 1
 nav.land-nav .land-signin{flex:none}
 @media(max-width:900px){nav.land-nav .land-links{display:none!important}}
 nav.land-nav .land-brand{white-space:nowrap}
-/* Landing v3: full-page aurora, hero demo, bento, story, playground */
+/* Landing v3: full-page aurora, hero demo, bento and story */
 .welcome::before,.welcome::after{display:none!important}
 .welcome{overflow:visible!important;background:transparent!important}
 .aurora{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:radial-gradient(1200px 700px at 12% -10%,#0f7a6338,transparent 60%),radial-gradient(900px 600px at 95% 8%,#3b5bdb30,transparent 60%),radial-gradient(900px 700px at 50% 115%,#0f9b7c26,transparent 60%)}
@@ -356,18 +356,6 @@ nav.land-nav .land-brand{white-space:nowrap}
 .am-step.wait>span{border-color:#e0a23a;animation:pulse-ring 1.8s ease-in-out infinite}
 .am-line{width:2px;height:16px;margin-inline-start:10px;background:var(--line)}
 @keyframes pulse-ring{0%,100%{box-shadow:0 0 0 0 #e0a23a55}50%{box-shadow:0 0 0 6px #e0a23a00}}
-/* playground */
-.play-wrap{max-width:760px;background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:22px}
-.play-wrap>p{margin:10px 0 0;text-align:center}
-.pg-chart{width:100%;height:auto;display:block}
-.pg-area{fill:#3fd2b433;transition:d .3s ease}.pg-area.bad{fill:#e0523a2e}
-.pg-line{stroke:#0f9b7c;stroke-width:3;stroke-linejoin:round;stroke-linecap:round}.pg-line.bad{stroke:#e0523a}
-.pg-reserve{stroke:#e0a23a;stroke-width:1.5;stroke-dasharray:6 6}
-.pg-dot{fill:#e0523a;stroke:#fff;stroke-width:2.5;animation:pulse-ring 1.4s ease-in-out infinite}
-.pg-label{display:block;margin:14px 0 6px;font-weight:700}
-.pg-range{width:100%;accent-color:#0f9b7c;margin:0;min-height:0;padding:0}
-.pg-result{margin:12px 0 0;padding:10px 14px;border-radius:12px;background:#0f9b7c1a;color:#0f9b7c;font-weight:700;transition:background .3s ease,color .3s ease}
-.pg-result.bad{background:#e0523a1a;color:#e0523a}
 /* story: sticky visual while the steps scroll */
 .story{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:40px;align-items:start}
 .story-steps{list-style:none;margin:0;padding:0;display:grid;gap:0}
@@ -382,7 +370,7 @@ nav.land-nav .land-brand{white-space:nowrap}
 .story-visual .preview{padding:0}
 @media(max-width:900px){.bento{grid-template-columns:repeat(2,minmax(0,1fr))}.tile-wide{grid-column:span 2;grid-template-columns:1fr}.tile-tall{grid-row:auto}.story{grid-template-columns:1fr}.story-visual{display:none}.story-steps li{min-height:0;opacity:1;padding:18px 0}.story-inline{display:block;margin-top:14px}}
 @media(max-width:560px){.bento{grid-template-columns:1fr}.tile-wide{grid-column:auto}.hero-demo{max-width:none}}
-@media(prefers-reduced-motion:reduce){.aurora::before,.aurora i,.welcome-story h1 em,.hd-caret,.am-step.wait>span,.pg-dot{animation:none}.sv,.story-steps li,.tile{transition:none}}
+@media(prefers-reduced-motion:reduce){.aurora::before,.aurora i,.welcome-story h1 em,.hd-caret,.am-step.wait>span{animation:none}.sv,.story-steps li,.tile{transition:none}}
 .tile-half{grid-column:span 2}.tile-wide .approve-mock{margin:0}@media(max-width:900px){.tile-half{grid-column:span 2}}@media(max-width:560px){.tile-half{grid-column:auto}}
 @media(max-width:900px){
 main.welcome{display:block!important;min-height:0!important;padding:28px 18px 18px!important}
@@ -455,9 +443,8 @@ main.welcome>.welcome-story>.scroll-cue{order:8;align-self:flex-start;margin-top
 @media(min-width:761px){.shell>aside{height:100vh!important;top:0!important;min-height:100vh}}
 /* Light theme: stronger accent colour for text on pale backgrounds */
 :root:not([data-theme=dark]) .brand-name b,:root:not([data-theme=dark]) .land-brand b,:root:not([data-theme=dark]) .splash-name b,:root:not([data-theme=dark]) .intro-name b{color:#0b7a62}
-:root:not([data-theme=dark]) .hd-badge,:root:not([data-theme=dark]) .hd-add,:root:not([data-theme=dark]) .hd-card em,:root:not([data-theme=dark]) .pv-list b.in,:root:not([data-theme=dark]) .pg-result:not(.bad),:root:not([data-theme=dark]) .stats strong,:root:not([data-theme=dark]) .card-trust .ui-icon,:root:not([data-theme=dark]) .fc .ui-icon,:root:not([data-theme=dark]) .faq summary::after,:root:not([data-theme=dark]) .step-n,:root:not([data-theme=dark]) .il-big{color:#0b7a62;fill:#0b7a62}
+:root:not([data-theme=dark]) .hd-badge,:root:not([data-theme=dark]) .hd-add,:root:not([data-theme=dark]) .hd-card em,:root:not([data-theme=dark]) .pv-list b.in,:root:not([data-theme=dark]) .stats strong,:root:not([data-theme=dark]) .card-trust .ui-icon,:root:not([data-theme=dark]) .fc .ui-icon,:root:not([data-theme=dark]) .faq summary::after,:root:not([data-theme=dark]) .step-n,:root:not([data-theme=dark]) .il-big{color:#0b7a62;fill:#0b7a62}
 :root:not([data-theme=dark]) .welcome-story h1 em{background-image:linear-gradient(100deg,#0b7a62,#3b5bdb,#0b7a62)}
-:root:not([data-theme=dark]) .pg-result.bad{color:#b3351f}
 .land-signin{background:#0b6b57;border-color:#0b6b57;color:#fff}
 /* Sign-in: keep-me-signed-in row and a reserved status area so messages never push the form around. */
 .keep-signed-in{display:flex;align-items:flex-start;gap:10px;margin:14px 0 4px;font-weight:600;cursor:pointer}.keep-signed-in span{min-width:0}.keep-signed-in small{display:block;font-weight:400;margin-top:2px;line-height:1.4}.keep-signed-in input{width:20px;min-height:20px;height:20px;margin:2px 0 0;flex:0 0 20px}

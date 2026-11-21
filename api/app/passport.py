@@ -35,8 +35,7 @@ def schema(db):
 
 
 def public_keys():
-    registry = KEY_FILE.with_name("capzoryx-qa-passport-key.json") if os.environ.get("CAPZORYX_PASSPORT_REGISTRY") == "qa" else KEY_FILE
-    return json.loads(registry.read_text())
+    return json.loads(KEY_FILE.read_text(encoding="utf-8"))
 
 
 def signer():

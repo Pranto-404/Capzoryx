@@ -1,4 +1,4 @@
-import {useEffect,useMemo,useRef,useState,type PointerEvent as RPointerEvent} from 'react';
+import {useEffect,useRef,useState,type PointerEvent as RPointerEvent} from 'react';
 import {Icon} from './Icon';
 import {LANGUAGES,t,T} from './i18n';
 import {Logo} from './Logo';
@@ -78,7 +78,7 @@ export function HeroDemo(){
       onChange={e=>{setText(e.target.value);setDraft(null);setError('');}}/>
     <div className="actions"><button disabled={busy||!text.trim()}>{busy?t('Reading…'):t('Preview record')}</button>
       <small>{t('Private preview on this device. Nothing is saved.')}</small></div>
-    <a className="link" href="#agentic-demo">{t('Try Agentic Mode')}</a>
+    <a className="link" href="#agentic-demo">{t('Agentic Mode')}</a>
     <div role="status">{error&&<p>{error}</p>}{draft&&<div className="record-result">
       <strong>{draft.kind==='invoice'?t('Unpaid supplier invoice'):draft.direction==='inflow'?t('Money in'):t('Money out')}</strong>
       <b>{money(draft.amount_minor,draft.currency)}</b><span>{formatDate(draft.effective_on)}</span>
@@ -130,50 +130,6 @@ function ApprovalMock(){
   </div>;
 }
 
-/** Drag the slider: a late customer payment moves the whole outlook, and the page says whether cash runs short. */
-function OutlookPlayground(){
-  const [late,setLate]=useState(9);
-  const [preview,setPreview]=useState(false);
-  const reserve=30000;
-  const model=useMemo(()=>{
-    const days=22;const bal:number[]=[];let b=150000;
-    for(let d=0;d<days;d++){
-      if(d===3)b-=35000;
-      if(d===6+late)b+=40000;
-      if(d===9)b-=60000;
-      if(d===13)b-=45000;
-      if(d===18+Math.min(late,3))b+=30000;
-      bal.push(b);
-    }
-    const low=Math.min(...bal);const first=bal.findIndex(x=>x<reserve);
-    const receiptDay=6+late;
-    const advance=first>=0 && first<receiptDay ? Math.min(40000, reserve-Math.min(...bal.slice(first,receiptDay))) : 0;
-    const after=bal.map((value,day)=>day>=first && day<receiptDay?value+advance:value);
-    return {bal,after,advance,low,first,receiptDay};
-  },[late]);
-  const W=420,H=190,pad=24;const max=Math.max(...model.bal,180000),min=Math.min(...model.bal,0);
-  const x=(i:number)=>pad+i*(W-pad*2)/(model.bal.length-1);const y=(v:number)=>H-pad-((v-min)/(max-min))*(H-pad*2);
-  const balances=preview?model.after:model.bal;
-  const line=balances.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ');
-  const area=line+` L${x(model.bal.length-1)} ${H-pad} L${x(0)} ${H-pad}Z`;
-  const first=balances.findIndex(value=>value<reserve);
-  const short=first>=0;
-  return <div className="playground">
-    <svg viewBox={`0 0 ${W} ${H}`} className="pg-chart" role="img" aria-label={t('A cash outlook chart')}>
-      <path d={area} className={short?'pg-area bad':'pg-area'}/><path d={line} className={short?'pg-line bad':'pg-line'} fill="none"/>
-      <line x1={pad} x2={W-pad} y1={y(reserve)} y2={y(reserve)} className="pg-reserve"/>
-      {short&&<circle cx={x(first)} cy={y(balances[first])} r="6" className="pg-dot"/>}
-    </svg>
-    <label htmlFor="pg-late" className="pg-label">{t('A customer pays {n} days late',{n:late})}</label>
-    <input id="pg-late" className="pg-range" type="range" min="0" max="12" step="1" value={late} onChange={e=>{setLate(Number(e.target.value));setPreview(false);}}/>
-    <p className={short?'pg-result bad':'pg-result'} role="status">{short?t('Cash runs below your safety reserve on day {n}.',{n:first+1}):t('Your cash stays above your safety reserve.')}</p>
-    {model.advance>0&&<><p>{t('Collect {amount} by day {day} from the receipt due on day {due}.',{
-      amount:money(model.advance*100,'BDT'),day:model.first+1,due:model.receiptDay+1})}</p>
-      <button type="button" className="secondary" aria-pressed={preview} onClick={()=>setPreview(!preview)}>
-        {preview?t('Show original forecast'):t('Preview proposed collection')}</button></>}
-  </div>;
-}
-
 /** The slim top bar, a thin scroll progress line, and the spotlight that follows the pointer on cards. */
 export function Landing({onStart}:{onStart:()=>void}){
   const root=useRef<HTMLDivElement>(null);const bar=useRef<HTMLDivElement>(null);const [nav,setNav]=useState(false);const [step,setStep]=useState(0);
@@ -222,10 +178,10 @@ export function Landing({onStart}:{onStart:()=>void}){
       </div>
     </section>
 
-    <section id="agentic-demo" className="land-section" aria-labelledby="land-play">
-      <p className="eyebrow" data-reveal>{t('TRY IT')}</p>
-      <h2 id="land-play" data-reveal>{t('Try Agentic Mode with a sample cash forecast')}</h2>
-      <div className="play-wrap" data-reveal><OutlookPlayground/><p className="small muted">{t('Move the payment date to see which collection would protect the sample business’s reserve.')}</p></div>
+    <section id="agentic-demo" className="land-section" aria-labelledby="land-agentic">
+      <h2 id="land-agentic" data-reveal>{t('Agentic Mode')}</h2>
+      <p data-reveal>{t('Review collection suggestions and approve customer reminders in your workspace.')}</p>
+      <button type="button" className="secondary" onClick={onStart}>{t('Sign in')}</button>
     </section>
 
     <section id="preview" className="land-section" aria-labelledby="land-how">
