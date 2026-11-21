@@ -51,6 +51,16 @@ The public landing page previews Bangla, Banglish and English cash entries local
 
 The [staging workflow](https://github.com/Pranto-404/Capzoryx/actions/runs/44891914051) checked both deployed revisions, Turso readiness, signup, a BDT 500 entry corrected to BDT 450, the resulting briefing, workspace settings and logout. The scheduled checks use the release window in `.github/staging-website.json`.
 
+## Agentic Mode on the website
+
+Open **Overview → Agentic Mode → Review suggestions** in an owner workspace. The collections card selects up to three distinct overdue customers. It ranks bills with comparable history by the outstanding amount multiplied by the seven-day payment estimate. Bills without an estimate are ordered by their outstanding amounts. Preparing a reminder uses the balance at the time of the request, and the owner decides whether to share each draft.
+
+The scheduled check prepares a verified collection plan when a shortfall first appears or moves earlier. Accepting a plan creates collection tasks. Recording a receipt separately changes cash. The supplier extension tool uses the selected open invoice and the date requested by the owner. Printing or copying the draft leaves the invoice due date intact.
+
+In **Add records → Import a bank or wallet statement**, a positive row can suggest an open customer bill. Check the payer and choose the bill before confirming. The cash entry and its settlement are saved together. **Invoices → Wallet receipts** reviews individually shared payment messages. **Activity** contains in-app due reminders, browser push controls and optional email bill reminders. The email channel requires verified membership and a configured mail transport.
+
+Visit `/#agentic-demo` to move the expected receipt date in a fictional cash forecast and compare the original and proposed collection. The public example runs locally in the browser.
+
 ## Free-tier release gates
 
 See docs/RESOURCES.md for the website, app and isolated QA environments. A local keypair can be used in a separate development checkout by replacing the public key map and setting the corresponding private key through the environment.
