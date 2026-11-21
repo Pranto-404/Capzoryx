@@ -31,8 +31,9 @@ def b64(value):
 def push_endpoint(value):
     uri=urlsplit(value)
     host=uri.hostname or ''
-    allowed=(host in ('fcm.googleapis.com','push.services.mozilla.com','web.push.apple.com')
-             or host.endswith('.push.services.mozilla.com') or host.endswith('.push.apple.com'))
+    allowed = host in ('fcm.googleapis.com', 'push.services.mozilla.com', 'web.push.apple.com', 'notify.windows.com') or host.endswith((
+        '.push.services.mozilla.com', '.push.apple.com', '.notify.windows.com',
+    ))
     return (allowed and uri.scheme=='https' and uri.port in (443,None) and not uri.username and not uri.password
             and uri.path not in ('','/') and not uri.fragment and len(value)<=2048)
 
