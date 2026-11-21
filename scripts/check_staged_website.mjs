@@ -39,6 +39,9 @@ if (process.argv.includes('--exercise')) {
     password: randomBytes(24).toString('base64') + 'a!7',
   });
   try {
+    const push = await request('/api/notifications/push-config');
+    assert.equal(push.webpush, true);
+    assert.equal(Buffer.from(push.public_key, 'base64url').length, 65);
     const bundle = await request('/api/workspace');
     const day = bundle.snapshot.as_of;
     const item = await request('/api/workspace/records', {
