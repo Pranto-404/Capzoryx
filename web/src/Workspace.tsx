@@ -1,3 +1,5 @@
+import {apiFetch,nativeBuild} from './apiBase';
+import {CaptureSync,InstallControl} from './Pwa';
 import {PassportManager} from './Passport';
 import {NotificationInbox} from './NotificationInbox';
 import {Brand} from './Logo';
@@ -28,6 +30,7 @@ import {formatDate,formatTime,prettyVendor,roleLabel,workspaceLabel} from './for
 import {t,T,LanguagePicker,useI18n,hasChosenLanguage} from './i18n';
 import './serverText';
 
+const AndroidReminders=lazy(()=>import('./AndroidReminders'));
 const WalletPayments=lazy(()=>import('./WalletPayments'));
 const StatementImport=lazy(()=>import('./StatementImport'));
 const CashCorrections=lazy(()=>import('./CashCorrections'));
@@ -62,11 +65,19 @@ export default function Workspace(props:WorkspaceProps){
 const AUDIT_TEXT:Record<string,string>={CASH_CORRECTED:T('Cash correction recorded.'),CUSTOMER_ADDED:T('Customer saved.'),CUSTOMER_PHONE_REMOVED:T('Phone number erased.'),RECEIVABLE_ADDED:T('Receivable saved.'),RECEIVABLE_SETTLED:T('Receipt recorded.'),IMPORTED:T('Records imported'),RECORD_ADDED:T('Record added'),PROPOSED:T('Payment prepared for approval'),APPROVED:T('Payment approved'),REJECTED:T('Payment rejected'),EXECUTED:T('Payment recorded'),EXPIRED:T('A payment proposal expired'),DENIED:T('An action was blocked'),IDEMPOTENT_REPLAY:T('A repeated approval was ignored'),FINANCING_ANALYZED:T('Loan offers compared'),INVITATION_CREATED:T('Invitation created'),WORKSPACE_JOINED:T('Someone joined this workspace'),WORKSPACE_CREATED:T('Workspace created'),CURRENCY_CHANGED:T('Currency changed'),PAYEE_PERMISSION_CHANGED:T('Supplier permission changed'),ACCOUNT_RECOVERED:T('Account recovered'),MEMBER_REMOVED:T('Someone was removed'),MEMBER_ROLE_CHANGED:T('A role was changed'),MEMBER_LEFT:T('Someone left this workspace')};
 
 function WorkspaceContent({token,session,logout,expired,changeSession,setCurrency}:WorkspaceProps&{setCurrency:(currency:string)=>void}){
+  const notificationScope=session.business_id+'/'+session.user_id;
+  useEffect(()=>{
+    if(nativeBuild)void import('./nativePush').then(push=>push.resumeNativePush(notificationScope)).catch(()=>{});
+  },[notificationScope]);
   const {currency,money,nativeMoney,parseMinor}=useCurrency();
-  const [chatOpen,setChatOpen]=useState(false);const [chatLoaded,setChatLoaded]=useState(false);
+  const [chatOpen,setChatOpen]=useState(false);const [chatLoaded,setChatLoaded]=useState(new URLSearchParams(location.search).get('open')==='ask');
   const chatButton=useRef<HTMLButtonElement>(null);
   function closeChat(){setChatOpen(false);chatButton.current?.focus();}
-  const [tab,setTab]=useState<Tab>(()=>new URLSearchParams(location.search).get('view')==='activity'?'Audit':'Overview');
+  const [tab,setTab]=useState<Tab>(()=>{
+    const params=new URLSearchParams(location.search);
+    const open=params.get('open');
+    return open==='bill'?'Data':open==='ask'?'Assistant':params.get('view')==='activity'?'Audit':'Overview';
+  });
   const tourNavigate=useCallback((page:string)=>{setTab(page as Tab);setSelected(null);setChatOpen(false);},[]);
   const [nextCollection,setNextCollection]=useState<NextCollection|null>(null);
   const focusTarget=useRef<string|null>(null);
@@ -135,7 +146,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
     // The workspace is keyed by session. It cannot reuse another session's financial state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
-  async function importRaw(raw:string){let saved=false;await run(async()=>{const r=await fetch('/api/workspace/import',{method:'POST',credentials:'same-origin',headers:{...(token?{Authorization:`Bearer ${token}`}:{}),'Content-Type':'application/json','X-SafeLedger-Client':'web'},body:raw,signal:AbortSignal.any([scope.current.signal,AbortSignal.timeout(90000)])});const data=await r.json();if(r.status===401)expired();if(!r.ok)throw new Error(data?.error?.fields?.map((x:{field:string;message:string})=>`${x.field}: ${x.message}`).join('; ')||data?.error?.code||'Import failed.');if(data.simulation_only!==true)throw new Error('Invalid server response.');saved=true;await refresh();setMessage('Records imported. Allow each supplier before preparing payments.');});if(!saved)throw new Error('The import was not completed. See the message above.');}
+  async function importRaw(raw:string){let saved=false;await run(async()=>{const r=await apiFetch('/api/workspace/import',{method:'POST',credentials:'same-origin',headers:{...(token?{Authorization:`Bearer ${token}`}:{}),'Content-Type':'application/json','X-SafeLedger-Client':'web'},body:raw,signal:AbortSignal.any([scope.current.signal,AbortSignal.timeout(90000)])});const data=await r.json();if(r.status===401)expired();if(!r.ok)throw new Error(data?.error?.fields?.map((x:{field:string;message:string})=>`${x.field}: ${x.message}`).join('; ')||data?.error?.code||'Import failed.');if(data.simulation_only!==true)throw new Error('Invalid server response.');saved=true;await refresh();setMessage('Records imported. Allow each supplier before preparing payments.');});if(!saved)throw new Error('The import was not completed. See the message above.');}
   async function propose(invoiceId:string){
     const proposal=await request<Proposal>('/proposals',{invoice_id:invoiceId});
     setSelected(proposal);await refresh();setTab('Approvals');setMessage(t('Payment prepared. Nothing is paid yet: a second person must approve it.'));
@@ -239,7 +250,9 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {tab==='Assistant'&&<AskBooks request={request}/>}
       {chatLoaded&&<div id="workspace-assistant" hidden={tab!=='Assistant'&&!chatOpen} className={tab==='Assistant'?'assistant-page':'chat-float'} onKeyDown={(e:KeyboardEvent)=>{if(e.key==='Escape'&&tab!=='Assistant')closeChat();}}><LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening assistant…')}</section>}><Assistant visible={tab==='Assistant'||chatOpen} snapshot={snapshot} forecast={baselineMonth} week={week} events={events} invoices={invoices} session={session} profile={profile} cloudAvailable={cloudAvailable} revision={revision} request={request} onSaved={refresh} onNavigate={action=>{setTab(action);closeChat();}} onProposal={async()=>{await refresh();setTab('Approvals');closeChat();}} onClose={tab==='Assistant'?undefined:closeChat}/></Suspense></LazyBoundary></div>}
       {tab!=='Assistant'&&<button ref={chatButton} className="chat-launcher" aria-label={chatOpen?t('Close assistant'):t('Open assistant')} aria-expanded={chatOpen} aria-controls="workspace-assistant" onClick={()=>{setChatLoaded(true);setChatOpen(!chatOpen);}}><Icon name="spark"/> <span>{chatOpen?t('Close'):t('Assistant')}</span></button>}
-      <footer>{t('Capzoryx Copilot · Your records · A second person approves every payment · Nothing leaves your control')}</footer></main></div>;
+      {tab==='Audit'&&nativeBuild&&<LazyBoundary><Suspense fallback={null}><AndroidReminders scope={notificationScope}/></Suspense></LazyBoundary>}
+      {snapshot&&<CaptureSync session={session} currency={snapshot.currency} request={request} onSaved={refresh} onInvoices={()=>setTab('Invoices')}/>}
+      <footer>{!nativeBuild&&<InstallControl/>}{t('Capzoryx Copilot · Your records · A second person approves every payment · Nothing leaves your control')}</footer></main></div>;
 }
 
 function ProposalDetails({proposal:p,number}:{proposal:Proposal;number:string}){

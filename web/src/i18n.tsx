@@ -1,3 +1,4 @@
+import {apiFetch} from './apiBase';
 import {useDataSaver} from './dataSaver';
 import {createContext,useCallback,useContext,useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 
@@ -82,7 +83,7 @@ export function I18nProvider({children}:{children:ReactNode}){
         if(saveData && read(code))return;
         let last=-1;
         for(let round=0;round<(saveData?1:10)&&run.current===id;round++){
-          const r=await fetch('/api/i18n?lang='+encodeURIComponent(code),{credentials:'same-origin',signal:controller.signal});
+          const r=await apiFetch('/api/i18n?lang='+encodeURIComponent(code),{credentials:'same-origin',signal:controller.signal});
           if(!r.ok)break;
           const body=await r.json() as {strings:Record<string,string>;missing:number;version:string};
           if(run.current!==id)return;

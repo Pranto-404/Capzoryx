@@ -2,52 +2,21 @@ name: Notification scheduler backup
 on:
   schedule:
     - cron: '7,37 * * * *'
-  push:
-    branches: [main]
-    paths: ['.github/staging-website.json']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   tick:
     if: github.ref == 'refs/heads/main' && vars.CAPZORYX_ENABLE_NOTIFICATION_BACKUP == '1'
-    strategy:
-      fail-fast: false
-      matrix:
-        environment: [staging, production]
-    environment: ${{ matrix.environment }}
+    environment: production
     concurrency:
-      group: notification-tick-${{ matrix.environment }}
+      group: notification-tick-production
       cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-      - name: Check the free-tier staging window
-        id: window
-        env:
-          ENVIRONMENT: ${{ matrix.environment }}
-        run: |
-          UNTIL=$(jq -er .until .github/staging-website.json)
-          active=false
-          if [ "$ENVIRONMENT" = production ]; then
-            active=true
-          elif [ -n "$UNTIL" ] && [ "$(date -u -d "$UNTIL" +%s)" -gt "$(date -u +%s)" ]; then
-            active=true
-          fi
-          echo "active=$active" >> "$GITHUB_OUTPUT"
-      - name: Verify website, API and database on staging
-        if: matrix.environment == 'staging' && steps.window.outputs.active == 'true'
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT_NAME" = push ]; then
-            node scripts/check_staged_website.mjs --exercise
-          else
-            node scripts/check_staged_website.mjs
-          fi
       - name: Deliver in-app reminders
-        if: steps.window.outputs.active == 'true'
         env:
           API_ORIGIN: ${{ vars.CAPZORYX_TICK_ORIGIN }}
           CAPZORYX_TICK_SECRET: ${{ secrets.CAPZORYX_TICK_SECRET }}
