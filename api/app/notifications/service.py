@@ -17,6 +17,7 @@ KINDS = {
     'cash_breach': (('owner', 'approver'), 'Cash flow'),
     'boishakh_planning': (('owner',), 'Cash flow'),
     'eid_planning': (('owner',), 'Cash flow'),
+    'collections_review': (('owner',), 'Overview'),
     'morning_briefing': (('owner',), 'Overview'),
 }
 BD = ZoneInfo('Asia/Dhaka')
@@ -69,6 +70,12 @@ def claim(db, identity, at):
 
 
 def relevant(db, business, kind, record, at):
+    if kind == 'collections_review':
+        from api.app.feature_flags import workspace_status
+        today = datetime.fromtimestamp(at, BD).date().isoformat()
+        return bool(record == today and workspace_status(db, business, '/api/copilot/agent-review')[2] and
+                    db.execute('SELECT 1 FROM receivable_balances WHERE business_id=? AND open_minor>0 AND due_on<? LIMIT 1',
+                               (business, today)).fetchone())
     if kind == 'customer_overdue':
         return bool(db.execute("""SELECT 1 FROM receivable_balances WHERE business_id=? AND customer_id=?
                                   AND open_minor>0 AND due_on<? LIMIT 1""",

@@ -47,6 +47,7 @@ def test_one_month_no_duplicates_quiet_delivery_and_stop_after_payment(world):
             received.setdefault(kind,[]).append((when.date()-today).days)
             assert 'Fictional' not in raw and '3000' not in raw
         assert sorted(received['customer_overdue']) == [1,4,7,10]
+        assert sorted(received['collections_review']) == list(range(1,11))
         assert sorted(received['bill_due']) == [3,7,9,10]
         assert sorted(received['morning_briefing']) == list(range(30))
 
