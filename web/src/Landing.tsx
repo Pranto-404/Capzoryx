@@ -2,6 +2,9 @@ import {useEffect,useMemo,useRef,useState,type PointerEvent as RPointerEvent} fr
 import {Icon} from './Icon';
 import {LANGUAGES,t,T} from './i18n';
 import {Logo} from './Logo';
+import {money} from './api';
+import {formatDate} from './format';
+import type {Draft} from './types';
 
 const audiences:{icon:string;title:string;text:string}[]=[
  {icon:'Invoices',title:T('Shops and retailers'),text:T('Track daily cash and supplier bills without a spreadsheet.')},
@@ -50,30 +53,35 @@ function Counter({to,suffix}:{to:number;suffix:string}){
   return <strong ref={ref}>{v}{suffix}</strong>;
 }
 
-/** Types a sentence, then shows the record it becomes. Loops quietly; static for reduced motion. */
-const demos:{say:string;who:string;what:string;amount:string;kind:string}[]=[
- {say:'I paid Rahman 5000 for freight yesterday',who:'Rahman',what:'Freight',amount:'BDT 5,000',kind:T('Money out')},
- {say:'Received 20,000 from Karim Traders',who:'Karim Traders',what:'Payment',amount:'+ BDT 20,000',kind:T('Money in')},
- {say:'Bill from Dhaka Packaging 12000 due in 10 days',who:'Dhaka Packaging',what:'Bill',amount:'BDT 12,000',kind:T('Unpaid supplier invoice')},
-];
+/** A visitor can try the local record parser without creating a workspace. */
 export function HeroDemo(){
-  const [i,setI]=useState(0);const [n,setN]=useState(reduced()?999:0);const [done,setDone]=useState(reduced());
-  const d=demos[i];
-  useEffect(()=>{
-    if(reduced())return;
-    let id=0;
-    if(n<d.say.length){id=window.setTimeout(()=>setN(n+1),n===0?500:38);}
-    else if(!done){id=window.setTimeout(()=>setDone(true),350);}
-    else{id=window.setTimeout(()=>{setDone(false);setN(0);setI((i+1)%demos.length);},3200);}
-    return()=>window.clearTimeout(id);
-  },[n,done,d.say.length,i]);
-  return <div className="hero-demo" aria-hidden="true">
-    <div className="hd-bar"><span className="hd-dot"/><span className="hd-dot"/><span className="hd-dot"/><b>{t('Assistant')}</b></div>
-    <div className="hd-body">
-      <p className="hd-user">{d.say.slice(0,n)}<span className="hd-caret"/></p>
-      <div className={done?'hd-card show':'hd-card'}><span className="hd-badge">{t(d.kind)}</span><strong>{d.who}</strong><small>{d.what}</small><em>{d.amount}</em><span className="hd-add"><Icon name="check"/>{t('Add to my records')}</span></div>
-    </div>
-  </div>;
+  const [text,setText]=useState('ami 3000 taka peyechi');
+  const [draft,setDraft]=useState<Draft|null>(null);
+  const [error,setError]=useState('');
+  const [busy,setBusy]=useState(false);
+  async function preview(){
+    setBusy(true);setError('');setDraft(null);
+    try{
+      const {parseRecordSentence}=await import('./recordParser');
+      const next=parseRecordSentence(text,{currency:'BDT',digits:2});
+      if(!next)setError(t('Include an amount and say whether you paid or received it.'));
+      else if(next.currency_mismatch)setError(t('This example uses BDT. Try an amount in taka.'));
+      else setDraft(next);
+    }catch{setError(t('Could not load the preview. Please try again.'));}
+    finally{setBusy(false);}
+  }
+  return <form id="try-record" className="hero-demo record-demo" onSubmit={e=>{e.preventDefault();void preview();}}>
+    <label htmlFor="try-sentence">{t('Try a transaction in Bangla, Banglish or English')}</label>
+    <input id="try-sentence" value={text} maxLength={400} disabled={busy} required
+      onChange={e=>{setText(e.target.value);setDraft(null);setError('');}}/>
+    <div className="actions"><button disabled={busy||!text.trim()}>{busy?t('Reading…'):t('Preview record')}</button>
+      <small>{t('Private preview on this device. Nothing is saved.')}</small></div>
+    <div role="status">{error&&<p>{error}</p>}{draft&&<div className="record-result">
+      <strong>{draft.kind==='invoice'?t('Unpaid supplier invoice'):draft.direction==='inflow'?t('Money in'):t('Money out')}</strong>
+      <b>{money(draft.amount_minor,draft.currency)}</b><span>{formatDate(draft.effective_on)}</span>
+      {draft.warnings.map(warning=><small key={warning}>{t(warning)}</small>)}
+    </div>}</div>
+  </form>;
 }
 
 function ScanIllustration(){
