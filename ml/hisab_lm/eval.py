@@ -12,12 +12,14 @@ import urllib.request
 from zipfile import ZipFile
 
 
-def test_split(archive):
+def read_eval_split(archive,split="test"):
+    if split not in ("validation","test"):
+        raise ValueError("Select validation or test examples")
     with ZipFile(archive) as z:
         manifest=json.loads(z.read("manifest.json"))
-        data=z.read("test.jsonl")
-        if hashlib.sha256(data).hexdigest()!=manifest["splits"]["test"]["sha256"]:
-            raise ValueError("Test split checksum mismatch")
+        data=z.read(split+".jsonl")
+        if hashlib.sha256(data).hexdigest()!=manifest["splits"][split]["sha256"]:
+            raise ValueError(f"{split} split checksum mismatch")
     cases=[json.loads(line) for line in data.splitlines()]
     if not cases or any(r["source"]!="synthetic" for r in cases):
         raise ValueError("Public model evaluations require synthetic examples")
@@ -111,14 +113,16 @@ def main():
     p.add_argument("--archive",type=Path,required=True);p.add_argument("--predictions",type=Path,required=True)
     p.add_argument("--ollama-model",help="Run a locally installed model and write new predictions at the supplied path")
     p.add_argument("--reference",type=Path,help="Predictions for the best approved provider, on the identical sample")
+    p.add_argument("--split",choices=("validation","test"),default="test")
     p.add_argument("--limit",type=int);args=p.parse_args()
-    cases=test_split(args.archive)
+    cases=read_eval_split(args.archive,args.split)
     if args.limit is not None and not 1<=args.limit<=len(cases):p.error("Invalid sample limit")
     cases=cases[:args.limit]
     if args.ollama_model:local_predictions(args.ollama_model,cases,args.predictions)
     def read(path):
         return parse_predictions([json.loads(line) for line in path.read_bytes().splitlines()], cases)
     result=evaluate(cases,read(args.predictions))
+    result["split"]=args.split
     result["prediction_sha256"]=hashlib.sha256(args.predictions.read_bytes()).hexdigest()
     result["archive_sha256"]=hashlib.sha256(args.archive.read_bytes()).hexdigest()
     result["comparison_gate"]="missing_reference"
