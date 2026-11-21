@@ -10,7 +10,7 @@ type Action={source_id:string;scheduled_on:string;collect_by:string;amount_minor
 type Plan={id?:string;actions:Action[];original_gap_minor:number;remaining_gap_minor:number;forecast:Forecast};
 type Task={id:string;action:Action;due_on:string;status:string};
 
-export function GapFixPanel({request,asOf,reserve,owner,openTasksInitially,onTasksChanged}:{request:Request;asOf:string;reserve:number;owner:boolean;openTasksInitially:boolean;onTasksChanged:(next:NextCollection|null)=>void}){
+export function GapFixPanel({request,asOf,reserve,owner,previewInitially=false,openTasksInitially,onTasksChanged}:{request:Request;asOf:string;reserve:number;owner:boolean;previewInitially?:boolean;openTasksInitially:boolean;onTasksChanged:(next:NextCollection|null)=>void}){
   const {nativeMoney}=useCurrency();
   const [plan,setPlan]=useState<Plan|null>(null);
   const [searched,setSearched]=useState(false);
@@ -40,6 +40,7 @@ export function GapFixPanel({request,asOf,reserve,owner,openTasksInitially,onTas
   }
   useEffect(()=>{
     if(owner && openTasksInitially)void run(reloadTasks);
+    else if(previewInitially)void run(preview);
   },[]);
   async function reloadTasks(){
     const result=await request<{tasks:Task[]}>('/copilot/tasks');

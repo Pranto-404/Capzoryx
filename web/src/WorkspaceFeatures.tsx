@@ -7,7 +7,7 @@ const labels:Record<string,string>={
   cash_corrections:T('Manual cash corrections'),voice:T('Voice transcription'),bill_scan:T('Online bill scanning'),assistant:T('Online assistant'),
   offer_reader:T('Offer reader'),financing_match:T('Financing match'),ask_books:T('Ask your books'),
   collection_plans:T('Collection plans and reminders'),passport_issue:T('Issue public passports'),
-  statement_import:T('Statement import'),payment_intake:T('Wallet payment intake')
+  agent_mode:T('Agentic Mode'),statement_import:T('Statement import'),payment_intake:T('Wallet payment intake')
 };
 
 export function WorkspaceFeatures({request}:{request:Request}){

@@ -53,7 +53,7 @@ The [staging workflow](https://github.com/Pranto-404/Capzoryx/actions/runs/44891
 
 ## Agentic Mode on the website
 
-Open **Overview → Agentic Mode → Review suggestions** in an owner workspace. The collections card selects up to three distinct overdue customers. It ranks bills with comparable history by the outstanding amount multiplied by the seven-day payment estimate. Bills without an estimate are ordered by their outstanding amounts. Preparing a reminder uses the balance at the time of the request, and the owner decides whether to share each draft.
+Open **Overview → Agentic Mode → Review suggestions** in an owner workspace. The collections card selects up to three distinct overdue customers. It ranks bills with comparable history by the outstanding amount multiplied by the seven-day payment estimate. Bills without an estimate are ordered by their outstanding amounts. Preparing a reminder uses the balance at the time of the request, and the owner decides whether to share each draft. Approval rechecks the current balance and allows one reminder per customer per Bangladesh calendar day.
 
 The scheduled check prepares a verified collection plan when a shortfall first appears or moves earlier. Accepting a plan creates collection tasks. Recording a receipt separately changes cash. The supplier extension tool uses the selected open invoice and the date requested by the owner. Printing or copying the draft leaves the invoice due date intact.
 

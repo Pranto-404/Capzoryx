@@ -485,3 +485,12 @@ main.welcome .welcome-story>*,main.welcome .welcome-entry{animation:none}
 
 .metric-source,.metric-source:hover{display:inline-block;max-width:100%;min-height:44px;padding:0;text-align:start;background:none;color:inherit;border:0;box-shadow:none}
 .metric-source strong{text-decoration:underline dotted;text-underline-offset:.22em}
+
+.agent-review > div + div,.agent-review > details{margin-top:1.25rem}
+.agent-review li + li{margin-top:.7rem}
+.agent-review label{display:block;max-width:42rem}
+.agent-print-draft{display:none}
+@media print{
+  body:has(>.agent-print-draft)>:not(.agent-print-draft){display:none!important}
+  body>.agent-print-draft{display:block;white-space:pre-wrap;font:14pt/1.6 serif;color:#111;background:white;padding:1.5cm}
+}

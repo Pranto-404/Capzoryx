@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {EmailAlerts} from './EmailAlerts';
 import {WebPushControl} from './WebPushControl';
 import {formatTime} from './format';
 import {t,T} from './i18n';
@@ -7,6 +8,7 @@ type Request=<T,>(path:string,body?:unknown)=>Promise<T>;
 type Item={id:string;kind:string;page:string;sent_at:number;read:boolean};
 type Inbox={items:Item[];enabled:boolean;quiet_start_min:number;quiet_end_min:number};
 const labels:Record<string,string>={
+  collections_review:T('Your overdue collections are ready to review'),
   boishakh_planning:T('Review your cash plan for Pohela Boishakh in 30 days'),
   eid_planning:T('Review your cash plan for the Eid planning date in 30 days'),
   approval_needed:T('A payment needs approval'),new_device:T('Sign-in from a new browser'),
@@ -43,6 +45,7 @@ export function NotificationInbox({request,navigate,scope}:{request:Request;navi
         <small>{formatTime(item.sent_at)} · {item.read?t('Read'):t('Unread')}</small></div>
       <button type="button" disabled={busy} onClick={()=>void run(async()=>{await request('/notifications/'+item.id+'/read',{});navigate(item.page,item.kind);})}>{t('Review')}</button>
     </li>)}</ul>}
+    <EmailAlerts request={request} scope={scope}/>
     <WebPushControl request={request} scope={scope}/>
     {inbox&&<details><summary>{t('Notification preferences')}</summary>
       <form onSubmit={e=>{e.preventDefault();void run(async()=>{

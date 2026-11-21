@@ -7,6 +7,7 @@ import {LazyBoundary} from './LazyBoundary';
 import {ThemeButton} from './Theme';
 import {Icon} from './Icon';
 import {CashBriefing} from './CashBriefing';
+import {AgentReview} from './AgentReview';
 import {Dashboard} from './Dashboard';
 import {GapFixPanel} from './GapFixPanel';
 import {CashChart} from './Charts';
@@ -69,8 +70,10 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const tourNavigate=useCallback((page:string)=>{setTab(page as Tab);setSelected(null);setChatOpen(false);},[]);
   const [nextCollection,setNextCollection]=useState<NextCollection|null>(null);
   const focusTarget=useRef<string|null>(null);
+  const [openStatement,setOpenStatement]=useState(false);
   function showDashboardDestination(page:Tab,target='workspace-title'){
     focusTarget.current=target;
+    setOpenStatement(target==='statement-review');
     if(page==='Invoices')setQuery('');
     setTab(page);
   }
@@ -178,9 +181,10 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {profile&&!profile.email&&tab==='Overview'&&<p className="notice">{t('Add an email address to reset your password with a code if you ever forget it.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Add email')}</button></p>}
       {missing&&<p className="notice">Nothing here yet. {canAddRecords?<button className="link" onClick={()=>setTab('Data')}>{t('Add your first record')}</button>:t('Ask the owner to add records.')}</p>}
       {tab==='Overview'&&<Dashboard role={session.role} nextCollection={nextCollection} snapshot={snapshot} week={week} month={baselineMonth} invoices={invoices} events={events} proposals={proposals} audit={audit} navigate={showDashboardDestination} openAssistant={()=>{setChatLoaded(true);setChatOpen(true);}} onSample={session.role==='owner'&&!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0?()=>void importRaw(sampleBusiness(snapshot.currency)).catch(e=>report(e)):undefined}/>}
+      {tab==='Overview'&&snapshot&&session.role==='owner'&&<AgentReview initiallyOpen={focusTarget.current==='agent-mode'} key={'agent-'+revision} request={request} invoices={invoices} forecast={baselineMonth} navigate={showDashboardDestination}/>}
       {tab==='Overview'&&snapshot&&<CashBriefing key={revision} request={request} initiallyOpen={focusTarget.current==='cash-briefing'}/>}
       {tab==='Invoices'&&session.role==='owner'&&<Receivables key={revision} request={request} onSaved={refresh}/>}
-      {tab==='Invoices'&&session.role==='owner'&&snapshot?.currency==='BDT'&&<LazyBoundary><Suspense fallback={null}><WalletPayments request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary>}
+      {tab==='Invoices'&&session.role==='owner'&&snapshot?.currency==='BDT'&&<div id="wallet-review" tabIndex={-1}><LazyBoundary><Suspense fallback={null}><WalletPayments request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary></div>}
       {tab==='Invoices'&&<Panel title={t('Invoices')}>
         <label htmlFor="invoice-search">{t('Search by supplier or invoice number')}</label><input id="invoice-search" type="search" value={query} onChange={e=>setQuery(e.target.value)}/>
         <p className="muted">{visible.length} {visible.length===1?'invoice':'invoices'}. A possible duplicate pauses payment until you review it.</p>
@@ -198,7 +202,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
           <button disabled={busy||!snapshot}>{t('Update forecast')}</button></form>
         <p className="muted">{t('Try “what if” changes here. They never change your records.')}</p>
         {forecast&&<><div className="metrics"><Metric label={t('Balance in 30 days')} value={forecast.closing_balance_minor}/><Metric label={t('Lowest balance')} value={forecast.minimum_balance_minor}/><article className="metric"><p>{t('First time below your reserve')}</p><strong>{forecast.first_shortfall_on?formatDate(forecast.first_shortfall_on):t('Never')}</strong></article></div><CashChart forecast={forecast}/><Basis count={forecast.source_ids.length}/><Notes values={forecast.assumptions}/></>}</Panel>
-        {snapshot&&forecast&&<GapFixPanel onTasksChanged={setNextCollection} openTasksInitially={focusTarget.current==='collection-tasks'} key={revision+'-'+forecast.reserve_minor} request={request} asOf={snapshot.as_of} reserve={forecast.reserve_minor??0} owner={session.role==='owner'}/>}
+        {snapshot&&forecast&&<GapFixPanel onTasksChanged={setNextCollection} previewInitially={focusTarget.current==='collection-planner'} openTasksInitially={focusTarget.current==='collection-tasks'} key={revision+'-'+forecast.reserve_minor} request={request} asOf={snapshot.as_of} reserve={forecast.reserve_minor??0} owner={session.role==='owner'}/>}
         {forecast&&<Panel title={t('Warnings and daily detail')}>
           {forecast.risk_flags.map((risk,n)=><div className="notice" key={n}><strong>{risk.risk==='DUPLICATE_POSSIBLE'?t('Possible duplicate bill'):risk.risk==='DUPLICATE_EXACT'?t('Duplicate bill'):risk.risk.replaceAll('_',' ').toLowerCase()}</strong><p>{risk.invoice_ids.map(number).filter(Boolean).join(', ')} · {risk.execution_blocked?'Payment is paused until you review it.':t('Review before paying.')}</p></div>)}
           <div className="table-wrap" tabIndex={0} role="region" aria-label={t('Scrollable table')}><table><caption>{t('Next 30 days')}</caption><thead><tr><th>{t('Date')}</th><th>{t('In')}</th><th>{t('Out')}</th><th>{t('Balance')}</th></tr></thead><tbody>{forecast.days.map(d=><tr key={d.date}><td>{formatDate(d.date)}</td><td>{money(d.inflow_minor)}</td><td>{money(d.outflow_minor)}</td><td className={d.projected_balance_minor<0?'negative':''}>{money(d.projected_balance_minor)}</td></tr>)}</tbody></table></div></Panel>}</>}
@@ -210,7 +214,12 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
         <div className="proposal-list">{proposals.map(p=><article id={'payment-'+p.proposal_id} tabIndex={-1} key={p.proposal_id} className="proposal"><div><span className="badge">{p.state==='AWAITING_APPROVAL'?t('Waiting'):p.state==='EXECUTED'?'Paid':p.state==='REJECTED'?t('Rejected'):p.state==='EXPIRED'?t('Expired'):p.state}</span><h3>{prettyVendor(p.details.vendor_id)} · {nativeMoney(p.details.amount_minor)}</h3><p>{number(p.details.invoice_id)&&`Invoice ${number(p.details.invoice_id)} · `}{t('Prepared by')} {p.details.proposer_id===session.user_id?t('you'):'a teammate'}</p>{p.state==='AWAITING_APPROVAL'&&<small>{t('Expires {time}',{time:formatTime(p.details.expires_at)})}</small>}</div>
           <button className="secondary" onClick={()=>setSelected(p)}>{t('Details')}</button>{p.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<button disabled={busy} onClick={()=>setSelected(p)}>{t('Review and decide')}</button>}</article>)}</div>
         {selected&&selected.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<ApprovalDialog proposal={selected} number={number(selected.details.invoice_id)} error={error} balance={snapshot?.balance_minor} busy={busy} onClose={()=>setSelected(null)} onDecision={d=>void run(()=>decide(selected,d))}/>}</Panel>}
-      {tab==='Audit'&&<NotificationInbox request={request} scope={session.business_id+':'+session.user_id} navigate={(page,kind)=>kind==='morning_briefing'?showDashboardDestination('Overview','cash-briefing'):tourNavigate(page)}/>}
+      {tab==='Audit'&&<NotificationInbox request={request} scope={session.business_id+':'+session.user_id} navigate={(page,kind)=>{
+        if(kind==='collections_review')showDashboardDestination('Overview','agent-mode');
+        else if(kind==='cash_breach')showDashboardDestination('Cash flow','collection-planner');
+        else if(kind==='morning_briefing')showDashboardDestination('Overview','cash-briefing');
+        else tourNavigate(page);
+      }}/>}
       {tab==='Audit' && session.role==='owner' && <PassportManager request={request}/>}
       {tab==='Audit'&&<Panel title={t('Everything that happened')}>
         {audit?<><p className={audit.chain_verified?'success':'error'}>{audit.chain_verified?t('History verified: nothing has been changed or removed.'):t('History could not be verified. Contact support.')}</p>
@@ -222,7 +231,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
         {canAddRecords&&<QuickAdd request={request} revision={revision} profile={profile} owner={session.role==='owner'} cloudAvailable={cloudAvailable} onSaved={async()=>{await refresh();}}/>}
         <DataEntry events={events} session={session} revision={revision} snapshot={snapshot} busy={busy} submit={async body=>{let saved=false;await run(async()=>{await request('/workspace/records',body);saved=true;await refresh();setMessage(t('Record saved. Your balance, forecast and activity are updated.'));});if(!saved)throw new Error(t('The record was not saved. Check the message above and try again.'));}}/>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><CashCorrections session={session} events={events} request={request} onSaved={refresh}/></Suspense></LazyBoundary>}
-        {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><StatementImport request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary>}
+        {session.role==='owner'&&snapshot&&<div id="statement-review" tabIndex={-1}><LazyBoundary><Suspense fallback={null}><StatementImport initiallyOpen={openStatement} request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary></div>}
         {session.role==='owner'&&<ImportEvidence busy={busy} enabled={!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0} upload={importRaw}/>}</>}
       {tab==='Settings'&&session.role==='owner'&&<ReadOnlyTokens request={request}/>}
       {tab==='Settings'&&session.role==='owner'&&<TelegramLink request={request}/>}

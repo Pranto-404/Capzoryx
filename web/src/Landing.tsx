@@ -28,6 +28,8 @@ const faq:{q:string;a:string}[]=[
 const recordTools:{icon:string;title:string;text:string}[]=[
  {icon:'Data',title:T('Statement import'),text:T('In Add records, upload a statement and review the rows before you confirm them.')},
  {icon:'Invoices',title:T('Customer receivables'),text:T('In Invoices, record what a customer owes and apply each payment to the outstanding balance.')},
+ {icon:'Cash flow',title:T('Wallet payment feed'),text:T('Paste a wallet receipt and check its suggested customer before recording the payment.')},
+ {icon:'Invoices',title:T('Bill reminders'),text:T('Open Activity to review approaching supplier bills and customer dues.')},
  {icon:'Audit',title:T('Cash-flow passport'),text:T('In Activity, create a signed summary of your figures and revoke its public link when you choose.')},
 ];
 const stats:{n:number;suffix:string;label:string}[]=[
@@ -76,6 +78,7 @@ export function HeroDemo(){
       onChange={e=>{setText(e.target.value);setDraft(null);setError('');}}/>
     <div className="actions"><button disabled={busy||!text.trim()}>{busy?t('Reading…'):t('Preview record')}</button>
       <small>{t('Private preview on this device. Nothing is saved.')}</small></div>
+    <a className="link" href="#agentic-demo">{t('Try Agentic Mode')}</a>
     <div role="status">{error&&<p>{error}</p>}{draft&&<div className="record-result">
       <strong>{draft.kind==='invoice'?t('Unpaid supplier invoice'):draft.direction==='inflow'?t('Money in'):t('Money out')}</strong>
       <b>{money(draft.amount_minor,draft.currency)}</b><span>{formatDate(draft.effective_on)}</span>
@@ -129,7 +132,8 @@ function ApprovalMock(){
 
 /** Drag the slider: a late customer payment moves the whole outlook, and the page says whether cash runs short. */
 function OutlookPlayground(){
-  const [late,setLate]=useState(0);
+  const [late,setLate]=useState(9);
+  const [preview,setPreview]=useState(false);
   const reserve=30000;
   const model=useMemo(()=>{
     const days=22;const bal:number[]=[];let b=150000;
@@ -142,22 +146,31 @@ function OutlookPlayground(){
       bal.push(b);
     }
     const low=Math.min(...bal);const first=bal.findIndex(x=>x<reserve);
-    return {bal,low,first};
+    const receiptDay=6+late;
+    const advance=first>=0 && first<receiptDay ? Math.min(40000, reserve-Math.min(...bal.slice(first,receiptDay))) : 0;
+    const after=bal.map((value,day)=>day>=first && day<receiptDay?value+advance:value);
+    return {bal,after,advance,low,first,receiptDay};
   },[late]);
   const W=420,H=190,pad=24;const max=Math.max(...model.bal,180000),min=Math.min(...model.bal,0);
   const x=(i:number)=>pad+i*(W-pad*2)/(model.bal.length-1);const y=(v:number)=>H-pad-((v-min)/(max-min))*(H-pad*2);
-  const line=model.bal.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ');
+  const balances=preview?model.after:model.bal;
+  const line=balances.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ');
   const area=line+` L${x(model.bal.length-1)} ${H-pad} L${x(0)} ${H-pad}Z`;
-  const short=model.first>=0;
+  const first=balances.findIndex(value=>value<reserve);
+  const short=first>=0;
   return <div className="playground">
     <svg viewBox={`0 0 ${W} ${H}`} className="pg-chart" role="img" aria-label={t('A cash outlook chart')}>
       <path d={area} className={short?'pg-area bad':'pg-area'}/><path d={line} className={short?'pg-line bad':'pg-line'} fill="none"/>
       <line x1={pad} x2={W-pad} y1={y(reserve)} y2={y(reserve)} className="pg-reserve"/>
-      {short&&<circle cx={x(model.first)} cy={y(model.bal[model.first])} r="6" className="pg-dot"/>}
+      {short&&<circle cx={x(first)} cy={y(balances[first])} r="6" className="pg-dot"/>}
     </svg>
     <label htmlFor="pg-late" className="pg-label">{t('A customer pays {n} days late',{n:late})}</label>
-    <input id="pg-late" className="pg-range" type="range" min="0" max="12" step="1" value={late} onChange={e=>setLate(Number(e.target.value))}/>
-    <p className={short?'pg-result bad':'pg-result'} role="status">{short?t('Cash runs below your safety reserve on day {n}.',{n:model.first+1}):t('Your cash stays above your safety reserve.')}</p>
+    <input id="pg-late" className="pg-range" type="range" min="0" max="12" step="1" value={late} onChange={e=>{setLate(Number(e.target.value));setPreview(false);}}/>
+    <p className={short?'pg-result bad':'pg-result'} role="status">{short?t('Cash runs below your safety reserve on day {n}.',{n:first+1}):t('Your cash stays above your safety reserve.')}</p>
+    {model.advance>0&&<><p>{t('Collect {amount} by day {day} from the receipt due on day {due}.',{
+      amount:money(model.advance*100,'BDT'),day:model.first+1,due:model.receiptDay+1})}</p>
+      <button type="button" className="secondary" aria-pressed={preview} onClick={()=>setPreview(!preview)}>
+        {preview?t('Show original forecast'):t('Preview proposed collection')}</button></>}
   </div>;
 }
 
@@ -209,10 +222,10 @@ export function Landing({onStart}:{onStart:()=>void}){
       </div>
     </section>
 
-    <section className="land-section" aria-labelledby="land-play">
+    <section id="agentic-demo" className="land-section" aria-labelledby="land-play">
       <p className="eyebrow" data-reveal>{t('TRY IT')}</p>
-      <h2 id="land-play" data-reveal>{t('Will your cash last? Move the slider.')}</h2>
-      <div className="play-wrap" data-reveal><OutlookPlayground/><p className="small muted">{t('Sample numbers. Your own outlook uses your records.')}</p></div>
+      <h2 id="land-play" data-reveal>{t('Try Agentic Mode with a sample cash forecast')}</h2>
+      <div className="play-wrap" data-reveal><OutlookPlayground/><p className="small muted">{t('Move the payment date to see which collection would protect the sample business’s reserve.')}</p></div>
     </section>
 
     <section id="preview" className="land-section" aria-labelledby="land-how">
