@@ -29,6 +29,7 @@ import './serverText';
 
 const WalletPayments=lazy(()=>import('./WalletPayments'));
 const StatementImport=lazy(()=>import('./StatementImport'));
+const CashCorrections=lazy(()=>import('./CashCorrections'));
 const KhataPage=lazy(()=>import('./KhataPage'));
 const Settings=lazy(()=>import('./Settings'));
 const Assistant=lazy(()=>import('./Assistant'));
@@ -37,6 +38,15 @@ type Tab=typeof tabs[number];
 const tabLabel:Record<Tab,string>={Overview:T('Overview'),Data:T('Add records'),Invoices:T('Invoices'),'Cash flow':T('Cash flow'),Financing:T('Loans'),Assistant:T('Assistant'),Approvals:T('Approvals'),Audit:T('Activity'),Settings:T('Settings')};
 const pageTitle:Record<Tab,string>={Overview:T('Financial overview'),Data:T('Add your records'),Invoices:T('Invoices'),'Cash flow':T('Cash flow'),Financing:T('Loan offers'),Assistant:T('Assistant'),Approvals:T('Payment approvals'),Audit:T('Activity'),Settings:T('Settings')};
 
+function CorrectionSummary({payload}:{payload:Record<string,unknown>}){
+  const {nativeMoney}=useCurrency();
+  function describe(value:unknown){
+    if(!value||typeof value!=='object')return t('Voided');
+    const entry=value as Pick<CashEvent,'direction'|'status'|'effective_on'|'amount_minor'>;
+    return [entry.effective_on,entry.direction==='inflow'?t('Money in'):t('Money out'),nativeMoney(entry.amount_minor),entry.status==='scheduled'?t('Planned / expected'):t('Already received / spent')].join(' · ');
+  }
+  return <small>{t('Previous entry: {entry}',{entry:describe(payload.previous)})}<br/>{t('Correction: {entry}',{entry:describe(payload.replacement)})}</small>;
+}
 function Basis({count}:{count:number}){return <p className="small muted">{t('Based on {count} of your records.',{count})}</p>;}
 function Notes({values}:{values:string[]}){return <ul className="notes">{values.map((v,i)=><li key={i}>{t(v)}</li>)}</ul>;}
 function Metric({label,value,hint}:{label:string;value:number;hint?:string}){const {money}=useCurrency();return <article className="metric"><p>{label}</p><strong className={value<0?'negative':''}>{money(value)}</strong>{hint&&<small>{hint}</small>}</article>;}
@@ -48,7 +58,7 @@ export default function Workspace(props:WorkspaceProps){
   return <CurrencyProvider currency={currency} fetchRate={(from,to)=>fxRate(from,to)} storageKey={`safeledger-currency-view-v2:${props.session.user_id}:${props.session.business_id}`}><WorkspaceContent {...props} setCurrency={setCurrency}/></CurrencyProvider>;
 }
 
-const AUDIT_TEXT:Record<string,string>={CUSTOMER_ADDED:T('Customer saved.'),CUSTOMER_PHONE_REMOVED:T('Phone number erased.'),RECEIVABLE_ADDED:T('Receivable saved.'),RECEIVABLE_SETTLED:T('Receipt recorded.'),IMPORTED:T('Records imported'),RECORD_ADDED:T('Record added'),PROPOSED:T('Payment prepared for approval'),APPROVED:T('Payment approved'),REJECTED:T('Payment rejected'),EXECUTED:T('Payment recorded'),EXPIRED:T('A payment proposal expired'),DENIED:T('An action was blocked'),IDEMPOTENT_REPLAY:T('A repeated approval was ignored'),FINANCING_ANALYZED:T('Loan offers compared'),INVITATION_CREATED:T('Invitation created'),WORKSPACE_JOINED:T('Someone joined this workspace'),WORKSPACE_CREATED:T('Workspace created'),CURRENCY_CHANGED:T('Currency changed'),PAYEE_PERMISSION_CHANGED:T('Supplier permission changed'),ACCOUNT_RECOVERED:T('Account recovered'),MEMBER_REMOVED:T('Someone was removed'),MEMBER_ROLE_CHANGED:T('A role was changed'),MEMBER_LEFT:T('Someone left this workspace')};
+const AUDIT_TEXT:Record<string,string>={CASH_CORRECTED:T('Cash correction recorded.'),CUSTOMER_ADDED:T('Customer saved.'),CUSTOMER_PHONE_REMOVED:T('Phone number erased.'),RECEIVABLE_ADDED:T('Receivable saved.'),RECEIVABLE_SETTLED:T('Receipt recorded.'),IMPORTED:T('Records imported'),RECORD_ADDED:T('Record added'),PROPOSED:T('Payment prepared for approval'),APPROVED:T('Payment approved'),REJECTED:T('Payment rejected'),EXECUTED:T('Payment recorded'),EXPIRED:T('A payment proposal expired'),DENIED:T('An action was blocked'),IDEMPOTENT_REPLAY:T('A repeated approval was ignored'),FINANCING_ANALYZED:T('Loan offers compared'),INVITATION_CREATED:T('Invitation created'),WORKSPACE_JOINED:T('Someone joined this workspace'),WORKSPACE_CREATED:T('Workspace created'),CURRENCY_CHANGED:T('Currency changed'),PAYEE_PERMISSION_CHANGED:T('Supplier permission changed'),ACCOUNT_RECOVERED:T('Account recovered'),MEMBER_REMOVED:T('Someone was removed'),MEMBER_ROLE_CHANGED:T('A role was changed'),MEMBER_LEFT:T('Someone left this workspace')};
 
 function WorkspaceContent({token,session,logout,expired,changeSession,setCurrency}:WorkspaceProps&{setCurrency:(currency:string)=>void}){
   const {currency,money,nativeMoney,parseMinor}=useCurrency();
@@ -205,12 +215,13 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {tab==='Audit'&&<Panel title={t('Everything that happened')}>
         {audit?<><p className={audit.chain_verified?'success':'error'}>{audit.chain_verified?t('History verified: nothing has been changed or removed.'):t('History could not be verified. Contact support.')}</p>
           {!audit.events.length&&<p>{t('No activity yet.')}</p>}
-          <ol className="audit-list">{audit.events.slice().reverse().map(event=>{const p=(event.payload||{}) as Record<string,unknown>;const who=event.actor_id===session.user_id?'You':t('A teammate');return <li key={event.event_id}><strong>{t(AUDIT_TEXT[event.kind]||'')||event.kind.replaceAll('_',' ').toLowerCase()}</strong><small>{formatTime(event.created_at)} · {who}{typeof p.note==='string'&&p.note?` · ${p.note}`:''}{event.kind==='EXECUTED'&&typeof p.cash_delta_minor==='number'?` · ${nativeMoney(Math.abs(p.cash_delta_minor))}`:''}{event.kind==='DENIED'?' · blocked by a safety rule':''}</small></li>;})}</ol>
+          <ol className="audit-list">{audit.events.slice().reverse().map(event=>{const p=(event.payload||{}) as Record<string,unknown>;const who=event.actor_id===session.user_id?'You':t('A teammate');return <li key={event.event_id}><strong>{t(AUDIT_TEXT[event.kind]||'')||event.kind.replaceAll('_',' ').toLowerCase()}</strong><small>{formatTime(event.created_at)} · {who}{typeof p.note==='string'&&p.note?` · ${p.note}`:''}{event.kind==='EXECUTED'&&typeof p.cash_delta_minor==='number'?` · ${nativeMoney(Math.abs(p.cash_delta_minor))}`:''}{event.kind==='DENIED'?' · blocked by a safety rule':''}</small>{event.kind==='CASH_CORRECTED'&&<CorrectionSummary payload={p}/>}</li>;})}</ol>
           <details className="advanced"><summary>{t('For auditors')}</summary><p className="muted small">{t('Each entry is linked to the one before it and signed by the server, so any later change is detectable.')} {t('This is not a claim of protection from the system administrator.')}</p><button className="secondary" onClick={()=>save(new Blob([JSON.stringify(audit,null,2)],{type:'application/json'}),'capzoryx-activity-log.json')}>{t('Download the full signed log')}</button></details></>:<p>{t('Activity is unavailable. Refresh to try again.')}</p>}</Panel>}
       {tab==='Data'&&<>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><KhataPage request={request} session={session} onSaved={refresh}/></Suspense></LazyBoundary>}
         {canAddRecords&&<QuickAdd request={request} revision={revision} profile={profile} owner={session.role==='owner'} cloudAvailable={cloudAvailable} onSaved={async()=>{await refresh();}}/>}
         <DataEntry events={events} session={session} revision={revision} snapshot={snapshot} busy={busy} submit={async body=>{let saved=false;await run(async()=>{await request('/workspace/records',body);saved=true;await refresh();setMessage(t('Record saved. Your balance, forecast and activity are updated.'));});if(!saved)throw new Error(t('The record was not saved. Check the message above and try again.'));}}/>
+        {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><CashCorrections session={session} events={events} request={request} onSaved={refresh}/></Suspense></LazyBoundary>}
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><StatementImport request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary>}
         {session.role==='owner'&&<ImportEvidence busy={busy} enabled={!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0} upload={importRaw}/>}</>}
       {tab==='Settings'&&session.role==='owner'&&<ReadOnlyTokens request={request}/>}
