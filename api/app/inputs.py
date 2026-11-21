@@ -53,7 +53,7 @@ def sync_offline(body: OfflineRecord, actor=Depends(principal), db=Depends(db_co
         if not active:
             sec.fail(403,'WORKSPACE_CLEARED')
         sec.verified_audit(db, current.business_id)
-        return append_record(db,current,body)
+        return append_record(db,current,body,manual_entry=True)
 
 
 @router.post('/workspace/records',status_code=201)
@@ -65,10 +65,10 @@ def add_record(body:InputRecord,actor=Depends(principal),db=Depends(db_connectio
         if current.role not in ('owner', 'bookkeeper'):sec.fail(403,'RECORDKEEPER_REQUIRED')
         if body.trust_vendor and current.role != 'owner':sec.fail(403,'OWNER_REQUIRED')
         sec.verify_audit_head(db,current.business_id)
-        return append_record(db, current, body)
+        return append_record(db, current, body, manual_entry=True)
 
 
-def append_record(db, current, body):
+def append_record(db, current, body, *, manual_entry=False):
     """Append in the caller's verified recordkeeping transaction."""
     digest=hashlib.sha256(sec.canonical(body.model_dump(mode='json')).encode()).hexdigest()
     prior=db.execute('SELECT body_sha256 FROM workspace_input_requests WHERE business_id=? AND request_id=?',(current.business_id,body.request_id)).fetchone()
@@ -110,7 +110,7 @@ def append_record(db, current, body):
         duplicate_notice(db,current.business_id,runtime,record_id)
     db.execute('INSERT INTO workspace_input_requests VALUES (?,?,?)',(current.business_id,body.request_id,digest))
     note_fields = record_notes.store(db, current.business_id, record_id, kind, body.memo)
-    sec.audit(db,current,'input-'+body.request_id,'RECORD_ADDED',dict(source_id=record_id,kind=kind,previous_revision=fingerprint(ds),dataset_sha256=fingerprint(new),record_sha256=fingerprint(typed),payee_allowed=body.trust_vendor,**note_fields))
+    sec.audit(db,current,'input-'+body.request_id,'RECORD_ADDED',dict(source_id=record_id,kind=kind,entry_origin='manual' if manual_entry else 'linked',previous_revision=fingerprint(ds),dataset_sha256=fingerprint(new),record_sha256=fingerprint(typed),payee_allowed=body.trust_vendor,**note_fields))
     return dict(source_id=record_id,replayed=False,simulation_only=True)
 
 

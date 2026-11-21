@@ -196,7 +196,7 @@ def workspace_bundle(actor=Depends(principal),db=Depends(db_connection)):
     db.execute('BEGIN')
     with db:
         events=sec.verified_audit(db,actor.business_id)
-        ds=sec.runtime_dataset(db,actor.business_id)
+        ds=sec.runtime_dataset(db,actor.business_id,verified_history=events)
         rows=db.execute('SELECT * FROM proposals WHERE business_id=? ORDER BY rowid DESC LIMIT 200',(actor.business_id,)).fetchall()
         for row in rows:sec.verify_proposal(db,row)
         # Return one owner's next collection alongside the existing policy read.
@@ -216,6 +216,9 @@ def workspace_bundle(actor=Depends(principal),db=Depends(db_connection)):
         month=project_cashflow(ds,ScenarioRequest(as_of=ds.as_of,horizon_days=30,reserve_minor=policy[0],delay_inflows_days=0), receipts)
         month["collection_plan"] = collection_plan(ds, month, receipts)
         notes=record_notes.read(db, actor.business_id, events)
+        for entry in events:
+            if entry['kind']=='CASH_CORRECTED':
+                notes[entry['trace_id']]=notes.get(entry['payload']['original_id'],'')
         return dict(next_collection=next_collection,dataset_revision=sec.fingerprint(sec.original_dataset(db,actor.business_id)),snapshot=snapshot(ds),invoices=[i.model_dump(mode='json') for i in ds.invoices],events=[dict(e.model_dump(mode='json'),note=notes.get(e.source_record_id,'')) for e in ds.events],proposals=[sec.proposal_view(row) for row in rows],audit=dict(events=events,chain_verified=True,tenant_chain_head=events[-1]['event_hash'] if events else '0'*64),week=week,month=month,policy=dict(reserve_minor=policy[0],payment_limit_minor=policy[1]),simulation_only=True)
 
 
@@ -225,7 +228,7 @@ def export_workspace(actor=Depends(principal),db=Depends(db_connection)):
     with db:
         events=sec.verified_audit(db,actor.business_id)
         original=sec.original_dataset(db,actor.business_id)
-        current=sec.runtime_dataset(db,actor.business_id)
+        current=sec.runtime_dataset(db,actor.business_id,verified_history=events)
         collections = {}
         if sec.recheck(db,actor).role == 'owner':
             from api.app.receivables import customer_book
