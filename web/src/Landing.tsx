@@ -25,10 +25,10 @@ const faq:{q:string;a:string}[]=[
  {q:T('Which currencies are supported?'),a:T('Over 150 currencies, with live exchange rates for converted values.')},
  {q:T('What if I forget my password?'),a:T('Ask for a code by email, or use the recovery key you saved when you signed up.')},
 ];
-const soon:{icon:string;title:string;text:string}[]=[
- {icon:'Data',title:T('Bank and wallet import'),text:T('Paste a bKash, Nagad, Rocket or bank message, or upload a statement, and we propose the records for you to confirm.')},
- {icon:'Cash flow',title:T('Live payment feed'),text:T('For businesses that take online payments: each received payment can arrive as a record by itself.')},
- {icon:'Invoices',title:T('Bill reminders'),text:T('Get a nudge before a bill is due, by email.')},
+const reviewTools:{icon:string;title:string;text:string}[]=[
+ {icon:'Data',title:T('Statement import'),text:T('Upload a CSV, XLSX or PDF statement and choose which rows to record.')},
+ {icon:'Cash flow',title:T('Wallet payment feed'),text:T('Paste a wallet receipt and check its suggested customer before recording the payment.')},
+ {icon:'Invoices',title:T('Bill reminders'),text:T('Open Activity to review approaching supplier bills and customer dues.')},
 ];
 const stats:{n:number;suffix:string;label:string}[]=[
  {n:37,suffix:'',label:T('languages')},{n:150,suffix:'+',label:T('currencies with live rates')},{n:2,suffix:'',label:T('people on every payment')},{n:30,suffix:'',label:T('days to undo clearing data')},
@@ -76,6 +76,7 @@ export function HeroDemo(){
       onChange={e=>{setText(e.target.value);setDraft(null);setError('');}}/>
     <div className="actions"><button disabled={busy||!text.trim()}>{busy?t('Reading…'):t('Preview record')}</button>
       <small>{t('Private preview on this device. Nothing is saved.')}</small></div>
+    <a className="link" href="#agentic-demo">{t('Try Agentic Mode')}</a>
     <div role="status">{error&&<p>{error}</p>}{draft&&<div className="record-result">
       <strong>{draft.kind==='invoice'?t('Unpaid supplier invoice'):draft.direction==='inflow'?t('Money in'):t('Money out')}</strong>
       <b>{money(draft.amount_minor,draft.currency)}</b><span>{formatDate(draft.effective_on)}</span>
@@ -129,7 +130,8 @@ function ApprovalMock(){
 
 /** Drag the slider: a late customer payment moves the whole outlook, and the page says whether cash runs short. */
 function OutlookPlayground(){
-  const [late,setLate]=useState(0);
+  const [late,setLate]=useState(9);
+  const [preview,setPreview]=useState(false);
   const reserve=30000;
   const model=useMemo(()=>{
     const days=22;const bal:number[]=[];let b=150000;
@@ -142,22 +144,31 @@ function OutlookPlayground(){
       bal.push(b);
     }
     const low=Math.min(...bal);const first=bal.findIndex(x=>x<reserve);
-    return {bal,low,first};
+    const receiptDay=6+late;
+    const advance=first>=0 && first<receiptDay ? Math.min(40000, reserve-Math.min(...bal.slice(first,receiptDay))) : 0;
+    const after=bal.map((value,day)=>day>=first && day<receiptDay?value+advance:value);
+    return {bal,after,advance,low,first,receiptDay};
   },[late]);
   const W=420,H=190,pad=24;const max=Math.max(...model.bal,180000),min=Math.min(...model.bal,0);
   const x=(i:number)=>pad+i*(W-pad*2)/(model.bal.length-1);const y=(v:number)=>H-pad-((v-min)/(max-min))*(H-pad*2);
-  const line=model.bal.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ');
+  const balances=preview?model.after:model.bal;
+  const line=balances.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ');
   const area=line+` L${x(model.bal.length-1)} ${H-pad} L${x(0)} ${H-pad}Z`;
-  const short=model.first>=0;
+  const first=balances.findIndex(value=>value<reserve);
+  const short=first>=0;
   return <div className="playground">
     <svg viewBox={`0 0 ${W} ${H}`} className="pg-chart" role="img" aria-label={t('A cash outlook chart')}>
       <path d={area} className={short?'pg-area bad':'pg-area'}/><path d={line} className={short?'pg-line bad':'pg-line'} fill="none"/>
       <line x1={pad} x2={W-pad} y1={y(reserve)} y2={y(reserve)} className="pg-reserve"/>
-      {short&&<circle cx={x(model.first)} cy={y(model.bal[model.first])} r="6" className="pg-dot"/>}
+      {short&&<circle cx={x(first)} cy={y(balances[first])} r="6" className="pg-dot"/>}
     </svg>
     <label htmlFor="pg-late" className="pg-label">{t('A customer pays {n} days late',{n:late})}</label>
-    <input id="pg-late" className="pg-range" type="range" min="0" max="12" step="1" value={late} onChange={e=>setLate(Number(e.target.value))}/>
-    <p className={short?'pg-result bad':'pg-result'} role="status">{short?t('Cash runs below your safety reserve on day {n}.',{n:model.first+1}):t('Your cash stays above your safety reserve.')}</p>
+    <input id="pg-late" className="pg-range" type="range" min="0" max="12" step="1" value={late} onChange={e=>{setLate(Number(e.target.value));setPreview(false);}}/>
+    <p className={short?'pg-result bad':'pg-result'} role="status">{short?t('Cash runs below your safety reserve on day {n}.',{n:first+1}):t('Your cash stays above your safety reserve.')}</p>
+    {model.advance>0&&<><p>{t('Collect {amount} by day {day} from the receipt due on day {due}.',{
+      amount:money(model.advance*100,'BDT'),day:model.first+1,due:model.receiptDay+1})}</p>
+      <button type="button" className="secondary" aria-pressed={preview} onClick={()=>setPreview(!preview)}>
+        {preview?t('Show original forecast'):t('Preview proposed collection')}</button></>}
   </div>;
 }
 
@@ -190,7 +201,7 @@ export function Landing({onStart}:{onStart:()=>void}){
     <div className="scroll-progress" ref={bar} aria-hidden="true"/>
     <nav className={nav?'land-nav show':'land-nav'} aria-label={t('Page sections')}>
       <button type="button" className="land-brand" onClick={()=>window.scrollTo({top:0,behavior:'smooth'})} aria-label="Capzoryx Copilot"><Logo size={28}/><span>Capzoryx <b>Copilot</b></span></button>
-      <div className="land-links"><button type="button" className="link" onClick={()=>go('features')}>{t('Features')}</button><button type="button" className="link" onClick={()=>go('preview')}>{t('See it work')}</button><button type="button" className="link" onClick={()=>go('safety')}>{t('Safety')}</button><button type="button" className="link" onClick={()=>go('soon')}>{t('Coming soon')}</button><button type="button" className="link" onClick={()=>go('faq')}>{t('Questions')}</button></div>
+      <div className="land-links"><button type="button" className="link" onClick={()=>go('features')}>{t('Features')}</button><button type="button" className="link" onClick={()=>go('preview')}>{t('See it work')}</button><button type="button" className="link" onClick={()=>go('safety')}>{t('Safety')}</button><button type="button" className="link" onClick={()=>go('soon')}>{t('Tools in website testing')}</button><button type="button" className="link" onClick={()=>go('faq')}>{t('Questions')}</button></div>
       <button type="button" className="land-signin" onClick={onStart}>{t('Sign in')}</button>
     </nav>
     <div className="stats" data-reveal>{stats.map(s=><div key={s.label}><Counter to={s.n} suffix={s.suffix}/><span>{t(s.label)}</span></div>)}</div>
@@ -209,10 +220,10 @@ export function Landing({onStart}:{onStart:()=>void}){
       </div>
     </section>
 
-    <section className="land-section" aria-labelledby="land-play">
+    <section id="agentic-demo" className="land-section" aria-labelledby="land-play">
       <p className="eyebrow" data-reveal>{t('TRY IT')}</p>
-      <h2 id="land-play" data-reveal>{t('Will your cash last? Move the slider.')}</h2>
-      <div className="play-wrap" data-reveal><OutlookPlayground/><p className="small muted">{t('Sample numbers. Your own outlook uses your records.')}</p></div>
+      <h2 id="land-play" data-reveal>{t('Try Agentic Mode with a sample cash forecast')}</h2>
+      <div className="play-wrap" data-reveal><OutlookPlayground/><p className="small muted">{t('Move the payment date to see which collection would protect the sample business’s reserve.')}</p></div>
     </section>
 
     <section id="preview" className="land-section" aria-labelledby="land-how">
@@ -235,10 +246,10 @@ export function Landing({onStart}:{onStart:()=>void}){
       <div className="trust-grid">{trust.map(x=><article key={x.title} className="spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name={x.icon}/></span><div><h3>{t(x.title)}</h3><p>{t(x.text)}</p></div></article>)}</div>
     </section>
     <section id="soon" className="land-section" aria-labelledby="land-soon">
-      <p className="eyebrow" data-reveal>{t('COMING SOON')}</p>
-      <h2 id="land-soon" data-reveal>{t('What we are building next')}</h2>
-      <div className="soon-grid">{soon.map(x=><article key={x.title} className="soon-card spot" data-reveal onPointerMove={spot}><span className="soon-badge">{t('Planned')}</span><span className="feature-icon"><Icon name={x.icon}/></span><h3>{t(x.title)}</h3><p>{t(x.text)}</p></article>)}</div>
+      <h2 id="land-soon" data-reveal>{t('Try the new tools in a test workspace')}</h2>
+      <div className="soon-grid">{reviewTools.map(x=><article key={x.title} className="soon-card spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name={x.icon}/></span><h3>{t(x.title)}</h3><p>{t(x.text)}</p></article>)}</div>
       <p className="small muted soon-note" data-reveal>{t('Nothing here connects to your bank today. When it does, you will always confirm each record yourself.')}</p>
+      <a className="link" href="https://capzoryx-qa.vercel.app">{t('Open the test website with fictional records')}</a>
     </section>
     <section className="land-section land-langs" aria-labelledby="land-lang" data-reveal>
       <p className="eyebrow">{t('FOR EVERYONE')}</p>
