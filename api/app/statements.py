@@ -1,6 +1,7 @@
 """Review a statement locally on the API, then book selected cash rows one at a time."""
 import base64
-from collections import Counter
+from bisect import bisect_right
+from collections import Counter, defaultdict
 import hashlib
 import hmac
 import json
@@ -19,7 +20,7 @@ from api.app.accounts import today_bd
 from api.app.contracts import Contract, Currency, ISODate, RecordId
 from api.app.currencies import CURRENCIES
 from api.app.inputs import InputRecord, append_record
-from api.app.receivables import owner_transaction
+from api.app.receivables import apply_receipt, customer_book, owner_transaction
 from api.app.routes import db_connection, principal
 from api.app.services.finance import fingerprint
 
@@ -60,12 +61,18 @@ class ReviewFile(Contract):
     rows_review: int = Field(strict=True,ge=0,le=20000)
 
 
+class Match(Contract):
+    receivable_id: RecordId
+    open_minor: int = Field(strict=True,gt=0,le=10**12)
+
+
 class ReviewRow(Contract):
     line: int=Field(strict=True,gt=0,le=20030)
     row_hash: str=Field(pattern=HASH)
     day: ISODate
     signed: int=Field(strict=True,ge=-(10**12),le=10**12)
     needs_review: bool = Field(strict=True)
+    matches: list[Match] = Field(default_factory=list,max_length=5)
 
 
 class Confirm(Contract):
@@ -73,6 +80,8 @@ class Confirm(Contract):
     row: ReviewRow
     signature: str = Field(pattern=HASH)
     verified_distinct: bool = Field(default=False,strict=True)
+    receivable_id: RecordId | None = None
+    checked_receivable: bool = Field(default=False,strict=True)
 
 
 def decode(upload):
@@ -113,6 +122,35 @@ def cash_keys(ds):
             for event in ds.events if event.status=='cleared'}
 
 
+class OpenReceivables:
+    """Suggest exact invoice references or exact balances. Never pick between same-amount bills."""
+    def __init__(self, book):
+        self.by_number = defaultdict(list)
+        self.by_amount = defaultdict(list)
+        customers = {c['id']: c['name'] for c in book['customers']}
+        self.details = {}
+        for debt in sorted(book['receivables'], key=lambda d:(d['issued_on'],d['id'])):
+            if debt['open_minor'] <= 0:
+                continue
+            key = (debt['issued_on'],debt['id'])
+            self.by_amount[debt['open_minor']].append(key)
+            if debt['number']:
+                self.by_number[debt['number'].strip().casefold()].append(key)
+            self.details[debt['id']] = dict(customer_name=customers.get(debt['customer_id']),
+                number=debt['number'],due_on=debt['due_on'],open_minor=debt['open_minor'])
+
+    def suggest(self, row):
+        reference = self.by_number.get(row['ref'])
+        choices = reference if reference is not None else self.by_amount.get(row['signed'], [])
+        # Never return an arbitrary subset of many plausible bills.
+        stop = bisect_right(choices,(row['day'],'\uffff'))
+        if stop > 5:
+            return [], 'many'
+        matches = [dict(receivable_id=identity,open_minor=self.details[identity]['open_minor'])
+                   for _,identity in choices[:stop] if self.details[identity]['open_minor'] >= row['signed']]
+        return matches, ('reference' if reference else 'amount') if matches else None
+
+
 @router.post('/preview')
 def preview(body: Upload,actor=Depends(principal),db=Depends(db_connection)):
     if actor.role!='owner':sec.fail(403,'OWNER_REQUIRED')
@@ -143,8 +181,9 @@ def preview(body: Upload,actor=Depends(principal),db=Depends(db_connection)):
             signatures.append((row['day'],row['signed']))
         counts=Counter(ids);shapes=Counter(signatures)
         file_rows=[];held=0;duplicates=0
+        book=None; suggested={}
         for row,identity,shape in zip(decoded,ids,signatures):
-            status='new';reason=row.get('reason');review=None
+            status='new';reason=row.get('reason');review=None;match_basis=None
             if reason:status='blocked'
             elif row['day']<str(ds.opening_on) or row['day']>str(today_bd()):status,reason='blocked','DATE_OUTSIDE_WORKSPACE'
             elif identity in linked:
@@ -156,15 +195,24 @@ def preview(body: Upload,actor=Depends(principal),db=Depends(db_connection)):
                 status,reason='review','SIMILAR_CASH_ENTRY'
             if status in {'new','review'}:
                 review=dict(line=row['line'],row_hash=identity,day=row['day'],signed=row['signed'],needs_review=status=='review')
+                if row['signed'] > 0:
+                    if book is None:
+                        book=OpenReceivables(customer_book(db,business))
+                    matches,match_basis=book.suggest(row)
+                    if matches:
+                        review['matches']=matches
+                        for match in matches:
+                            key=match['receivable_id']
+                            suggested[key]=book.details[key]
             held+=status in {'review','blocked'};duplicates+=status=='duplicate'
-            file_rows.append(dict(line=row['line'],day=row.get('day'),signed=row.get('signed'),status=status,reason=reason,review=review))
+            file_rows.append(dict(line=row['line'],day=row.get('day'),signed=row.get('signed'),status=status,reason=reason,review=review,match_basis=match_basis))
         manifest=dict(file_hash=file_hash,layout=body.layout,currency=body.currency,account_hash=account_hash,
                       rows_total=len(file_rows),rows_duplicate=duplicates,rows_review=held)
         # Include the date-order mapping in the signed manifest via the per-import identifier.
         for row in file_rows:
             if row['review']:
                 row['signature']=token(current,[manifest,manifest_id],row['review'])
-        return dict(file=manifest,import_id=manifest_id,rows=file_rows,imported_count=prior_file[1] if prior_file else 0,simulation_only=True)
+        return dict(file=manifest,import_id=manifest_id,rows=file_rows,suggested_receivables=suggested,imported_count=prior_file[1] if prior_file else 0,simulation_only=True)
 
 
 class ConfirmRow(Confirm):
@@ -174,15 +222,23 @@ class ConfirmRow(Confirm):
 @router.post('/confirm')
 def confirm(body: ConfirmRow,actor=Depends(principal),db=Depends(db_connection)):
     with owner_transaction(db,actor) as current:
-        manifest=body.file.model_dump(mode='json');row=body.row.model_dump(mode='json')
+        manifest=body.file.model_dump(mode='json');row=body.row.model_dump(mode='json',exclude_unset=True)
         if not hmac.compare_digest(token(current,[manifest,body.import_id],row),body.signature):
             sec.fail(409,'STATEMENT_REVIEW_EXPIRED')
         business=current.business_id
-        previous=db.execute('SELECT economics_hash,cash_record_id FROM statement_rows WHERE business_id=? AND row_hash=?',
-                            (business,body.row.row_hash)).fetchone()
+        selected = next((m for m in body.row.matches if m.receivable_id==body.receivable_id),None)
+        if body.receivable_id:
+            if not body.checked_receivable or body.row.signed<=0 or selected is None:
+                sec.fail(422,'STATEMENT_RECEIVABLE_CONFIRMATION_REQUIRED')
+        elif body.checked_receivable:
+            sec.fail(422,'STATEMENT_RECEIVABLE_CONFIRMATION_REQUIRED')
+        previous=db.execute("""SELECT r.economics_hash,r.cash_record_id,s.receivable_id FROM statement_rows r
+            LEFT JOIN receivable_settlements s ON s.business_id=r.business_id AND s.cash_record_id=r.cash_record_id
+            WHERE r.business_id=? AND r.row_hash=?""",(business,body.row.row_hash)).fetchone()
         if previous:
             if previous[0]!=economics(row):sec.fail(409,'STATEMENT_REFERENCE_CONFLICT')
-            return dict(cash_record_id=previous[1],replayed=True,simulation_only=True)
+            if previous[2]!=body.receivable_id:sec.fail(409,'STATEMENT_RECEIVABLE_CONFLICT')
+            return dict(cash_record_id=previous[1],receivable_id=previous[2],replayed=True,simulation_only=True)
         ds=sec.original_dataset(db,business)
         if ds.currency!=body.file.currency:sec.fail(409,'IMPORT_CURRENCY_MISMATCH')
         if (body.row.needs_review or (str(body.row.day),body.row.signed) in cash_keys(sec.runtime_dataset(db,business))) and not body.verified_distinct:
@@ -194,12 +250,19 @@ def confirm(body: ConfirmRow,actor=Depends(principal),db=Depends(db_connection))
                        (body.import_id,business,body.file.file_hash,body.file.layout,body.file.rows_total,0,body.file.rows_duplicate,
                         body.file.rows_review,sec.now()))
         request_id=str(uuid.uuid5(NAMESPACE,business+':'+body.row.row_hash))
-        saved=append_record(db,current,InputRecord(request_id=request_id,expected_revision=fingerprint(ds),
-                            kind='cash',direction='inflow' if body.row.signed>0 else 'outflow',
-                            amount_minor=abs(body.row.signed),effective_on=body.row.day))
-        if saved['replayed']:sec.fail(409,'CASH_REQUEST_ALREADY_USED')
-        cash=saved['source_id']
+        if selected:
+            latest=db.execute('SELECT open_minor FROM receivable_balances WHERE business_id=? AND id=?',
+                              (business,selected.receivable_id)).fetchone()
+            if not latest or latest[0]!=selected.open_minor:
+                sec.fail(409,'STATEMENT_RECEIVABLE_CHANGED')
+            _,cash=apply_receipt(db,current,selected.receivable_id,body.row.signed,body.row.day,request_id,request_id)
+        else:
+            saved=append_record(db,current,InputRecord(request_id=request_id,expected_revision=fingerprint(ds),
+                                kind='cash',direction='inflow' if body.row.signed>0 else 'outflow',
+                                amount_minor=abs(body.row.signed),effective_on=body.row.day))
+            if saved['replayed']:sec.fail(409,'CASH_REQUEST_ALREADY_USED')
+            cash=saved['source_id']
         db.execute('INSERT INTO statement_rows VALUES(?,?,?,?,?)',(business,body.row.row_hash,economics(row),body.import_id,cash))
         db.execute('UPDATE statement_imports SET rows_new=rows_new+1 WHERE business_id=? AND id=?',(business,body.import_id))
-        sec.audit(db,current,body.import_id,'STATEMENT_ROW_IMPORTED',dict(line=body.row.line,cash_record_id=cash))
-        return dict(cash_record_id=cash,replayed=False,simulation_only=True)
+        sec.audit(db,current,body.import_id,'STATEMENT_ROW_IMPORTED',dict(line=body.row.line,cash_record_id=cash,receivable_id=body.receivable_id))
+        return dict(cash_record_id=cash,receivable_id=body.receivable_id,replayed=False,simulation_only=True)

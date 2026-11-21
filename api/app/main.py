@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from api.app import app_sessions, mcp_read, quality, security
 from api.app.notifications import telegram
-from api.app.notifications import push
+from api.app.notifications import email_alerts, push
 from api.app.notifications.routes import router as notification_router
 from api.app import corrections, khata
 from api.app.body_limit import BodyLimitMiddleware
@@ -59,6 +59,7 @@ async def lifespan(app: FastAPI):
         profile.schema(db)
         books.schema(db)
         push.schema(db)
+        email_alerts.schema(db)
         i18n.schema(db)
         passport.schema(db)
         plans.schema(db)

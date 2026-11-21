@@ -9,11 +9,13 @@ from pydantic import Field
 
 from api.app import security as sec
 from api.app.contracts import Contract
+from api.app.notifications import email_alerts
 from api.app.notifications.scheduler import tick, tick_business
 from api.app.notifications.service import pref
 from api.app.routes import db_connection, principal
 
 router = APIRouter(prefix='/api')
+router.include_router(email_alerts.router)
 
 
 def inbox_view(db, actor):

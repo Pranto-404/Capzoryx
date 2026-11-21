@@ -18,6 +18,7 @@ ROUTES = {
     '/api/assist/extract': 'assistant',
     '/api/assist/offer': 'offer_reader',
     '/api/financing/match': 'financing_match',
+    '/api/copilot/agent-review': 'agent_mode',
     '/api/copilot/ask': 'ask_books',
     '/api/copilot/aliases/{kind}': 'ask_books',
     '/api/copilot/gap-fix': 'collection_plans',

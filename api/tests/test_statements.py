@@ -119,3 +119,82 @@ def test_reader_refuses_non_transaction_rows_and_formulae():
     data=b'Date,Amount\n'+20001*b'2026-11-21,5\n'
     with pytest.raises(ValueError,match='STATEMENT_SIZE_LIMIT'):
         parse_statement(data,'csv','BDT',2,'DMY')
+
+
+def test_receivable_match_is_explicit_atomic_and_replay_safe(world):
+    import sqlite3
+    from concurrent.futures import ThreadPoolExecutor
+    from api.app.accounts import today_bd
+    from api.tests.test_receivables import issue
+
+    c,path=world;signup(c,'statement_receipts')
+    _,first,_=issue(c,12300)
+    _,second,_=issue(c,12300)
+    raw=f'Date,Ref,Amount,Balance\n{today_bd()},SYN01,123,123\n'.encode()
+    preview=upload(c,raw).json()
+    signed=preview['rows'][0]
+    assert signed['match_basis']=='amount'
+    assert {m['receivable_id'] for m in signed['review']['matches']}=={first,second}
+    assert set(preview['suggested_receivables'][first])=={'customer_name','number','due_on','open_minor'}
+    save=decision(preview)
+    choice=dict(save,receivable_id=first,checked_receivable=True)
+    assert c.post('/api/statements/confirm',json=dict(choice,checked_receivable=False)).status_code==422
+    assert c.post('/api/statements/confirm',json=dict(choice,receivable_id='unrelated')).status_code==422
+    changed=dict(save['row'],matches=[dict(receivable_id=first,open_minor=12301)])
+    assert c.post('/api/statements/confirm',json=dict(choice,row=changed)).status_code==409
+    assert c.get('/api/workspace').json()['snapshot']['balance_minor']==0
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses=list(pool.map(lambda _:c.post('/api/statements/confirm',json=choice),range(2)))
+    assert all(r.status_code==200 for r in responses)
+    assert sorted(r.json()['replayed'] for r in responses)==[False,True]
+    assert c.post('/api/statements/confirm',json=dict(choice,receivable_id=second)).status_code==409
+    assert c.post('/api/statements/confirm',json=save).status_code==409
+    bundle=c.get('/api/workspace').json()
+    assert bundle['snapshot']['income_minor']==12300 and bundle['month']['closing_balance_minor']==24600
+    with sqlite3.connect(path) as db:
+        assert db.execute('SELECT COUNT(*) FROM statement_rows').fetchone()[0]==1
+        proof=db.execute('SELECT s.receivable_id,s.cash_record_id,r.cash_record_id FROM receivable_settlements s JOIN statement_rows r ON s.business_id=r.business_id').fetchall()
+        assert proof==[(first,responses[0].json()['cash_record_id'],responses[0].json()['cash_record_id'])]
+    assert 'STATEMENT_ROW_IMPORTED' in [e['kind'] for e in bundle['audit']['events']]
+    signup(c,'statement_other_tenant')
+    assert c.post('/api/statements/confirm',json=choice).status_code==409
+
+
+def test_invoice_reference_partial_and_stale_preview(world):
+    import uuid
+    from api.app.accounts import today_bd
+    from api.tests.test_receivables import issue, post
+
+    c,_=world;signup(c,'statement_partial')
+    customer,_,fields=issue(c,8000)
+    debt=post(c,'receivables',**dict(fields,customer_id=customer,number='INV-42',amount_minor=11000)).json()['id']
+    raw=f'Date,Ref,Amount,Balance\n{today_bd()},inv-42,45,45\n{today_bd()},SYNOUT,-10,35\n'.encode()
+    preview=upload(c,raw).json()
+    receipt=preview['rows'][0]
+    assert receipt['match_basis']=='reference' and receipt['review']['matches']==[dict(receivable_id=debt,open_minor=11000)]
+    assert preview['rows'][1]['match_basis'] is None
+    assert c.post('/api/statements/confirm',json=dict(decision(preview,1),receivable_id=debt,checked_receivable=True)).status_code==422
+    c.post('/api/workspace/receivables/'+debt+'/settlements',json=dict(
+        request_id=str(uuid.uuid4()),amount_minor=1000,received_on=str(today_bd()))).raise_for_status()
+    assert c.post('/api/statements/confirm',json=dict(decision(preview),receivable_id=debt,checked_receivable=True)).json()['error']['code']=='STATEMENT_RECEIVABLE_CHANGED'
+    assert upload(c,raw).json()['imported_count']==0
+    refreshed=upload(c,raw).json()
+    result=c.post('/api/statements/confirm',json=dict(decision(refreshed),receivable_id=debt,checked_receivable=True))
+    assert result.status_code==200,result.text
+    balances={d['id']:d['open_minor'] for d in c.get('/api/workspace/receivables').json()['receivables']}
+    assert balances[debt]==5500
+    assert c.get('/api/workspace').json()['snapshot']['balance_minor']==5500
+
+
+def test_optional_cash_only_cannot_later_be_double_booked(world):
+    from api.app.accounts import today_bd
+    from api.tests.test_receivables import issue
+
+    c,_=world;signup(c,'statement_cash_only')
+    _,debt,_=issue(c,4700)
+    raw=f'Date,Ref,Amount,Balance\n{today_bd()},SYN2,47,47\n'.encode()
+    preview=upload(c,raw).json()
+    save=decision(preview)
+    assert c.post('/api/statements/confirm',json=save).json()['receivable_id'] is None
+    assert c.post('/api/statements/confirm',json=dict(save,receivable_id=debt,checked_receivable=True)).status_code==409
+    assert c.get('/api/workspace/receivables').json()['receivables'][0]['open_minor']==4700

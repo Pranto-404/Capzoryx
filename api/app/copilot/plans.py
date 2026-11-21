@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from pydantic import Field
 
 from api.app import security as sec
+from api.app.accounts import today_bd
 from api.app.contracts import Contract, RecordId, ScenarioRequest
 from api.app.currencies import CURRENCIES, scale
 from api.app.copilot.gapfix import best_plan
@@ -15,13 +16,16 @@ from api.app.receivables import owner_transaction
 from api.app.routes import db_connection, principal
 from api.app.services.finance import fingerprint, project_cashflow, snapshot
 from api.app.services.gap_fix import collection_plan
-from api.app.services.receivables import open_receipts
+from api.app.services.payment_timing import collection_outlook
+from api.app.services.receivables import customer_key, key_tag, open_receipts, unseal
 
 router = APIRouter(prefix='/api/copilot')
 
 
 def schema(db):
     db.executescript("""
+        CREATE TABLE IF NOT EXISTS agent_gap_watch(
+            business_id TEXT PRIMARY KEY, breach_date TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS gap_plans(
             id TEXT PRIMARY KEY, business_id TEXT NOT NULL, created_at INTEGER NOT NULL,
             breach_date TEXT NOT NULL, shortfall_minor INTEGER NOT NULL, plan_json TEXT NOT NULL,
@@ -42,18 +46,22 @@ def proof_id(business, dataset, receipts, scenario, actions):
     return sec.signature('collection-plan-v1', evidence)
 
 
+def store_proposal(db, business, dataset, receipts, scenario, plan):
+    identity = proof_id(business, dataset, receipts, scenario, plan['actions'])
+    body = dict(scenario=scenario.model_dump(mode='json'), actions=plan['actions'])
+    db.execute("""INSERT OR IGNORE INTO gap_plans(id,business_id,created_at,breach_date,shortfall_minor,plan_json,status)
+                  VALUES (?,?,?,?,?,?,'proposed')""",
+               (identity, business, sec.now(), plan['first_shortfall_on'],
+                plan['original_gap_minor'], sec.canonical(body)))
+    plan['id'] = identity
+
+
 def propose(db, actor, dataset, receipts, scenario):
     baseline = project_cashflow(dataset, scenario, receipts)
     result = collection_plan(dataset, baseline, receipts)
     plan = best_plan(dataset, scenario, receipts, baseline)
     if plan and actor.role == 'owner':
-        identity = proof_id(actor.business_id, dataset, receipts, scenario, plan['actions'])
-        body = dict(scenario=scenario.model_dump(mode='json'), actions=plan['actions'])
-        db.execute("""INSERT OR IGNORE INTO gap_plans(id,business_id,created_at,breach_date,shortfall_minor,plan_json,status)
-                      VALUES (?,?,?,?,?,?,'proposed')""",
-                   (identity, actor.business_id, sec.now(), plan['first_shortfall_on'],
-                    plan['original_gap_minor'], sec.canonical(body)))
-        plan['id'] = identity
+        store_proposal(db, actor.business_id, dataset, receipts, scenario, plan)
     return dict(result, plan=plan, simulation_only=True)
 
 
@@ -153,6 +161,46 @@ def message(body: Reminder, actor=Depends(principal), db=Depends(db_connection))
             content = f"Hello. Our records show an outstanding balance of {amount}, due on {row[1]}. Please let us know when you can pay. Thank you."
         return dict(message=content, source_id=body.receivable_id, open_minor=row[0], due_on=row[1],
                     currency=currency, simulation_only=True)
+
+
+def ranked_collections(db, business, today):
+    debts = [dict(row) for row in db.execute("""
+        SELECT r.id,r.customer_id,r.due_on,r.open_minor,r.amount_minor,c.name_enc,c.key_tag
+        FROM receivable_balances r JOIN customers c ON c.id=r.customer_id AND c.business_id=r.business_id
+        WHERE r.business_id=? AND r.open_minor>0 AND r.due_on<?
+        """, (business, today.isoformat())).fetchall()]
+    outlook = collection_outlook(db, business, debts, today)
+    for row in debts:
+        row['percent'] = outlook[row['id']].get('within_days_pct', {}).get('7')
+    # Use the seven-day expected collection when evidence exists, then rank
+    # unscored bills by outstanding amount. Offer one contact per customer.
+    debts.sort(key=lambda r: (r['percent'] is None,
+        -r['open_minor'] * (r['percent'] if r['percent'] is not None else 100),
+        r['due_on'], r['id']))
+    seen = set()
+    selected = []
+    key = customer_key(db, business) if debts else None
+    tag = key_tag(key) if key else None
+    for row in debts:
+        customer = row['customer_id']
+        if customer in seen:
+            continue
+        seen.add(customer)
+        name = unseal(key, row['name_enc'], customer + '/name').decode() if key and row['key_tag'] == tag else ''
+        selected.append(dict(receivable_id=row['id'], customer_name=name, due_on=row['due_on'],
+                             open_minor=row['open_minor'],
+                             probability_7d=row['percent'] / 100 if row['percent'] is not None else None))
+        if len(selected) == 3:
+            break
+    return selected
+
+
+@router.get('/agent-review')
+def agent_review(actor=Depends(principal), db=Depends(db_connection)):
+    with owner_transaction(db, actor) as owner:
+        today = today_bd()
+        return dict(as_of=today.isoformat(), currency=sec.original_dataset(db, owner.business_id).currency,
+                    collections=ranked_collections(db, owner.business_id, today), simulation_only=True)
 
 
 @router.get('/briefing')
