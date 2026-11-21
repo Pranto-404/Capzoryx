@@ -1,4 +1,6 @@
 import {useCallback,useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
+import {WorkspaceFeatures} from './WorkspaceFeatures';
+import {useDataSaver,setDataSaver} from './dataSaver';
 import {ModelQuality} from './ModelQuality';
 import {CurrencySelect} from './Currency';
 import {PasswordStrength} from './PasswordStrength';
@@ -33,6 +35,7 @@ export default function Settings(props:SettingsProps){
 }
 
 function ProfileTab({session,profile,request,reloadProfile,cloudAvailable}:SettingsProps){
+  const saveData=useDataSaver();
   const info=useMessage();const mail=useMessage();const cur=useMessage();
   const [name,setName]=useState(profile?.display_name||'');const [email,setEmail]=useState(profile?.email||'');const [code,setCode]=useState('');const [busy,setBusy]=useState(false);
   const file=useRef<HTMLInputElement>(null);
@@ -64,6 +67,7 @@ function ProfileTab({session,profile,request,reloadProfile,cloudAvailable}:Setti
         <label htmlFor="email-code">{t('6-digit code')}</label><input id="email-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,''))}/><button disabled={busy||code.length!==6}>{t('Verify email')}</button></form>}
       <Notice m={mail.message}/>
     </Section>
+    <Section title={t('Low-data mode')} hint={t('Use saved exchange rates and limit background language downloads on this device. You can still request a fresh rate.')}><label className="check"><input type="checkbox" checked={saveData} onChange={e=>setDataSaver(e.target.checked)}/>{t('Reduce background downloads')}</label></Section>
     <Section title={t('Smart assist')} hint={t('Allow the configured online assistant to receive your question, recent chat and a summary of your figures. The provider may retain them. Photo reading runs on your device.')}>
       {profile?.cloud_notice&&<p className="notice">{t('Online assistance was switched off when the provider policy changed. Review the available providers before enabling it again.')}</p>}
       {profile?.cloud_providers?.map(provider=><p key={provider.host}><strong>{provider.label}</strong> · {provider.host} · {provider.model}<br/>
@@ -183,9 +187,9 @@ function DataTab({session,request,changeSession,lists,reloadLists,onExportPdf,on
       <div className="actions"><button disabled={exporting} onClick={()=>void onExportPdf()}>{exporting?t('Preparing…'):t('Download PDF report')}</button><button className="secondary" disabled={exporting} onClick={()=>void onExportJson()}>{t('Backup file (JSON)')}</button></div>
       <p className="small muted">{t('The PDF uses this workspace’s own currency. The backup file is a complete copy of your records and history, for safekeeping.')}</p>
     </Section>
-    {session.role==='owner'&&<ModelQuality request={request}/>}
+    {session.role==='owner'&&<><WorkspaceFeatures request={request}/><ModelQuality request={request}/></>}
     <Section title={t('Switch data')} hint={t('Each workspace keeps one currency, so your records never get mixed. Switch any time from the menu at the top.')}>
-      <ul className="people">{lists.workspaces.map(w=><li key={w.business_id}><div><strong>{workspaceLabel(w.name)}{w.business_id===session.business_id&&' · open now'}</strong><small>{w.currency||'—'} · {w.role==='owner'?t('You own it'):w.role==='approver'?t('Shared with you (approver)'):t('Shared with you (viewer)')}</small></div>
+      <ul className="people">{lists.workspaces.map(w=><li key={w.business_id}><div><strong>{workspaceLabel(w.name)}{w.business_id===session.business_id&&' · open now'}</strong><small>{w.currency||'—'} · {w.role==='owner'?t('You own it'):roleLabel(w.role)}</small></div>
         {w.business_id!==session.business_id&&<button className="secondary small" disabled={busy} onClick={()=>void act(async()=>{changeSession(await request<Session>('/account/switch',{business_id:w.business_id}));},t('Switched.'))}>{t('Open')}</button>}</li>)}</ul>
       {session.role==='owner'&&<form onSubmit={(e:FormEvent)=>{e.preventDefault();void act(async()=>{await request('/account/workspaces/rename',{name});},t('Renamed.'));}}><label htmlFor="ws-name">{t('Rename this workspace')}</label><input id="ws-name" value={name} maxLength={60} onChange={e=>setName(e.target.value)}/><button className="secondary" disabled={busy||!name.trim()||name===current?.name}>{t('Save name')}</button></form>}
       <form onSubmit={(e:FormEvent)=>{e.preventDefault();void act(async()=>{changeSession(await request<Session>('/account/workspaces',{kind:'personal',name:newName.trim()||newCurrency+' workspace',currency:newCurrency}));setNewName('');},'New workspace created.');}}><h3>{t('Add a workspace for another currency')}</h3>

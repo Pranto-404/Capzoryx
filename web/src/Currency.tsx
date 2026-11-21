@@ -1,5 +1,6 @@
 import {createContext,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
 import {money,parseMinor,currencyDigits} from './api';
+import {useDataSaver} from './dataSaver';
 import {currencies} from './currencies';
 import {convertMinor,formatConverted,parseRate,readCurrencyView,type CurrencyView} from './currencyView';
 import type {FxRate} from './types';
@@ -11,6 +12,7 @@ type CurrencyState={currency:string;view:CurrencyView|null;saveView:(view:Curren
 const CurrencyContext=createContext<CurrencyState>({currency:'BDT',view:null,saveView:()=>{},preferred:null,setPreferredCode:()=>{}});
 const HOUR=3600_000;
 export function CurrencyProvider({currency,storageKey,fetchRate,children}:{currency:string;storageKey:string;fetchRate?:FetchRate;children:ReactNode}){
+ const saveData=useDataSaver();
  const [view,setView]=useState<CurrencyView|null>(()=>readCurrencyView(storageKey));
  function saveView(next:CurrencyView|null){setView(next);try{if(next)localStorage.setItem(storageKey,JSON.stringify(next));else localStorage.removeItem(storageKey);}catch{/* Currency selection still works when browser storage is unavailable. */}}
  // The person's chosen conversion currency (USD until they pick another) shown as a small approximate value next to key figures.
@@ -21,9 +23,10 @@ export function CurrencyProvider({currency,storageKey,fetchRate,children}:{curre
   if(!canFetch||!code||code===currency)return;
   const cacheKey=`safeledger-pref-rate-v1:${currency}:${code}`;let cancelled=false;
   try{const raw=localStorage.getItem(cacheKey);if(raw){const c=JSON.parse(raw) as {rate:string;at:number};if(Date.now()-c.at<HOUR&&typeof c.rate==='string'){parseRate(c.rate);setPreferred({code,rate:c.rate});return;}}}catch{/* cache is optional */}
-  void fetchRef.current!(currency,code).then(r=>{if(cancelled)return;parseRate(r.rate);setPreferred({code,rate:r.rate});try{localStorage.setItem(cacheKey,JSON.stringify({rate:r.rate,at:Date.now()}));}catch{/* optional */}}).catch(()=>{});
+  if(saveData)return;
+ void fetchRef.current!(currency,code).then(r=>{if(cancelled)return;parseRate(r.rate);setPreferred({code,rate:r.rate});try{localStorage.setItem(cacheKey,JSON.stringify({rate:r.rate,at:Date.now()}));}catch{/* optional */}}).catch(()=>{});
   return()=>{cancelled=true;};
- },[currency,code,canFetch]);
+ },[currency,code,canFetch,saveData]);
  return <CurrencyContext.Provider value={{currency,view:view?.base===currency?view:null,saveView,fetchRate,preferred,setPreferredCode:setCode}}>{children}</CurrencyContext.Provider>;
 }
 export function usePreferredCurrency(){return useContext(CurrencyContext).setPreferredCode;}

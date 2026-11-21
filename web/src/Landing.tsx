@@ -25,10 +25,10 @@ const faq:{q:string;a:string}[]=[
  {q:T('Which currencies are supported?'),a:T('Over 150 currencies, with live exchange rates for converted values.')},
  {q:T('What if I forget my password?'),a:T('Ask for a code by email, or use the recovery key you saved when you signed up.')},
 ];
-const soon:{icon:string;title:string;text:string}[]=[
- {icon:'Data',title:T('Bank and wallet import'),text:T('Paste a bKash, Nagad, Rocket or bank message, or upload a statement, and we propose the records for you to confirm.')},
- {icon:'Cash flow',title:T('Live payment feed'),text:T('For businesses that take online payments: each received payment can arrive as a record by itself.')},
- {icon:'Invoices',title:T('Bill reminders'),text:T('Get a nudge before a bill is due, by email.')},
+const recordTools:{icon:string;title:string;text:string}[]=[
+ {icon:'Data',title:T('Statement import'),text:T('In Add records, upload a statement and review the rows before you confirm them.')},
+ {icon:'Invoices',title:T('Customer receivables'),text:T('In Invoices, record what a customer owes and apply each payment to the outstanding balance.')},
+ {icon:'Audit',title:T('Cash-flow passport'),text:T('In Activity, create a signed summary of your figures and revoke its public link when you choose.')},
 ];
 const stats:{n:number;suffix:string;label:string}[]=[
  {n:37,suffix:'',label:T('languages')},{n:150,suffix:'+',label:T('currencies with live rates')},{n:2,suffix:'',label:T('people on every payment')},{n:30,suffix:'',label:T('days to undo clearing data')},
@@ -190,7 +190,7 @@ export function Landing({onStart}:{onStart:()=>void}){
     <div className="scroll-progress" ref={bar} aria-hidden="true"/>
     <nav className={nav?'land-nav show':'land-nav'} aria-label={t('Page sections')}>
       <button type="button" className="land-brand" onClick={()=>window.scrollTo({top:0,behavior:'smooth'})} aria-label="Capzoryx Copilot"><Logo size={28}/><span>Capzoryx <b>Copilot</b></span></button>
-      <div className="land-links"><button type="button" className="link" onClick={()=>go('features')}>{t('Features')}</button><button type="button" className="link" onClick={()=>go('preview')}>{t('See it work')}</button><button type="button" className="link" onClick={()=>go('safety')}>{t('Safety')}</button><button type="button" className="link" onClick={()=>go('soon')}>{t('Coming soon')}</button><button type="button" className="link" onClick={()=>go('faq')}>{t('Questions')}</button></div>
+      <div className="land-links"><button type="button" className="link" onClick={()=>go('features')}>{t('Features')}</button><button type="button" className="link" onClick={()=>go('preview')}>{t('See it work')}</button><button type="button" className="link" onClick={()=>go('safety')}>{t('Safety')}</button><button type="button" className="link" onClick={()=>go('record-tools')}>{t('Record tools')}</button><button type="button" className="link" onClick={()=>go('faq')}>{t('Questions')}</button></div>
       <button type="button" className="land-signin" onClick={onStart}>{t('Sign in')}</button>
     </nav>
     <div className="stats" data-reveal>{stats.map(s=><div key={s.label}><Counter to={s.n} suffix={s.suffix}/><span>{t(s.label)}</span></div>)}</div>
@@ -234,11 +234,9 @@ export function Landing({onStart}:{onStart:()=>void}){
       <h2 id="land-safe" data-reveal>{t('Your money, your control')}</h2>
       <div className="trust-grid">{trust.map(x=><article key={x.title} className="spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name={x.icon}/></span><div><h3>{t(x.title)}</h3><p>{t(x.text)}</p></div></article>)}</div>
     </section>
-    <section id="soon" className="land-section" aria-labelledby="land-soon">
-      <p className="eyebrow" data-reveal>{t('COMING SOON')}</p>
-      <h2 id="land-soon" data-reveal>{t('What we are building next')}</h2>
-      <div className="soon-grid">{soon.map(x=><article key={x.title} className="soon-card spot" data-reveal onPointerMove={spot}><span className="soon-badge">{t('Planned')}</span><span className="feature-icon"><Icon name={x.icon}/></span><h3>{t(x.title)}</h3><p>{t(x.text)}</p></article>)}</div>
-      <p className="small muted soon-note" data-reveal>{t('Nothing here connects to your bank today. When it does, you will always confirm each record yourself.')}</p>
+    <section id="record-tools" className="land-section" aria-labelledby="land-record-tools">
+      <h2 id="land-record-tools" data-reveal>{t('From records to a shareable report')}</h2>
+      <div className="soon-grid">{recordTools.map(x=><article key={x.title} className="soon-card spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name={x.icon}/></span><h3>{t(x.title)}</h3><p>{t(x.text)}</p></article>)}</div>
     </section>
     <section className="land-section land-langs" aria-labelledby="land-lang" data-reveal>
       <p className="eyebrow">{t('FOR EVERYONE')}</p>

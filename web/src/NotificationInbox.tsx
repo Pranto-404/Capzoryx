@@ -15,7 +15,7 @@ const labels:Record<string,string>={
 const timeText=(minutes:number)=>[Math.floor(minutes/60),minutes%60].map(n=>String(n).padStart(2,'0')).join(':');
 const minutes=(time:string)=>Number(time.slice(0,2))*60+Number(time.slice(3));
 
-export function NotificationInbox({request,navigate,scope}:{request:Request;navigate:(page:string)=>void;scope:string}){
+export function NotificationInbox({request,navigate,scope}:{request:Request;navigate:(page:string,kind:string)=>void;scope:string}){
   const [inbox,setInbox]=useState<Inbox|null>(null);
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
@@ -39,7 +39,7 @@ export function NotificationInbox({request,navigate,scope}:{request:Request;navi
     {inbox&&inbox.items.length>0&&<ul className="people">{inbox.items.map(item=><li key={item.id}>
       <div><strong>{t(labels[item.kind]||T('Workspace update'))}</strong>
         <small>{formatTime(item.sent_at)} · {item.read?t('Read'):t('Unread')}</small></div>
-      <button type="button" disabled={busy} onClick={()=>void run(async()=>{await request('/notifications/'+item.id+'/read',{});navigate(item.page);})}>{t('Review')}</button>
+      <button type="button" disabled={busy} onClick={()=>void run(async()=>{await request('/notifications/'+item.id+'/read',{});navigate(item.page,item.kind);})}>{t('Review')}</button>
     </li>)}</ul>}
     <WebPushControl request={request} scope={scope}/>
     {inbox&&<details><summary>{t('Notification preferences')}</summary>

@@ -1,3 +1,4 @@
+import {useDataSaver} from './dataSaver';
 import {createContext,useCallback,useContext,useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 
 export type Language={code:string;name:string;rtl:boolean};
@@ -50,6 +51,7 @@ const I18nContext=createContext<Ctx>({code:'en',busy:false,partial:false,rev:0,s
 export const useI18n=()=>useContext(I18nContext);
 
 export function I18nProvider({children}:{children:ReactNode}){
+  const saveData=useDataSaver();
   const [code,setCode]=useState(remembered);const [busy,setBusy]=useState(false);const [partial,setPartial]=useState(false);const [rev,tick]=useState(0);
   const run=useRef(0);
   const apply=useCallback((next:string,value:Cache|null)=>{
@@ -77,8 +79,9 @@ export function I18nProvider({children}:{children:ReactNode}){
             }
           }
         }catch{/* The server can still supply translations. */}
+        if(saveData && read(code))return;
         let last=-1;
-        for(let round=0;round<10&&run.current===id;round++){
+        for(let round=0;round<(saveData?1:10)&&run.current===id;round++){
           const r=await fetch('/api/i18n?lang='+encodeURIComponent(code),{credentials:'same-origin',signal:controller.signal});
           if(!r.ok)break;
           const body=await r.json() as {strings:Record<string,string>;missing:number;version:string};
@@ -95,7 +98,7 @@ export function I18nProvider({children}:{children:ReactNode}){
       finally{if(run.current===id)setBusy(false);}
     })();
     return()=>controller.abort();
-  },[code,apply]);
+  },[code,apply,saveData]);
   const setLanguage=useCallback((next:string)=>{if(!LANGUAGES.some(l=>l.code===next))return;try{localStorage.setItem(STORE,next);}catch{/* optional */}setCode(next);},[]);
   const value=useMemo(()=>({code,busy,partial,rev,setLanguage}),[code,busy,partial,rev,setLanguage]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;

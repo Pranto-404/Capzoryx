@@ -49,7 +49,16 @@ export default function App() {
     void accountRequest<Session>('/account/join',{code}).then(session=>{setAuth({session});setNotice(`You joined ${session.workspace_name||'the workspace'} as ${session.role}.`);}).catch(e=>setError(e instanceof Error?e.message:'The invitation could not be used.'));
   },[auth,joinCode]);
   function enter(session:Session){restoreRequest.current?.abort();setRecoveryCode(session.recovery_code||'');setError('');setAuth({session:{...session,recovery_code:undefined}});}
-  async function signout(){try{await accountRequest('/auth/logout',{});}catch{setError('Could not sign out. Please retry.');return;}try{Object.keys(sessionStorage).filter(k=>k.startsWith('safeledger-financing-quotes-v1:')).forEach(k=>sessionStorage.removeItem(k));}catch{/* Storage may be unavailable. */}setAuth(null);setError('');setNotice('');setRecoveryCode('');}
+  async function signout(){try{await accountRequest('/auth/logout',{});}catch{setError('Could not sign out. Please retry.');return;}try{Object.keys(sessionStorage).filter(k=>k.startsWith('safeledger-financing-quotes-v1:')).forEach(k=>sessionStorage.removeItem(k));}catch{/* Storage may be unavailable. */}setAuth(null);setError('');setNotice('');setRecoveryCode('');
+    try{
+      for(const key of Object.keys(localStorage))if(key.startsWith('capzoryx-push:'))localStorage.removeItem(key);
+      const registration=await navigator.serviceWorker?.getRegistration('/reminders/');
+      if(registration?.scope===new URL('/reminders/',location.href).href){
+        const subscription=await registration.pushManager.getSubscription();
+        await subscription?.unsubscribe();
+      }
+    }catch{/* The browser may already have removed its subscription. */}
+  }
   function expired(){setAuth(null);setError('Your session ended. Sign in again to continue.');}
   return <>
     {auth&&error&&<p className="error banner" role="alert">{error} <button className="link" onClick={()=>setError('')}>Dismiss</button></p>}

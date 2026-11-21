@@ -482,3 +482,6 @@ main.welcome>.welcome-story>.scroll-cue{order:8;align-self:flex-start;margin-top
 .record-result{display:grid;grid-template-columns:1fr auto;gap:.35rem;border-top:1px solid var(--line);padding-top:.7rem}
 .record-result small{grid-column:1/-1}
 main.welcome .welcome-story>*,main.welcome .welcome-entry{animation:none}
+
+.metric-source,.metric-source:hover{display:inline-block;max-width:100%;min-height:44px;padding:0;text-align:start;background:none;color:inherit;border:0;box-shadow:none}
+.metric-source strong{text-decoration:underline dotted;text-underline-offset:.22em}

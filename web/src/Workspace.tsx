@@ -6,6 +6,7 @@ import {QuickTour} from './QuickTour';
 import {LazyBoundary} from './LazyBoundary';
 import {ThemeButton} from './Theme';
 import {Icon} from './Icon';
+import {CashBriefing} from './CashBriefing';
 import {Dashboard} from './Dashboard';
 import {GapFixPanel} from './GapFixPanel';
 import {CashChart} from './Charts';
@@ -54,7 +55,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const [chatOpen,setChatOpen]=useState(false);const [chatLoaded,setChatLoaded]=useState(false);
   const chatButton=useRef<HTMLButtonElement>(null);
   function closeChat(){setChatOpen(false);chatButton.current?.focus();}
-  const [tab,setTab]=useState<Tab>('Overview');
+  const [tab,setTab]=useState<Tab>(()=>new URLSearchParams(location.search).get('view')==='activity'?'Audit':'Overview');
   const tourNavigate=useCallback((page:string)=>{setTab(page as Tab);setSelected(null);setChatOpen(false);},[]);
   const [nextCollection,setNextCollection]=useState<NextCollection|null>(null);
   const focusTarget=useRef<string|null>(null);
@@ -88,7 +89,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const [lists,setLists]=useState<{workspaces:WorkspaceItem[];cleared:WorkspaceItem[]}>({workspaces:[],cleared:[]});
   const [cloudAvailable,setCloudAvailable]=useState(false);
   const scope=useRef(new AbortController());
-  const request=<T,>(path:string,body?:unknown)=>client(token,scope.current.signal,expired)<T>(path,body);
+  const request=useCallback(<T,>(path:string,body?:unknown)=>client(token,scope.current.signal,expired)<T>(path,body),[token,expired]);
   const actionLock=useRef(false);
   function report(e:unknown){if(!scope.current.signal.aborted)setError(e instanceof Error?e.message:'Request failed');}
   async function reloadProfile(){try{const p=await request<Profile>('/account/profile');if(!scope.current.signal.aborted)setProfile(p);}catch{/* The profile is optional for viewing records. */}}
@@ -167,6 +168,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {profile&&!profile.email&&tab==='Overview'&&<p className="notice">{t('Add an email address to reset your password with a code if you ever forget it.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Add email')}</button></p>}
       {missing&&<p className="notice">Nothing here yet. {canAddRecords?<button className="link" onClick={()=>setTab('Data')}>{t('Add your first record')}</button>:t('Ask the owner to add records.')}</p>}
       {tab==='Overview'&&<Dashboard role={session.role} nextCollection={nextCollection} snapshot={snapshot} week={week} month={baselineMonth} invoices={invoices} events={events} proposals={proposals} audit={audit} navigate={showDashboardDestination} openAssistant={()=>{setChatLoaded(true);setChatOpen(true);}} onSample={session.role==='owner'&&!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0?()=>void importRaw(sampleBusiness(snapshot.currency)).catch(e=>report(e)):undefined}/>}
+      {tab==='Overview'&&snapshot&&<CashBriefing key={revision} request={request} initiallyOpen={focusTarget.current==='cash-briefing'}/>}
       {tab==='Invoices'&&session.role==='owner'&&<Receivables key={revision} request={request} onSaved={refresh}/>}
       {tab==='Invoices'&&session.role==='owner'&&snapshot?.currency==='BDT'&&<LazyBoundary><Suspense fallback={null}><WalletPayments request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary>}
       {tab==='Invoices'&&<Panel title={t('Invoices')}>
@@ -198,7 +200,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
         <div className="proposal-list">{proposals.map(p=><article id={'payment-'+p.proposal_id} tabIndex={-1} key={p.proposal_id} className="proposal"><div><span className="badge">{p.state==='AWAITING_APPROVAL'?t('Waiting'):p.state==='EXECUTED'?'Paid':p.state==='REJECTED'?t('Rejected'):p.state==='EXPIRED'?t('Expired'):p.state}</span><h3>{prettyVendor(p.details.vendor_id)} · {nativeMoney(p.details.amount_minor)}</h3><p>{number(p.details.invoice_id)&&`Invoice ${number(p.details.invoice_id)} · `}{t('Prepared by')} {p.details.proposer_id===session.user_id?t('you'):'a teammate'}</p>{p.state==='AWAITING_APPROVAL'&&<small>{t('Expires {time}',{time:formatTime(p.details.expires_at)})}</small>}</div>
           <button className="secondary" onClick={()=>setSelected(p)}>{t('Details')}</button>{p.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<button disabled={busy} onClick={()=>setSelected(p)}>{t('Review and decide')}</button>}</article>)}</div>
         {selected&&selected.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<ApprovalDialog proposal={selected} number={number(selected.details.invoice_id)} error={error} balance={snapshot?.balance_minor} busy={busy} onClose={()=>setSelected(null)} onDecision={d=>void run(()=>decide(selected,d))}/>}</Panel>}
-      {tab==='Audit'&&<NotificationInbox request={request} scope={session.business_id+':'+session.user_id} navigate={tourNavigate}/>}
+      {tab==='Audit'&&<NotificationInbox request={request} scope={session.business_id+':'+session.user_id} navigate={(page,kind)=>kind==='morning_briefing'?showDashboardDestination('Overview','cash-briefing'):tourNavigate(page)}/>}
       {tab==='Audit' && session.role==='owner' && <PassportManager request={request}/>}
       {tab==='Audit'&&<Panel title={t('Everything that happened')}>
         {audit?<><p className={audit.chain_verified?'success':'error'}>{audit.chain_verified?t('History verified: nothing has been changed or removed.'):t('History could not be verified. Contact support.')}</p>
