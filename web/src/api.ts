@@ -1,6 +1,11 @@
 import {apiFetch} from './apiBase';
 import {currencies} from './currencies';
 const messages:Record<string,string> = {
+  HISAB_NOT_AVAILABLE:'Hisab-LM is temporarily unavailable. Use Read it or enter the record manually.',
+  HISAB_BUSY:'Hisab-LM is busy. Try again shortly or use Read it.',
+  HISAB_BDT_ONLY:'Hisab-LM currently prepares cash records in BDT workspaces.',
+  HISAB_ONE_CASH_RECORD:'Enter one completed payment or receipt with a numeric BDT amount. For example, I paid BDT 1250 to Rahman.',
+  HISAB_REVIEW_NEEDED:'Hisab-LM could not verify the amount or direction. Use Read it or enter the record manually.',
   WORKSPACE_CURRENCY_LOCKED:'This workspace already has records. Create another workspace for a different currency.',
   IMPORT_CURRENCY_MISMATCH:'The import currency must match your workspace. Change the empty workspace currency first.',
   AI_PROVIDER_REJECTED:'The AI provider rejected the request. Check its model and credentials, or use the private helper.',

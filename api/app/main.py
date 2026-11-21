@@ -23,7 +23,7 @@ from api.app.agents.schema import create_schema as agent_schema
 from api.app.agents.errors import ProviderError
 from api.app.copilot import books
 from api.app.database import connect
-from api.app import accounts, inputs, financing, profile, workspaces, fx, assist, i18n, mailer, passport, receivables, payments, payment_profile, voice
+from api.app import accounts, inputs, financing, profile, workspaces, fx, assist, i18n, mailer, passport, receivables, payments, payment_profile, voice, hisab_hosted
 
 def _cors_origins() -> list[str]:
     """Read allowed origins from env; default to localhost dev ports only."""
@@ -96,6 +96,7 @@ app.include_router(profile.router)
 app.include_router(workspaces.router)
 app.include_router(fx.router)
 app.include_router(assist.router)
+app.include_router(hisab_hosted.router)
 app.include_router(books.router)
 app.include_router(voice.router)
 app.include_router(i18n.router)
@@ -161,7 +162,7 @@ async def headers(request, call_next):
 @app.get("/api/health")
 def health():
     configured=all(os.environ.get(key) for key in ("SAFELEDGER_LLM_BASE_URL","SAFELEDGER_LLM_MODEL","SAFELEDGER_LLM_API_KEY"))
-    return {"status": "ok", "version": "0.7.6", "build_commit": (os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("VERCEL_GIT_COMMIT_SHA") or os.environ.get("SAFELEDGER_BUILD_COMMIT", "development")), "simulation_only": True, "release": "accounts-and-assistant", "ai_status": "configured_not_verified" if configured else "not_configured"}
+    return {"status": "ok", "version": "0.7.6", "build_commit": (os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("VERCEL_GIT_COMMIT_SHA") or os.environ.get("SAFELEDGER_BUILD_COMMIT", "development")), "simulation_only": True, "release": "accounts-and-assistant", "ai_status": "configured_not_verified" if (configured or hisab_hosted.configured()) else "not_configured"}
 
 @app.get("/api/ready")
 def ready():

@@ -112,6 +112,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   useEffect(()=>{if(profile?.language&&profile.language!=='en'&&!hasChosenLanguage())setLanguage(profile.language);},[profile?.language,setLanguage]);
   const [lists,setLists]=useState<{workspaces:WorkspaceItem[];cleared:WorkspaceItem[]}>({workspaces:[],cleared:[]});
   const [cloudAvailable,setCloudAvailable]=useState(false);
+  const [hisabAvailable,setHisabAvailable]=useState(false);
   const scope=useRef(new AbortController());
   const request=useCallback(<T,>(path:string,body?:unknown)=>client(token,scope.current.signal,expired)<T>(path,body),[token,expired]);
   const actionLock=useRef(false);
@@ -141,7 +142,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
     // StrictMode remounts effects in development; each mount gets its own cancellation scope.
     const controller=new AbortController();scope.current=controller;actionLock.current=false;
     void run(refresh);void reloadProfile();void reloadLists();
-    void accountRequest<{cloud_assist:boolean}>('/auth/capabilities',undefined,controller.signal).then(c=>setCloudAvailable(c.cloud_assist)).catch(()=>{});
+    void accountRequest<{cloud_assist:boolean;hisab_lm?:boolean}>('/auth/capabilities',undefined,controller.signal).then(c=>{setCloudAvailable(c.cloud_assist);setHisabAvailable(!!c.hisab_lm);}).catch(()=>{});
     return()=>controller.abort();
     // The workspace is keyed by session. It cannot reuse another session's financial state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -239,7 +240,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
           <details className="advanced"><summary>{t('For auditors')}</summary><p className="muted small">{t('Each entry is linked to the one before it and signed by the server, so any later change is detectable.')} {t('This is not a claim of protection from the system administrator.')}</p><button className="secondary" onClick={()=>save(new Blob([JSON.stringify(audit,null,2)],{type:'application/json'}),'capzoryx-activity-log.json')}>{t('Download the full signed log')}</button></details></>:<p>{t('Activity is unavailable. Refresh to try again.')}</p>}</Panel>}
       {tab==='Data'&&<>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><KhataPage request={request} session={session} onSaved={refresh}/></Suspense></LazyBoundary>}
-        {canAddRecords&&<QuickAdd request={request} revision={revision} profile={profile} owner={session.role==='owner'} cloudAvailable={cloudAvailable} onSaved={async()=>{await refresh();}}/>}
+        {canAddRecords&&<QuickAdd request={request} revision={revision} profile={profile} owner={session.role==='owner'} cloudAvailable={cloudAvailable} hisabAvailable={hisabAvailable} onSaved={async()=>{await refresh();}}/>}
         <DataEntry events={events} session={session} revision={revision} snapshot={snapshot} busy={busy} submit={async body=>{let saved=false;await run(async()=>{await request('/workspace/records',body);saved=true;await refresh();setMessage(t('Record saved. Your balance, forecast and activity are updated.'));});if(!saved)throw new Error(t('The record was not saved. Check the message above and try again.'));}}/>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><CashCorrections session={session} events={events} request={request} onSaved={refresh}/></Suspense></LazyBoundary>}
         {session.role==='owner'&&snapshot&&<div id="statement-review" tabIndex={-1}><LazyBoundary><Suspense fallback={null}><StatementImport initiallyOpen={openStatement} request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary></div>}
