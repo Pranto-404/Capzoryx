@@ -15,6 +15,8 @@ KINDS = {
     'bill_due': (('owner',), 'Invoices'),
     'customer_overdue': (('owner',), 'Invoices'),
     'cash_breach': (('owner', 'approver'), 'Cash flow'),
+    'boishakh_planning': (('owner',), 'Cash flow'),
+    'eid_planning': (('owner',), 'Cash flow'),
     'morning_briefing': (('owner',), 'Overview'),
 }
 BD = ZoneInfo('Asia/Dhaka')
