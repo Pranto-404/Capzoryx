@@ -7,6 +7,8 @@ type Request=<T,>(path:string,body?:unknown)=>Promise<T>;
 type Item={id:string;kind:string;page:string;sent_at:number;read:boolean};
 type Inbox={items:Item[];enabled:boolean;quiet_start_min:number;quiet_end_min:number};
 const labels:Record<string,string>={
+  boishakh_planning:T('Review your cash plan for Pohela Boishakh in 30 days'),
+  eid_planning:T('Review your cash plan for the Eid planning date in 30 days'),
   approval_needed:T('A payment needs approval'),new_device:T('Sign-in from a new browser'),
   payment_shared:T('A shared payment is ready for review'),payment_profile_changed:T('Payment details changed'),
   duplicate_bill:T('Review possible duplicate bills'),bill_due:T('A supplier bill is due soon'),
