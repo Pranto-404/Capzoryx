@@ -1,3 +1,5 @@
+import {apiFetch,nativeBuild} from './apiBase';
+import {OfflineCapture,InstallControl} from './Pwa';
 import {useI18n} from './i18n';
 import {LazyBoundary} from './LazyBoundary';
 import {lazy,Suspense,useEffect,useRef,useState} from 'react';
@@ -17,21 +19,49 @@ function takeJoinCode():string{
 
 export default function App() {
   useI18n();
+  const [online,setOnline]=useState(navigator.onLine && !document.querySelector('meta[name="capzoryx-offline"]'));
+  useEffect(()=>{
+    const connected=()=>{setAuth(null);setOnline(true);}, disconnected=()=>setOnline(false);
+    window.addEventListener('online',connected);window.addEventListener('offline',disconnected);
+    return ()=>{window.removeEventListener('online',connected);window.removeEventListener('offline',disconnected);};
+  },[]);
+
   const [auth,setAuth]=useState<{session:Session}|null>(null);
   const [recoveryCode,setRecoveryCode]=useState('');
   const [error,setError]=useState('');const [notice,setNotice]=useState('');
   const [joinCode,setJoinCode]=useState(takeJoinCode);
   const restoreRequest=useRef<AbortController|null>(null);
+  // Use the browser's connectivity event, with a foreground retry for networks that leave navigator.onLine true.
+  useEffect(()=>{
+    if(online)return;
+    const abort=new AbortController();let timer:number;let delay=1500;
+    async function reconnect(){
+      if(abort.signal.aborted)return;
+      if(navigator.onLine && document.visibilityState==='visible'){
+        try{
+          const response=await apiFetch('/api/health',{cache:'no-store',signal:AbortSignal.any([abort.signal,AbortSignal.timeout(8000)])});
+          if(response.ok && (await response.json()).status==='ok' && !abort.signal.aborted){
+            setAuth(null);setOnline(true);return;
+          }
+        }catch{/* Offline or a sleeping service. Keep the draft available locally. */}
+      }
+      delay=Math.min(60000,delay*2);timer=window.setTimeout(reconnect,delay);
+    }
+    timer=window.setTimeout(reconnect,delay);
+    return ()=>{abort.abort();clearTimeout(timer);};
+  },[online]);
   // Public content is available while the server checks its HttpOnly session cookie.
   useEffect(()=>{
+    if(!online)return;
     const controller=new AbortController();
     restoreRequest.current=controller;
     async function restore(){
       try{
-        const response=await fetch('/api/session',{
+        const response=await apiFetch('/api/session',{
           credentials:'same-origin',
           signal:AbortSignal.any([controller.signal,AbortSignal.timeout(90000)])
         });
+        if(response.status===401&&!controller.signal.aborted){setAuth(null);await window.capzoryxStore.setScope(null);}
         if(!response.ok)return;
         const session=await response.json() as Session;
         if(!controller.signal.aborted&&!session.guest&&session.workspace_kind!=='demo'){
@@ -41,7 +71,7 @@ export default function App() {
     }
     void restore();
     return ()=>controller.abort();
-  },[]);
+  },[online]);
   // An invitation link joins the shared workspace as soon as the person is signed in.
   useEffect(()=>{
     if(!auth||!joinCode)return;
@@ -52,20 +82,30 @@ export default function App() {
   async function signout(){try{await accountRequest('/auth/logout',{});}catch{setError('Could not sign out. Please retry.');return;}try{Object.keys(sessionStorage).filter(k=>k.startsWith('safeledger-financing-quotes-v1:')).forEach(k=>sessionStorage.removeItem(k));}catch{/* Storage may be unavailable. */}setAuth(null);setError('');setNotice('');setRecoveryCode('');
     try{
       for(const key of Object.keys(localStorage))if(key.startsWith('capzoryx-push:'))localStorage.removeItem(key);
-      const registration=await navigator.serviceWorker?.getRegistration('/reminders/');
-      if(registration?.scope===new URL('/reminders/',location.href).href){
-        const subscription=await registration.pushManager.getSubscription();
-        await subscription?.unsubscribe();
+      const reg=await navigator.serviceWorker?.getRegistration();
+      const subscription=await reg?.pushManager?.getSubscription();
+      if(subscription)await subscription.unsubscribe();
+      const reminders=await navigator.serviceWorker?.getRegistration('/reminders/');
+      if(reminders?.scope===new URL('/reminders/',location.href).href){
+        await (await reminders.pushManager.getSubscription())?.unsubscribe();
       }
-    }catch{/* The browser may already have removed its subscription. */}
+    }catch{/* The push service may already have removed this subscription. */}
+    try{await window.capzoryxStore.clear();if('BroadcastChannel' in window){const channel=new BroadcastChannel('capzoryx-account');channel.postMessage('logout');channel.close();}}catch{setError('Device storage could not be cleared.');}
   }
-  function expired(){setAuth(null);setError('Your session ended. Sign in again to continue.');}
+  useEffect(()=>{
+    if(!('BroadcastChannel' in window))return;
+    const channel=new BroadcastChannel('capzoryx-account');
+    channel.onmessage=event=>{if(event.data==='logout'){setAuth(null);setRecoveryCode('');}};
+    return ()=>channel.close();
+  },[]);
+  function expired(){void window.capzoryxStore.setScope(null).catch(()=>{});setAuth(null);setError('Your session ended. Sign in again to continue.');}
+  if(!online)return <OfflineCapture/>;
   return <>
     {auth&&error&&<p className="error banner" role="alert">{error} <button className="link" onClick={()=>setError('')}>Dismiss</button></p>}
     {auth&&notice&&<p className="success banner" role="status">{notice} <button className="link" onClick={()=>setNotice('')}>Dismiss</button></p>}
     {auth&&recoveryCode&&<RecoveryNotice code={recoveryCode} done={()=>setRecoveryCode('')}/>}
     {auth?<LazyBoundary><Suspense fallback={<main className="workspace-loading" role="status"><span className="loading-ring"/>Opening your workspace…</main>}><Workspace key={auth.session.business_id+auth.session.user_id} token="" session={auth.session} logout={()=>void signout()} expired={expired} changeSession={session=>setAuth({session})}/></Suspense></LazyBoundary>
-      :<Auth onAuthStart={()=>restoreRequest.current?.abort()} onSession={enter} joinCode={joinCode} notice={error||''}/>}
+      :<><Auth onAuthStart={()=>restoreRequest.current?.abort()} onSession={enter} joinCode={joinCode} notice={error||''}/>{!nativeBuild && <InstallControl/>}</>}
   </>;
 }
 

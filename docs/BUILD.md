@@ -4,13 +4,13 @@
 
 The application baseline includes owner accounts, two-step sign-in, workspace sharing, manual records, a Bangla/Banglish text parser, 7- and 30-day forecasts, loan comparison, PDF reports and an append-only audit trail. The team’s MIT-licensed components are included under LICENSE. This repository has its own release history. The date on a synthetic transaction is a financial test input.
 
-## Staging
+## Production and local testing
 
-For the public website, use the web root directory in Vercel and select main as its production branch. Develop the installable app on v2. The production and QA Render services follow the shared API on v2. The QA frontend can deploy the website from main with a web project root. The frontend sends same-origin /api requests to the designated Render service. Configure SAFELEDGER_CORS_ORIGINS and SAFELEDGER_PUBLIC_URL with the exact new frontend origin. The service starts via bash render_start.sh. Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN for a new database and provide a stable SAFELEDGER_SIGNING_KEY of 64 lowercase hex characters. Keep secrets in the service dashboard.
+Vercel builds `main` from the `web` directory. The website and installable web app share https://capzoryx.vercel.app and the same Render API. The Android build uses the same branch. Vercel routes API traffic to Render for the canonical hostname. In production, preserve the existing Turso credentials and signing key across deploys. The API starts via `bash render_start.sh`.
 
 The pilot uses a sleeping Render free instance. Keep-alive workflows consume shared instance hours. The React build, local parser and financial calculations need no API credits. Smart assist starts off. Leave cloud credentials, translation billing and paid fallback unset on the free pilot. Stop at free-tier limits.
 
-Before live testing, compare /api/health build_commit with the staged Git commit and verify /api/ready reports libsql. Use disposable synthetic workspaces for deployment checks.
+Before live testing, compare /api/health build_commit with the staged Git commit and verify /api/ready reports libsql. Run writable verification against the local synthetic API. Use read-only endpoint checks on the public deployment.
 
 ## Plan audit
 
@@ -35,12 +35,12 @@ The release checklist includes organizer confirmation of code-reuse rules before
 - **Customer receivables (WP29)** are available to owners under Invoices. Record a debt once, then confirm each partial or full receipt against it. The receipt adds one cleared cash inflow and reduces the projected amount by the same value. Names and optional reminder numbers are encrypted using a random workspace key. Clearing the workspace erases its customer key and contact rows. Financial records can still be restored for 30 days.
 - **Cash-gap planning** compares combinations of up to three early collections against the dated cash projection. Options show the amount, source record and remaining maximum gap. A receipt returns to its original baseline on its due date. These are projections.
 - **Cash-flow passports** can be issued and revoked by an owner in Activity. The link and printable QR identify an aggregate report. The verifier checks the Ed25519 signature, expiry and revocation. Signer configuration uses SAFELEDGER_PASSPORT_ACTIVE_KEY and SAFELEDGER_PASSPORT_KEYS. The public key map is shipped in web/public/.well-known/capzoryx-passport-key.json. Keep retired public keys until all links signed with them expire.
-- **Mobile app** development, including the install manifest and its offline screen, lives on the v2 branch. The main branch builds the responsive website.
+- **Mobile app** shares the `main` branch with the responsive website. Install the web app from the same hostname.
 - **Cloud privacy** starts with Smart assist off. The on-device parser and bill reader work without an account at an AI provider. Remote extraction and planning require a compatible provider explicitly cleared for free, no-training processing. The staging service has no AI billing credentials.
 
 ## Website qualification · 21 November
 
-The public landing page previews Bangla, Banglish and English cash entries locally. A visitor can try the example at `/#try-record` while the API wakes up. Signed-in website changes are available on the isolated QA site during the release check.
+The public landing page previews Bangla, Banglish and English cash entries locally. A visitor can try the example at `/#try-record` while the API wakes up. Signed-in flows are exercised with synthetic workspaces in CI.
 
 | Where to look | What to verify |
 | --- | --- |
@@ -49,7 +49,7 @@ The public landing page previews Bangla, Banglish and English cash entries local
 | Settings → Profile | Turn on reduced background downloads. |
 | Settings → Data & workspaces → Workspace features | Pause issuance of a new passport. Existing public verification and owner revocation remain available. |
 
-The [staging workflow](https://github.com/Pranto-404/Capzoryx/actions/runs/44891914051) checked both deployed revisions, Turso readiness, signup, a BDT 500 entry corrected to BDT 450, the resulting briefing, workspace settings and logout. The scheduled checks use the release window in `.github/staging-website.json`.
+The [staging workflow](https://github.com/Pranto-404/Capzoryx/actions/runs/44891914051) checked both deployed revisions, Turso readiness, signup, a BDT 500 entry corrected to BDT 450, the resulting briefing, workspace settings and logout. The separate QA site was used for this earlier run.
 
 ## Agentic Mode on the website
 
@@ -61,7 +61,7 @@ In **Add records → Import a bank or wallet statement**, a positive row can sug
 
 In **Add records → Voice**, the website first checks for a local browser language pack. If needed, the owner can download the pretrained Bengali Vosk pack (about 106 MB) or the English Whisper pack (about 116 MB). Both transcribe on-device. Review the draft, including names and numeric amounts, before recording a transaction. Existing machine-voice fixtures verified the capture and recognition paths. Human speech accuracy remains unmeasured.
 
-Visit `/#agentic-demo` to move the expected receipt date in a fictional cash forecast and compare the original and proposed collection. The public example runs locally in the browser.
+The public landing page introduces Agentic Mode. Collection suggestions and reminder approvals are available from the signed-in Overview.
 
 ## Free-tier release gates
 

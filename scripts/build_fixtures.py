@@ -44,12 +44,12 @@ def main():
     malformed['events'][0]['amount_minor'] = 'not-money'
     payloads['invalid_amount.json'] = malformed
     for name,data in payloads.items():
-        (OUT/name).write_text(json.dumps(data,indent=2)+'\n')
+        (OUT/name).write_text(json.dumps(data,indent=2)+'\n',encoding='utf-8',newline='\n')
     for name, records in [('invoices',ds['invoices']),('events',ds['events'])]:
         with (OUT/f'seed_2026_{name}.csv').open('w',newline='') as f:
             writer=csv.DictWriter(f,fieldnames=list(records[0]),lineterminator="\n");writer.writeheader();writer.writerows(records)
     files={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(OUT.iterdir()) if p.suffix in {'.json','.csv'} and p.name!='manifest.json'}
-    (OUT/'manifest.json').write_text(json.dumps({'recipe_version':1,'seed':2026,'origin':'fully synthetic deterministic Python fixture recipe','contains_real_customer_data':False,'as_of':'2026-10-17','files_sha256':files},indent=2)+'\n')
+    (OUT/'manifest.json').write_text(json.dumps({'recipe_version':1,'seed':2026,'origin':'fully synthetic deterministic Python fixture recipe','contains_real_customer_data':False,'as_of':'2026-10-17','files_sha256':files},indent=2)+'\n',encoding='utf-8',newline='\n')
     print('Wrote deterministic 45-invoice / 60-event synthetic fixture and adversarial variants')
 
 if __name__ == '__main__': main()

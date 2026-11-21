@@ -1,3 +1,4 @@
+import {apiFetch,nativeBuild} from './apiBase';
 import {useEffect, useRef, useState} from 'react';
 import {t, useI18n} from './i18n';
 import {currencyDigits} from './api';
@@ -9,19 +10,14 @@ type Summary = {id:string; key_id:string; format:string; start:string; as_of:str
   currency:string; balance_minor:number; receipts_minor:number; expenses_minor:number};
 
 function verifierOrigin(origin:string):string {
+  if(nativeBuild)return 'https://capzoryx.vercel.app';
   const host=new URL(origin);
   if (host.protocol==='http:' && ['127.0.0.1','localhost','[::1]'].includes(host.hostname)) return host.origin;
-  if (['https://capzoryx.vercel.app','https://capzoryx-app.vercel.app'].includes(host.origin)) return 'https://capzoryx.vercel.app';
-  return 'https://capzoryx-qa.vercel.app';
+  return 'https://capzoryx.vercel.app';
 }
 export function passportUrl(id:string,origin=location.origin):string {
   if(!/^[a-f0-9]{32}$/.test(id))throw new Error('Invalid passport ID');
   return new URL('/verify/'+id,verifierOrigin(origin)).href;
-}
-
-function registryPath():string {
-  return verifierOrigin(location.origin)==='https://capzoryx-qa.vercel.app'
-    ? '/.well-known/capzoryx-qa-passport-key.json' : '/.well-known/capzoryx-passport-key.json';
 }
 
 export function PassportManager({request}: {request: Send}) {
@@ -67,8 +63,8 @@ const bytes = (value:string) => Uint8Array.from(atob(value), char => char.charCo
 
 async function readVerified(id:string, signal:AbortSignal):Promise<Summary> {
   const [data, keys] = await Promise.all([
-    fetch('/api/public/passport/' + id, {credentials:'omit', cache:'no-store', signal}),
-    fetch(registryPath(), {credentials:'omit', cache:'no-store', signal})
+    apiFetch('/api/public/passport/' + id, {credentials:'omit', cache:'no-store', signal}),
+    fetch(nativeBuild?'/passport-keys.json':'/.well-known/capzoryx-passport-key.json', {credentials:'omit', cache:'no-store', signal})
   ]);
   if (!data.ok || !keys.ok) throw Error();
   const {canonical, signature} = await data.json();

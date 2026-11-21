@@ -27,13 +27,10 @@ def test_voice_headers_and_capture_manifest():
     import json
     from pathlib import Path
     root=Path(__file__).resolve().parents[2]
-    # These are the installable app's headers. The website has its own deployment root.
     manifest_path=root/'web/public/manifest.webmanifest'
-    if not manifest_path.exists():
-        return
     manifest=json.loads(manifest_path.read_text())
     assert manifest['share_target']=={'action':'/share','method':'POST','enctype':'application/x-www-form-urlencoded','params':{'text':'text'}}
-    headers=json.loads((root/'vercel.json').read_text())['headers'][0]['headers']
+    headers=json.loads((root/'web/vercel.json').read_text())['headers'][0]['headers']
     values={h['key']:h['value'] for h in headers}
     assert 'camera=(self), microphone=(self)' in values['Permissions-Policy']
     assert "media-src 'self' blob:" in values['Content-Security-Policy']

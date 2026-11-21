@@ -22,3 +22,5 @@ web/public/ocr/
 
 # Trained assets are released only after review, outside source control.
 web/public/models/hisab-tagger-*.json
+
+dist-native/
