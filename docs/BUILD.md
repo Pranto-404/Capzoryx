@@ -6,7 +6,7 @@ The application baseline includes owner accounts, two-step sign-in, workspace sh
 
 ## Staging
 
-For the public website, use the web root directory in Vercel and select main as its production branch. Develop the installable app on v2. The existing free Render staging API follows v2 and serves both clients. The frontend sends same-origin /api requests to the designated Render service. Configure SAFELEDGER_CORS_ORIGINS and SAFELEDGER_PUBLIC_URL with the exact new frontend origin. The service starts via bash render_start.sh. Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN for a new database and provide a stable SAFELEDGER_SIGNING_KEY of 64 lowercase hex characters. Keep secrets in the service dashboard.
+For the public website, use the web root directory in Vercel and select main as its production branch. Develop the installable app on v2. The production and QA Render services follow the shared API on v2. The QA frontend can deploy the website from main with a web project root. The frontend sends same-origin /api requests to the designated Render service. Configure SAFELEDGER_CORS_ORIGINS and SAFELEDGER_PUBLIC_URL with the exact new frontend origin. The service starts via bash render_start.sh. Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN for a new database and provide a stable SAFELEDGER_SIGNING_KEY of 64 lowercase hex characters. Keep secrets in the service dashboard.
 
 The pilot uses a sleeping Render free instance. Keep-alive workflows consume shared instance hours. The React build, local parser and financial calculations need no API credits. Smart assist starts off. Leave cloud credentials, translation billing and paid fallback unset on the free pilot. Stop at free-tier limits.
 
@@ -18,7 +18,7 @@ The idea document’s five-hour demo and the plan book’s 310-hour roadmap have
 
 | Package | Acceptance evidence |
 | --- | --- |
-| Capture and speech | Extract a draft, review the amount and counterparty, and persist only after confirmation. Evaluate voice on 30 consented or synthetic clips. |
+| Capture and speech | Extract a draft, review the amount and counterparty, and persist only after confirmation. Rehearse on synthetic clips and qualify on 30 consented independently spoken clips. |
 | Gap-fixer | Simulate changes against the same dated movements, exclude protected obligations and retain source IDs. Report cases where the reserve cannot be restored. |
 | Passport | Sign aggregate-only payloads and verify signature, expiry and revocation from a phone. |
 | AI gateway and models | Enforce data classes and provider terms, evaluate held-out examples, publish measured scores before enabling model routes. |
@@ -33,7 +33,7 @@ The release checklist includes organizer confirmation of code-reuse rules before
 - **Text and dictation** support combined lakh/hajar amounts and tense-aware dates. Compatible browsers can use an installed on-device speech pack. The 30-clip voice accuracy gate and Android device test are pending.
 - **Collection timing (WP17)** estimates full settlement within 7, 14 or 30 days from today. Owners can expand the estimate under an open customer bill. It compares past fully paid bills that were still open at the same age, adjusting each customer’s observed rate towards the workspace rate with weight n/(n+5). It shows sample counts and withholds percentages when there are no comparable settlements. Run `python -m evals.payment_timing` for chronological synthetic calibration.
 - **Customer receivables (WP29)** are available to owners under Invoices. Record a debt once, then confirm each partial or full receipt against it. The receipt adds one cleared cash inflow and reduces the projected amount by the same value. Names and optional reminder numbers are encrypted using a random workspace key. Clearing the workspace erases its customer key and contact rows. Financial records can still be restored for 30 days.
-- **Cash-gap planning** simulates advancing part of one scheduled receipt to the first shortfall date. Options show the amount, source record and remaining maximum gap. A receipt returns to its original baseline on its due date. These are projections.
+- **Cash-gap planning** compares combinations of up to three early collections against the dated cash projection. Options show the amount, source record and remaining maximum gap. A receipt returns to its original baseline on its due date. These are projections.
 - **Cash-flow passports** can be issued and revoked by an owner in Activity. The link and printable QR identify an aggregate report. The verifier checks the Ed25519 signature, expiry and revocation. Signer configuration uses SAFELEDGER_PASSPORT_ACTIVE_KEY and SAFELEDGER_PASSPORT_KEYS. The public key map is shipped in web/public/.well-known/capzoryx-passport-key.json. Keep retired public keys until all links signed with them expire.
 - **Mobile app** development, including the install manifest and its offline screen, lives on the v2 branch. The main branch builds the responsive website.
 - **Cloud privacy** starts with Smart assist off. The on-device parser and bill reader work without an account at an AI provider. Remote extraction and planning require a compatible provider explicitly cleared for free, no-training processing. The staging service has no AI billing credentials.

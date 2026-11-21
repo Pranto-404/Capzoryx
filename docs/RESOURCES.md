@@ -19,3 +19,5 @@ The hosted app does not require a paid AI key, paid SMS, a Student Pack, or a Pl
 2. Put the values in the QA Render service as `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Save the environment and deploy branch v2. Keep the existing website's secrets in its own service.
 3. Use the QA frontend to check `/api/health` for the candidate commit and `/api/ready` for `libsql`. The QA scheduler, API, and test workspace must all use these isolated resources.
 4. Run a full 24-hour soak with synthetic records, verify the notification schedule and perform the rollback drill before claiming production qualification.
+
+For seasonal cash-planning alerts, Pohela Boishakh uses 14 April in Bangladesh. The operator can supply locally agreed Eid planning dates as comma-separated ISO dates in `CAPZORYX_EID_PLANNING_DATES`. Active workspaces receive one owner inbox reminder 30 days before each event.

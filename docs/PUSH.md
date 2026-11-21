@@ -1,6 +1,6 @@
 # Device notifications
 
-The v2 PWA offers device enrollment under Notifications. Native Android devices use the same subscription API with an FCM registration token. An authenticated workspace member opts in on each device. Push notifications display a generic invitation to open the workspace. Financial amounts and names stay in the authenticated inbox. Signing out of the PWA removes its device subscription.
+On the website, an authenticated member can turn on push under Activity after the operator configures Web Push. The website installs a notification-only worker scoped to /reminders/ after permission is granted. It opens Activity and leaves all pages and financial traffic outside its scope. The v2 PWA also offers device enrollment. Native Android devices use the same subscription API with an FCM registration token. An authenticated workspace member opts in on each device. Push notifications display a generic invitation to open the workspace. Financial amounts and names stay in the authenticated inbox. Signing out of the PWA removes its device subscription.
 
 The API enables each channel when `SAFELEDGER_PUSH_ENABLED=1` and its corresponding settings are present. Keep private keys in the API host's secret environment.
 

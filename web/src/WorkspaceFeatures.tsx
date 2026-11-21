@@ -4,7 +4,7 @@ import {t,T} from './i18n';
 type Flag={name:string; workspace_enabled:boolean; operator_enabled:boolean};
 type Request=<R,>(path:string,body?:unknown)=>Promise<R>;
 const labels:Record<string,string>={
-  voice:T('Voice transcription'),bill_scan:T('Online bill scanning'),assistant:T('Online assistant'),
+  cash_corrections:T('Manual cash corrections'),voice:T('Voice transcription'),bill_scan:T('Online bill scanning'),assistant:T('Online assistant'),
   offer_reader:T('Offer reader'),financing_match:T('Financing match'),ask_books:T('Ask your books'),
   collection_plans:T('Collection plans and reminders'),passport_issue:T('Issue public passports'),
   statement_import:T('Statement import'),payment_intake:T('Wallet payment intake')
