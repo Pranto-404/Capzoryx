@@ -67,7 +67,7 @@ def settings(db, business_id):
 def list_settings(actor=Depends(principal), db=Depends(db_connection)):
     if actor.role != 'owner':
         sec.fail(403, 'OWNER_REQUIRED')
-    return {'features': settings(db, actor.business_id)}
+    return {'features': settings(db, actor.business_id), 'simulation_only': True}
 
 
 class FlagChange(Contract):
@@ -84,7 +84,7 @@ def change(name: str, body: FlagChange, actor=Depends(principal), db=Depends(db_
             sec.fail(404, 'UNKNOWN_FEATURE')
         set_flag(db, name, 'workspace:' + current.business_id, body.enabled)
         sec.audit(db, current, 'feature-flags', 'FEATURE_CHANGED', dict(name=name, enabled=body.enabled))
-    return {'features': settings(db, actor.business_id)}
+    return {'features': settings(db, actor.business_id), 'simulation_only': True}
 
 
 def main():
