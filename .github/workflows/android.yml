@@ -50,18 +50,23 @@ jobs:
       - name: Build debug APK
         if: ${{ !inputs.release }}
         run: gradle -p web/android :app:assembleDebug
+      - name: Allow the runner to use hardware virtualization
+        if: ${{ !inputs.release }}
+        run: sudo setfacl -m "u:$(id -un):rw" /dev/kvm
       - name: Check packaged UI on the Android emulator
         if: ${{ !inputs.release }}
-        run: |
-          sudo setfacl -m "u:$(id -un):rw" /dev/kvm
-          sdkmanager 'emulator' 'system-images;android-35;google_apis;x86_64'
-          echo no | avdmanager create avd --force -n capzoryx -k 'system-images;android-35;google_apis;x86_64'
-          "$ANDROID_HOME/emulator/emulator" -avd capzoryx -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator.log" 2>&1 &
-          trap 'adb emu kill >/dev/null 2>&1 || true' EXIT
-          timeout 300 bash -c 'until test "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = 1; do sleep 3; done'
-          adb shell svc wifi disable
-          adb shell svc data disable
-          gradle -p web/android :app:connectedDebugAndroidTest
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: |
+            adb shell svc wifi disable
+            adb shell svc data disable
+            gradle -p web/android :app:connectedDebugAndroidTest
       - name: Verify and retain debug APK
         if: ${{ !inputs.release }}
         run: |
