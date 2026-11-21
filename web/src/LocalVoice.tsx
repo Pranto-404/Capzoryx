@@ -1,5 +1,7 @@
 import {useEffect, useRef, useState} from 'react';
 import {t, useI18n} from './i18n';
+import {useCurrency} from './Currency';
+import {normalizeSpokenAmount} from './spokenAmount';
 import type {Pack} from './localSpeechPack';
 
 type Options = {langs:string[];processLocally:true};
@@ -14,6 +16,7 @@ type Stage = 'idle'|'checking'|'native-install'|'pack-consent'|'pack-loading'|'r
 
 export function LocalVoice({onText}:{onText:(text:string)=>void}){
   const {code}=useI18n();
+  const {currency}=useCurrency();
   const [stage,setStage]=useState<Stage>('idle');
   const [notice,setNotice]=useState('');
   const pack=useRef<Pack|null>(null);
@@ -44,7 +47,8 @@ export function LocalVoice({onText}:{onText:(text:string)=>void}){
 
   function heard(text:string){
     if(text.trim()){
-      onText(text.trim().slice(0,400));setNotice(t('Review the names and write the amount in digits before reading the record.'));
+      onText(normalizeSpokenAmount(text.trim(),currency).slice(0,400));
+      setNotice(t('Check the names and amount in the editable transcript before reading the record.'));
     }else setNotice(t('Could not hear the record. Try again or type it.'));
   }
   async function prepare(download:boolean,epoch:number){
