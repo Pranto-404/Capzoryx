@@ -59,6 +59,8 @@ The scheduled check prepares a verified collection plan when a shortfall first a
 
 In **Add records → Import a bank or wallet statement**, a positive row can suggest an open customer bill. Check the payer and choose the bill before confirming. The cash entry and its settlement are saved together. **Invoices → Wallet receipts** reviews individually shared payment messages. **Activity** contains in-app due reminders, browser push controls and optional email bill reminders. The email channel requires verified membership and a configured mail transport.
 
+In **Add records → Voice**, the website first checks for a local browser language pack. If needed, the owner can download the pretrained Bengali Vosk pack (about 106 MB) or the English Whisper pack (about 116 MB). Both transcribe on-device. Review the draft, including names and numeric amounts, before recording a transaction. Existing machine-voice fixtures verified the capture and recognition paths. Human speech accuracy remains unmeasured.
+
 Visit `/#agentic-demo` to move the expected receipt date in a fictional cash forecast and compare the original and proposed collection. The public example runs locally in the browser.
 
 ## Free-tier release gates
