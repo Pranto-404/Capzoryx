@@ -24,6 +24,10 @@ router = APIRouter(prefix='/api/copilot')
 
 def schema(db):
     db.executescript("""
+        CREATE TABLE IF NOT EXISTS collection_handoffs(
+            business_id TEXT NOT NULL, customer_id TEXT NOT NULL, local_day TEXT NOT NULL,
+            request_id TEXT NOT NULL, receipt_id TEXT NOT NULL, draft_digest TEXT NOT NULL,
+            PRIMARY KEY(business_id,customer_id,local_day));
         CREATE TABLE IF NOT EXISTS agent_gap_watch(
             business_id TEXT PRIMARY KEY, breach_date TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS gap_plans(
@@ -142,25 +146,53 @@ class Reminder(Contract):
     language: Literal['bn', 'en'] = 'bn'
 
 
+def reminder_text(db, owner, body):
+    row = db.execute('SELECT open_minor,due_on,customer_id FROM receivable_balances WHERE business_id=? AND id=?',
+                     (owner.business_id, body.receivable_id)).fetchone()
+    if not row:
+        sec.fail(404, 'RECEIVABLE_NOT_FOUND')
+    if row[0] <= 0:
+        sec.fail(409, 'RECEIVABLE_PAID')
+    currency = sec.original_dataset(db, owner.business_id).currency
+    precision = CURRENCIES[currency]['digits']
+    amount = f'{Decimal(row[0]) / scale(currency):,.{precision}f} {currency}'
+    if body.language == 'bn':
+        digits = str.maketrans('0123456789', '০১২৩৪৫৬৭৮৯')
+        content = f"নমস্কার। আমাদের হিসাবে আপনার কাছে {amount.translate(digits)} বাকি আছে। পরিশোধের তারিখ {row[1].translate(digits)}। সুবিধামতো কবে পরিশোধ করতে পারবেন জানাবেন। ধন্যবাদ।"
+    else:
+        content = f"Hello. Our records show an outstanding balance of {amount}, due on {row[1]}. Please let us know when you can pay. Thank you."
+    return row[2], dict(message=content, source_id=body.receivable_id, open_minor=row[0], due_on=row[1],
+                currency=currency, simulation_only=True)
+
+
 @router.post('/message')
 def message(body: Reminder, actor=Depends(principal), db=Depends(db_connection)):
     with owner_transaction(db, actor) as owner:
-        row = db.execute('SELECT open_minor,due_on FROM receivable_balances WHERE business_id=? AND id=?',
-                         (owner.business_id, body.receivable_id)).fetchone()
-        if not row:
-            sec.fail(404, 'RECEIVABLE_NOT_FOUND')
-        if row[0] <= 0:
-            sec.fail(409, 'RECEIVABLE_PAID')
-        currency = sec.original_dataset(db, owner.business_id).currency
-        precision = CURRENCIES[currency]['digits']
-        amount = f'{Decimal(row[0]) / scale(currency):,.{precision}f} {currency}'
-        if body.language == 'bn':
-            digits = str.maketrans('0123456789', '০১২৩৪৫৬৭৮৯')
-            content = f"নমস্কার। আমাদের হিসাবে আপনার কাছে {amount.translate(digits)} বাকি আছে। পরিশোধের তারিখ {row[1].translate(digits)}। সুবিধামতো কবে পরিশোধ করতে পারবেন জানাবেন। ধন্যবাদ।"
+        return reminder_text(db, owner, body)[1]
+
+
+class ApproveReminder(Reminder):
+    request_id: uuid.UUID
+    reviewed_message: str = Field(min_length=1, max_length=1000)
+
+
+@router.post('/message/approve')
+def approve_reminder(body: ApproveReminder, actor=Depends(principal), db=Depends(db_connection)):
+    with owner_transaction(db, actor) as owner:
+        customer, draft = reminder_text(db, owner, body)
+        if draft['message'] != body.reviewed_message:
+            sec.fail(409, 'REMINDER_CHANGED')
+        scope = (owner.business_id, customer, str(today_bd()))
+        identity = (str(body.request_id), body.receivable_id, sec.signature('collection-reminder', draft['message']))
+        existing = db.execute("""SELECT request_id,receipt_id,draft_digest FROM collection_handoffs
+                                 WHERE business_id=? AND customer_id=? AND local_day=?""", scope).fetchone()
+        if existing:
+            if tuple(existing) != identity:
+                sec.fail(409, 'CUSTOMER_REMINDER_ALREADY_APPROVED_TODAY')
         else:
-            content = f"Hello. Our records show an outstanding balance of {amount}, due on {row[1]}. Please let us know when you can pay. Thank you."
-        return dict(message=content, source_id=body.receivable_id, open_minor=row[0], due_on=row[1],
-                    currency=currency, simulation_only=True)
+            db.execute('INSERT INTO collection_handoffs VALUES (?,?,?,?,?,?)', (*scope, *identity))
+            sec.audit(db, owner, str(body.request_id), 'COLLECTION_REMINDER_APPROVED', dict(receivable_id=body.receivable_id))
+        return draft
 
 
 def ranked_collections(db, business, today):

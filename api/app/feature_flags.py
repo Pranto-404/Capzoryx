@@ -23,6 +23,7 @@ ROUTES = {
     '/api/copilot/aliases/{kind}': 'ask_books',
     '/api/copilot/gap-fix': 'collection_plans',
     '/api/copilot/gap-fix/accept': 'collection_plans',
+    '/api/copilot/message/approve': 'collection_plans',
     '/api/copilot/message': 'collection_plans',
     '/api/passport/create': 'passport_issue',
     '/api/statements/preview': 'statement_import',

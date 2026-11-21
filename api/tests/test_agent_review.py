@@ -58,3 +58,22 @@ def test_earlier_breach_prepares_a_new_plan_but_creates_no_tasks(world):
         plans = db.execute('SELECT breach_date,status FROM gap_plans ORDER BY breach_date').fetchall()
         assert list(map(tuple, plans)) == [(str(today+timedelta(days=n)), 'proposed') for n in (2, 5)]
         assert db.execute('SELECT count(*) FROM copilot_tasks').fetchone()[0] == 0
+
+
+def test_reminder_handoff_rechecks_balance_and_limits_each_customer(world):
+    import uuid
+    from api.tests.test_receivables import issue
+    client, _ = world
+    signup(client, 'review_reminder')
+    _, debt, _ = issue(client)
+    draft = client.post('/api/copilot/message',json={'receivable_id':debt}).json()['message']
+    approve = '/api/copilot/message/approve'
+    body = dict(receivable_id=debt, request_id=str(uuid.uuid4()), reviewed_message=draft)
+    post(client, f'receivables/{debt}/settlements', received_on=str(today_bd()), amount_minor=100)
+    assert client.post(approve, json=body).status_code == 409
+    body['reviewed_message'] = client.post('/api/copilot/message',json={'receivable_id':debt}).json()['message']
+    assert client.post(approve, json=body).status_code == 200
+    assert client.post(approve, json=body).status_code == 200
+    assert client.post(approve, json={**body, 'request_id':str(uuid.uuid4())}).status_code == 409
+    post(client, f'receivables/{debt}/settlements', received_on=str(today_bd()), amount_minor=11900)
+    assert client.post(approve, json=body).status_code == 409
