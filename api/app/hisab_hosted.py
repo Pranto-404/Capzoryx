@@ -26,9 +26,11 @@ AMOUNT = re.compile(r"(?<![\w,.-])(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?![\w,]|\
 TAKA = re.compile(r"\b(?:bdt|taka|tk)\b|টাকা|৳", re.I)
 OTHER_CURRENCY = re.compile(r"\b(?:usd|eur|gbp|inr|sar|aed|cad|aud|jpy|cny|dollar|dollars|rupee|rupees|euro|euros)\b|[$€£₹¥]", re.I)
 INFLOW = re.compile(r"\b(?:received|pailam|pelam|peyechi)\b|পেলাম|পেয়েছি|পেয়েছি", re.I)
+TAKEN = re.compile(r"\b(?:niyechi|niyechhi|niyesi|nilam)\b|নিয়েছি|নিয়েছি|নিলাম", re.I)
+FROM_SOURCE = re.compile(r"\b(?:from|theke)\b|থেকে", re.I)
 OUTFLOW = re.compile(r"\b(?:paid|spent|dilam|diyechi)\b|দিলাম|দিয়েছি|দিয়েছি|খরচ করলাম", re.I)
 YESTERDAY = re.compile(r"\b(?:yesterday|gotokal)\b|গতকাল", re.I)
-AMBIGUOUS = re.compile(r"\b(?:not|never|didn.t|unpaid|pending|due|will|tomorrow|million|thousand|lakh|lacs?|hajar|hazar|koti|crore)\b|হাজার|লাখ|লক্ষ|কোটি|বাকি|দিইনি", re.I)
+AMBIGUOUS = re.compile(r"\b(?:not|never|didn.t|unpaid|pending|due|will|tomorrow|million|thousand|lakh|lacs?|hajar|hazar|koti|crore|na|nai)\b|হাজার|লাখ|লক্ষ|কোটি|বাকি|দিইনি|নিইনি|(?<!\S)না(?!\w)", re.I)
 
 
 def configured():
@@ -38,7 +40,8 @@ def configured():
 def facts(sentence, today):
     """Require a single, explicit taka amount in a statement of completed cash movement."""
     text = sentence.translate(BANGLA_DIGITS)
-    directions = (bool(INFLOW.search(text)), bool(OUTFLOW.search(text)))
+    received = INFLOW.search(text) or (TAKEN.search(text) and FROM_SOURCE.search(text))
+    directions = (bool(received), bool(OUTFLOW.search(text)))
     if not TAKA.search(text) or OTHER_CURRENCY.search(text) or sum(directions) != 1 or AMBIGUOUS.search(text):
         return None
     dates = ISO_DATE.findall(text)
