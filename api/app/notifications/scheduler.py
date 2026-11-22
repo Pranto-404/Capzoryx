@@ -69,7 +69,7 @@ def run_workspace(db, business, at):
             if breach:
                 enqueue(db, business, 'cash_breach', breach, at=at)
     from api.app.notifications import telegram
-    telegram.queue(db,business,at)
+    telegram.queue(db,business,at,has_due_bills=bool(email_alerts.due_count(ds,today)))
     # Dispatch once a deferred reminder can be shown. The transaction rechecks open balances and membership.
     pending = db.execute("""SELECT id FROM notification_jobs WHERE business_id=? AND channel='inapp' AND
                             ((status='queued' AND run_after<=?) OR (status='sending' AND claimed_until<=?))
