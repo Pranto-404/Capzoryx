@@ -75,6 +75,22 @@ python -m ml.hisab_chat.train --data data/hisab_chat --output runs/hisab-chat --
 The script uses 4-bit QLoRA, bf16, 8-bit AdamW and gradient checkpointing, which keeps the GPU fully busy without
 running out of memory. `runs/hisab-chat/training.json` records the base, data hashes, loss and GPU.
 
+### 3b. Self-play rounds: a big model quizzes, grades and corrects Hisab-Chat
+
+After the first training run, serve the model (step 5's `llama-server` line) and let the teacher test it:
+
+```bash
+python -m ml.hisab_chat.self_play --student-url http://127.0.0.1:8080/v1 --student-key YOUR_LOCAL_KEY \
+    --examples 600 --out data/hisab_chat/selfplay-r1.jsonl
+python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 2000 --extra data/hisab_chat/selfplay-r1.jsonl
+python -m ml.hisab_chat.train --data data/hisab_chat --output runs/hisab-chat-r2 --gguf --push Pranto-404/hisab-chat-gguf
+```
+
+The teacher writes realistic owner messages in twelve styles (typos, slang, formal, follow-ups, unsafe and off-topic
+requests), grades each answer from 1 to 5 and rewrites the weak ones. Rewrites that state an amount not in the facts,
+or answer in the wrong language, are dropped. `selfplay-r1.report.json` records the mean score; repeat with
+`-r2`, `-r3` and keep going while the mean score rises. About 1.2 teacher calls per example fit the free Groq limits.
+
 ### 4. Measure before you claim
 
 ```bash
