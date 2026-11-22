@@ -15,10 +15,16 @@ def keys(monkeypatch):
             monkeypatch.delenv(f'CAPZORYX_CHAT_{p.name.upper()}_{field}', raising=False)
     monkeypatch.delenv('SAFELEDGER_LLM_API_KEY', raising=False)
     monkeypatch.setenv('CAPZORYX_CHAT_GROQ_KEY', 'g')
+    monkeypatch.setenv('CAPZORYX_CHAT_GEMINI_KEY', 'm')
+    for name in ('GROQ', 'GEMINI'):
+        monkeypatch.setenv('CAPZORYX_TEACHER_RPM_' + name, '6000')
 
 
 def test_teacher_grades_the_student_and_keeps_only_grounded_rewrites(monkeypatch):
+    hosts = []
+
     def fake(request):
+        hosts.append(request.url.host)
         body = json.loads(request.content)
         prompt = body['messages'][-1]['content']
         if request.url.host == 'student.local':
@@ -32,7 +38,9 @@ def test_teacher_grades_the_student_and_keeps_only_grounded_rewrites(monkeypatch
             content = json.dumps({'score': 1, 'better': 'এই মাসে বিক্রি ৯৯,৯৯৯ টাকা।'})
         return httpx.Response(200, json={'choices': [{'message': {'content': content}}]})
     monkeypatch.setattr(self_play, 'TRANSPORT', httpx.MockTransport(fake))
-    rows, report = self_play.run('http://student.local/v1', 'hisab-chat', '', examples=4, keep_below=4)
+    rows, report = self_play.run('http://student.local/v1', 'hisab-chat', '', examples=4, keep_below=4, workers=2)
+    assert {'api.groq.com', 'generativelanguage.googleapis.com'} <= set(hosts)  # the work is spread over teachers
+    assert report['teachers'] == ['gemini', 'groq']
     assert report['graded'] == 4 and report['mean_score'] == 1.5 and report['share_good'] == 0
     assert report['new_training_rows'] == 2 and report['rejected_by_checker'] == 2
     assert all(r['source'] == 'synthetic-selfplay' and 'hate' in r['messages'][-1]['content'] for r in rows)
