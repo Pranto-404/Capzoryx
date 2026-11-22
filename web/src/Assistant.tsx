@@ -11,7 +11,9 @@ import type {AgentResult,CashEvent,Draft,Forecast,Invoice,Profile,Session,Snapsh
 import {t,T} from './i18n';
 
 type Props={snapshot:Snapshot|null;forecast:Forecast|null;week:Forecast|null;events:CashEvent[];invoices:Invoice[];session:Session;profile:Profile|null;cloudAvailable:boolean;hisabAvailable:boolean;revision:string;request:<T>(path:string,body?:unknown)=>Promise<T>;onSaved:()=>Promise<void>;onProposal:()=>Promise<void>;onNavigate:(action:AssistantAction)=>void;onClose?:()=>void;visible:boolean};
-type Message={id:number;role:'user'|'assistant';text:string;kind?:'device'|'smart'|'hisab';actions?:AssistantAction[];draft?:Draft;agent?:AgentResult;offTopic?:string;retry?:string};
+type BrainButton={label:string;payload:string};
+type BrainReply={understood:boolean;text:string;buttons:BrainButton[]};
+type Message={id:number;role:'user'|'assistant';text:string;quick?:BrainButton[];kind?:'device'|'smart'|'hisab';actions?:AssistantAction[];draft?:Draft;agent?:AgentResult;offTopic?:string;retry?:string};
 type AskMode='default'|'off-topic'|'hisab';
 const hints=[T('What is my balance?'),T('I paid Rahman 5000 for freight yesterday'),T('Which loan fits my cash flow?'),T('Which bills are overdue?')];
 
@@ -30,6 +32,15 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
   const add=(...m:Omit<Message,'id'>[])=>setMessages(cur=>[...cur,...m.map(x=>({...x,id:nextId.current++}))].slice(-40));
   const openBills=invoices.filter(i=>i.status==='open');
 
+  async function quick(button:BrainButton){
+    if(pending.current)return;
+    pending.current=true;setBusy(true);add({role:'user',text:button.label});
+    try{
+      const brain=await request<BrainReply>('/chat/message',{text:button.payload});
+      if(mounted.current)add({role:'assistant',kind:'device',text:brain.text,quick:brain.buttons});
+    }catch(e){if(mounted.current)add({role:'assistant',kind:'device',text:e instanceof Error?e.message:t('Request failed.')});}
+    finally{pending.current=false;if(mounted.current)setBusy(false);}
+  }
   async function ask(question:string,mode:AskMode='default'){
     const q=question.trim();
     const useHisab=mode==='hisab';
@@ -51,6 +62,11 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
       const local=localAnswer(q,{snapshot,forecast,week,events,invoices},lastIntent.current);
       if(local.handled){lastIntent.current=local.intent;add({role:'assistant',kind:'device',text:local.text,actions:local.actions});return;}
       const blocked=['security','approval','limit'].includes(local.intent);
+      // 2b. The shared Capzoryx brain: Bangla, Banglish, summaries and who-owes-whom, computed on the server.
+      if(!blocked){
+        const brain=await request<BrainReply>('/chat/message',{text:q.slice(0,240)}).catch(()=>null);
+        if(brain?.understood&&brain.text){add({role:'assistant',kind:'device',text:brain.text,quick:brain.buttons});return;}
+      }
       if(blocked){add({role:'assistant',kind:'device',text:local.text});return;}
       // 3. Everything else goes to smart assist, if it is on.
       const offTopic=local.intent==='out_of_domain';
@@ -97,6 +113,7 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
         {m.role==='assistant'&&<small>{m.kind==='smart'?t('Smart answer'):'Assistant'}</small>}
         {m.text.split('\n\n').map((para,i)=><p key={i}>{para}</p>)}
         {m.draft&&canAddRecords&&<DraftCard canTrustVendor={owner} compact draft={m.draft} revision={revision} request={request} onSaved={onSaved} onDiscard={()=>setMessages(cur=>cur.map(x=>x.id===m.id?{...x,draft:undefined,text:t('Discarded. Nothing was added.')}:x))}/>}
+        {!!m.quick?.length&&<div className="chat-actions">{m.quick.map(b=><button className="secondary" key={b.payload} disabled={busy} onClick={()=>void quick(b)}>{b.label}</button>)}</div>}
         {!!m.actions?.length&&<div className="chat-actions">{m.actions.map(a=><button className="secondary" key={a} onClick={()=>onNavigate(a)}>{({Financing:t('Open Loans'),Data:t('Open Add records'),Audit:t('Open Activity')} as Record<string,string>)[a]||`Open ${a}`}</button>)}</div>}
         {m.offTopic&&smart&&<div className="chat-actions"><button className="secondary" disabled={busy} onClick={()=>void ask(m.offTopic!,'off-topic')}>{t('It is about my business: try anyway')}</button></div>}
         {m.retry&&(m.kind!=='hisab'||canUseHisab)&&<div className="chat-actions"><button className="secondary" disabled={busy} aria-describedby={m.kind==='hisab'?'assistant-hisab-privacy':undefined} onClick={()=>void ask(m.retry!,m.kind==='hisab'?'hisab':'default')}>{m.kind==='hisab'?t('Retry with Hisab-LM'):t('Try again')}</button></div>}

@@ -49,7 +49,8 @@ async function poll(check){
     await page.reload();
     await page.getByRole('heading',{name:'Financial overview',exact:true}).waitFor();
     await poll(async()=>!!(await page.evaluate(()=>window.capzoryxStore.scope())));
-    await page.locator('dialog[open]').getByRole('button',{name:/skip/i}).click();
+    // The quick tour no longer opens by itself; close it only if an older build shows it.
+    {const skip=page.locator('dialog[open]').getByRole('button',{name:/skip/i});if(await skip.isVisible({timeout:1500}).catch(()=>false))await skip.click();}
 
     await context.setOffline(true);
     await page.reload();

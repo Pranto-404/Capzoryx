@@ -47,7 +47,8 @@ const fs=require('node:fs/promises');
     await owner.locator('#username').fill('rahim_synthetic');
     await owner.locator('#password').fill('Fictional demo business 57!');
     await owner.getByRole('button',{name:'Create my workspace'}).click();
-    await owner.locator('dialog[open]').getByRole('button',{name:/skip/i}).click();
+    // The quick tour no longer opens by itself; close it only if an older build shows it.
+    {const skip=owner.locator('dialog[open]').getByRole('button',{name:/skip/i});if(await skip.isVisible({timeout:1500}).catch(()=>false))await skip.click();}
     await owner.getByRole('button',{name:'I saved it'}).click();
     await owner.getByRole('button',{name:'Try a sample business'}).click();
     await owner.getByRole('heading',{name:'Cover the cash gap'}).waitFor();
