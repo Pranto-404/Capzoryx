@@ -219,6 +219,8 @@ def webhook(payload:dict,request:Request,db=Depends(db_connection)):
             key=customer_key(db,business) if row else None
             if key and key_tag(key)==row[1]:
                 reply=chat_reply(db,business,bool(row[0]),text)
+        elif text in ('/start','/help'):
+            reply='Welcome to Capzoryx Copilot. To link this chat, sign in to Capzoryx and open Settings → Telegram assistant and reminders.'
     if reply:
         with (TRANSPORT or httpx.HTTPTransport(trust_env=False)) as transport:
             send_message(transport,str(chat_id),reply)

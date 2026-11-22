@@ -98,6 +98,8 @@ def test_private_book_replies_require_separate_opt_in_and_never_write(world,monk
     incoming(105,'/bills',chat=65433)
     incoming(106,'/bills',kind='group')
     assert len(sent)==before
+    incoming(112,'/start',chat=65433)
+    assert 'Welcome to Capzoryx Copilot' in sent[-1]['text'] and sent[-1]['chat_id']=='65433'
     incoming(107,'হাতে কত টাকা আছে?')
     assert sent[-1]['text'].startswith('Cash balance: BDT')
     incoming(108,'pay BDT 800 to someone')
