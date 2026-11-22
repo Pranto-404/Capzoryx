@@ -15,6 +15,14 @@ Hosted responses and backup responses use the same draft checks. The backend val
 
 ## Train the next candidate
 
+The [cash pilot](../ml/hisab_lm/cash_pilot.py) continues the released 1.7B LoRA adapter locally on implicit BDT, compact taka amounts and examples that require abstention, including explicit foreign-currency entries. The 24 engineered examples in the [cash challenge](../evals/fixtures/hisab_cash_challenge.jsonl) are scored before and after. It writes the adapter and a checksummed scorecard to the designated output folder. This pilot checks whether targeted training improves cash extraction. The independent evaluation below governs promotion.
+
+From an environment with PyTorch CUDA, Transformers and PEFT, download the pinned revision specified in `cash_pilot.py` into the local cache. Use a local copy of the released `adapter` directory that includes `adapter_config.json` and `adapter_model.safetensors`.
+
+```sh
+python -m ml.hisab_lm.cash_pilot --adapter /path/to/released/adapter --output /path/to/empty/pilot-output
+```
+
 1. **Collect representative language.** Start with fictional but natural input from Bangla, Banglish and English speakers. Include lowercase names, implicit BDT, Bangla digits, `1.5k`, lakh/hajar, code-switching and dates. Label ambiguous amounts, negation, multiple payments, questions and foreign currency as cases that require clarification. Keep customer records out of training.
 2. **Freeze the test set first.** Keep at least 300 authorized, independently authored sentences separate from training. Group by contributor and paraphrase family so variants cannot cross splits. Record amount in poisha, direction, date and counterparty, or a reason to abstain. Match the [evaluation guide](../evals/README.md) for metadata and overlap checks. The public synthetic v1 data remains a reproducible regression corpus.
 3. **Compare candidates on identical inputs.** Run the current 1.7B adapter, the device-only path and an approved provider reference on the same frozen data. Then compare Qwen3-4B-Instruct-2507 as a candidate. Benchmark the base before tuning. Try NF4 QLoRA in the pinned training environment and record the base revision, tokenizer, corpus checksum and config. Reuse the recipe in [the model card](../ml/hisab_lm/MODEL_CARD.md). Read the [Qwen model card](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) and [PEFT quantization guide](https://huggingface.co/docs/peft/developer_guides/quantization) before changing the recipe.

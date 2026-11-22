@@ -28,15 +28,15 @@ MULTIPLIERS = dict.fromkeys(('k', 'thousand', 'hajar', 'hazar', 'হাজার
 AMOUNT = re.compile(r"(?<![\w,.])(?P<value>(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})+,\d{3}|\d+)(?:\.\d+)?)(?:\s*(?P<unit>" + '|'.join(MULTIPLIERS) + r"))?(?![\w,]|\.\d)", re.I)
 CURRENCY_CODE = re.compile(r'\b(?:' + '|'.join(sorted(CURRENCIES.keys() - {'BDT'})) + r')\b', re.I)
 OTHER_CURRENCY = re.compile(r"\b(?:dollars?|rupees?|euros?|pounds?|yen|yuan|riyals?|dirhams?|ringgit|pesos?|francs?|won|rubles?)\b", re.I)
-INFLOW = re.compile(r"\b(?:received|pailam|pelam|peyechi|paid me)\b|পেলাম|পেয়েছি|পেয়েছি", re.I)
+INFLOW = re.compile(r"\b(?:received|pailam|pelam|peyechi|paid me|got paid)\b|পেলাম|পেয়েছি|পেয়েছি", re.I)
 TAKEN = re.compile(r"\b(?:niyechi|niyechhi|niyesi|nilam)\b|নিয়েছি|নিয়েছি|নিলাম", re.I)
 FROM_SOURCE = re.compile(r"\b(?:from|theke)\b|থেকে", re.I)
-OUTFLOW = re.compile(r"\b(?:paid(?!\s+me\b)|spent|dilam|diyechi|disi)\b|দিলাম|দিয়েছি|দিয়েছি|খরচ করলাম", re.I)
+OUTFLOW = re.compile(r"\b(?:(?<!\bgot )paid(?! me\b)|spent|dilam|diyechi|disi)\b|দিলাম|দিয়েছি|দিয়েছি|খরচ করলাম", re.I)
 YESTERDAY = re.compile(r"\b(?:yesterday|gotokal|kal)\b|গতকাল|(?<!\S)কাল(?!\w)", re.I)
 AMBIGUOUS = re.compile(r"[?？]|\b(?:not|never|no|didn['’]t|unpaid|pending|due|will|would|could|can|should|if|and|or|approximately|about|around|tomorrow|next|last|ago|monday|tuesday|wednesday|thursday|friday|saturday|sunday|na|nai)\b|আগামী|বাকি|দিইনি|দেয়নি|দেয়নি|নিইনি|(?<!\S)না(?!\w)", re.I)
 PARTY_WORD = r"[^\W\d_][^\s\d,;:!?]*"
 NAMED_PARTY = PARTY_WORD + r"(?:\s+" + PARTY_WORD + r"){0,3}"
-PARTY_AFTER_PREPOSITION = re.compile(r"\b(?:to|from)\s+(" + NAMED_PARTY + r")", re.I)
+PARTY_AFTER_PREPOSITION = re.compile(r"\b(?:to|from|by)\s+(" + NAMED_PARTY + r")", re.I)
 PARTY_AFTER_VERB = re.compile(r"\bpaid\s+(" + NAMED_PARTY + r")(?=\s|$)", re.I)
 LOCAL_PARTY = re.compile(r"(?:^|\s)(" + PARTY_WORD + r")(?:\s+(?:ke|theke|থেকে|কে)|কে)(?!\w)", re.I)
 PARTY_STOP = re.compile(r"\s+(?:for|on|at|today|yesterday|gotokal|kal|me|bdt|tk|taka|টাকা)\b", re.I)
@@ -48,7 +48,7 @@ def configured():
 
 def facts(sentence, today):
     """Verify one completed cash amount. A bare number uses the BDT workspace currency."""
-    text = sentence.translate(BANGLA_DIGITS)
+    text = ' '.join(sentence.translate(BANGLA_DIGITS).split())
     received = INFLOW.search(text) or (TAKEN.search(text) and FROM_SOURCE.search(text))
     directions = (bool(received), bool(OUTFLOW.search(text)))
     foreign_symbol = any(char != '৳' and unicodedata.category(char) == 'Sc' for char in text)
