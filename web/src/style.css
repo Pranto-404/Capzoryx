@@ -465,8 +465,6 @@ main.welcome .welcome-story>*,main.welcome .welcome-entry{animation:none}
   body>.agent-print-draft{display:block;white-space:pre-wrap;font:14pt/1.6 serif;color:#111;background:white;padding:1.5cm}
 }
 
-.hd-badge{grid-column:1/3;justify-self:start;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:99px;background:#3fd2b41f;color:#0f9b7c;margin-bottom:4px;display:inline-block}
-:root:not([data-theme=dark]) .hd-badge{color:#0b7a62;fill:#0b7a62}
 
 /* ===== Usability layer (Nov 2026): keeps the original theme, removes friction ===== */
 h1[tabindex="-1"]:focus,h1[tabindex="-1"]:focus-visible{outline:none;box-shadow:none}
@@ -498,7 +496,8 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
 }
 
 /* ===== Futuristic 3D hero ===== */
-.hero3d{position:relative;height:clamp(300px,42vw,460px);margin:10px -10px 0;perspective:900px}
+.hero3d{position:relative;min-height:540px;margin:10px -10px 0;padding:0 10px 6px;display:flex;flex-direction:column;justify-content:flex-end;perspective:900px}
+.hero3d-layer{position:absolute;inset:0}
 .hero3d-stage{position:absolute;inset:0;border-radius:28px;overflow:hidden}
 .hero3d-stage canvas{display:block;width:100%;height:100%}
 .hero3d::before{content:"";position:absolute;inset:12% 14%;border-radius:50%;filter:blur(48px);opacity:.55;pointer-events:none;
@@ -512,13 +511,32 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
   box-shadow:0 8px 26px #0f2a6a26,inset 0 0 0 1px #ffffff14;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
   animation:hud-float 5s ease-in-out infinite}
 .hud-a{top:14%;left:4%}
-.hud-b{top:46%;right:2%;animation-delay:-1.6s}
-.hud-c{bottom:10%;left:12%;animation-delay:-3.1s}
+.hud-b{top:30%;right:2%;animation-delay:-1.6s}
 @keyframes hud-float{0%,100%{transform:translate3d(0,0,0) rotateX(0)}50%{transform:translate3d(0,-10px,30px) rotateX(8deg)}}
 @keyframes hero-breathe{0%,100%{transform:scale(1);opacity:.45}50%{transform:scale(1.12);opacity:.7}}
 @keyframes orb-spin{to{transform:rotate(1turn)}}
 /* subtle depth on cards */
 .metric,.tile,.feature{transition:transform .35s cubic-bezier(.2,.8,.2,1),box-shadow .35s}
 .metric:hover,.tile:hover,.feature:hover{transform:perspective(900px) rotateX(2deg) translateY(-3px);box-shadow:0 18px 40px #0f2a6a1f}
-@media(max-width:760px){.hero3d{height:300px;margin:6px -6px 0}.hud{font-size:11px;padding:6px 10px}}
-@media(prefers-reduced-motion:reduce){.hud,.hero3d::before,.hero3d-orb{animation:none}.metric:hover,.tile:hover,.feature:hover{transform:none}}
+@media(max-width:760px){.hero3d{min-height:500px;margin:6px -6px 0;padding:0 6px 4px}.hud{font-size:11px;padding:6px 10px}.hero-demo{max-width:none}}
+@media(prefers-reduced-motion:reduce){.hud,.hero3d::before,.hero3d-orb,.hd-caret{animation:none}.metric:hover,.tile:hover,.feature:hover{transform:none}}
+/* typing assistant demo, floating in front of the 3D scene */
+.hero-demo{margin-top:26px;max-width:470px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:blur(8px);box-shadow:0 24px 60px #0003;overflow:hidden}
+.hd-bar{display:flex;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
+.hd-bar b{margin-inline-start:8px;font-weight:600}
+.hd-dot{width:9px;height:9px;border-radius:50%;background:#e0a23a}
+.hd-dot:nth-child(2){background:#3fd2b4}
+.hd-dot:nth-child(3){background:#5b7cff}
+.hd-body{padding:16px;min-height:170px;display:grid;gap:12px;align-content:start}
+.hd-user{margin:0;justify-self:end;max-width:92%;padding:10px 14px;border-radius:16px 16px 4px 16px;background:#0f7a63;color:#fff;font-size:14px;min-height:40px}
+.hd-caret{display:inline-block;width:2px;height:1em;background:#fff;margin-inline-start:2px;vertical-align:-.15em;animation:blink 1s steps(2) infinite}
+.hd-card{display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);opacity:0;transform:translateY(10px) scale(.98);transition:opacity .4s ease,transform .4s cubic-bezier(.22,.8,.24,1)}
+.hd-card.show{opacity:1;transform:none}
+.hd-card strong{font-size:15px}
+.hd-card small{color:var(--muted);grid-column:1}
+.hd-card em{font-style:normal;font-weight:800;color:#0f9b7c;grid-row:1/3;grid-column:2;font-size:17px}
+.hd-badge{grid-column:1/3;justify-self:start;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:99px;background:#3fd2b41f;color:#0f9b7c;margin-bottom:4px;display:inline-block}
+.hd-add{grid-column:1/3;margin-top:8px;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#0f9b7c}
+.hd-add .ui-icon{width:16px;height:16px}
+:root:not([data-theme=dark]) .hd-badge,:root:not([data-theme=dark]) .hd-add,:root:not([data-theme=dark]) .hd-card em{color:#0b7a62;fill:#0b7a62}
+.hero3d .hero-demo{position:relative;z-index:1;margin-top:0;width:100%;max-width:460px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 24px 60px #0f2a6a30}
