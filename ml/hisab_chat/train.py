@@ -56,6 +56,7 @@ def main():
     p.add_argument('--base', choices=sorted(BASES), default='Qwen/Qwen3-4B-Instruct-2507')
     p.add_argument('--epochs', type=int, default=2)
     p.add_argument('--gguf', action='store_true', help='also export a q4_k_m GGUF for llama.cpp or Ollama')
+    p.add_argument('--qlora', action='store_true', help='force 4-bit loading (use if 16-bit runs out of memory)')
     p.add_argument('--push', metavar='OWNER/REPO', help='upload the GGUF and training.json to a private Hugging Face '
                    'model repo (needs HF_TOKEN with write access)')
     a = p.parse_args()
@@ -68,7 +69,12 @@ def main():
     from transformers import Trainer, TrainingArguments
     from unsloth import FastLanguageModel
 
-    model, tokenizer = FastLanguageModel.from_pretrained(model_name=a.base, max_seq_length=MAX_LEN, load_in_4bit=True)
+    torch.backends.cuda.matmul.allow_tf32 = torch.backends.cudnn.allow_tf32 = True
+    vram = torch.cuda.get_device_properties(0).total_memory / 2**30
+    # On a 16 GB card a 4B model fits in 16-bit: faster than 4-bit (no dequantising) and slightly more accurate.
+    full_precision = vram >= 15 and 'gemma-3-12b' not in a.base and not a.qlora
+    model, tokenizer = FastLanguageModel.from_pretrained(model_name=a.base, max_seq_length=MAX_LEN,
+                                                         load_in_4bit=not full_precision)
     model = FastLanguageModel.get_peft_model(model, r=16, lora_alpha=32, lora_dropout=0.0, bias='none',
                                              target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj'],
                                              use_gradient_checkpointing='unsloth', random_state=SEED)
@@ -83,7 +89,9 @@ def main():
         mask = torch.tensor([[1] * len(r['input_ids']) + [0] * (width - len(r['input_ids'])) for r in batch])
         return {'input_ids': pad('input_ids', tokenizer.pad_token_id), 'labels': pad('labels', -100), 'attention_mask': mask}
 
-    plan = BASES[a.base]
+    plan = dict(BASES[a.base])
+    if full_precision:
+        plan = dict(batch=8, accumulate=2)  # same effective batch of 16, fewer, fuller GPU steps
     args = TrainingArguments(
         output_dir=str(a.output / 'checkpoints'), num_train_epochs=a.epochs, seed=SEED, report_to='none',
         per_device_train_batch_size=plan['batch'], gradient_accumulation_steps=plan['accumulate'],
@@ -91,7 +99,7 @@ def main():
         weight_decay=0.01, bf16=torch.cuda.is_bf16_supported(), fp16=not torch.cuda.is_bf16_supported(),
         optim='adamw_8bit', logging_steps=10, eval_strategy='epoch', save_strategy='epoch', save_total_limit=2,
         load_best_model_at_end=True, metric_for_best_model='eval_loss', greater_is_better=False,
-        dataloader_num_workers=2, group_by_length=True)
+        dataloader_num_workers=4, group_by_length=True)
     trainer = Trainer(model=model, args=args, train_dataset=sets['train'], eval_dataset=sets['validation'],
                       data_collator=collate)
     trainer.train()
@@ -100,7 +108,7 @@ def main():
     tokenizer.save_pretrained(str(adapter))
     if a.gguf:
         model.save_pretrained_gguf(str(a.output / 'gguf'), tokenizer, quantization_method='q4_k_m')
-    evidence = dict(base=a.base, dataset=manifest['splits'], epochs=a.epochs, seed=SEED,
+    evidence = dict(base=a.base, dataset=manifest['splits'], epochs=a.epochs, seed=SEED, full_precision=full_precision,
                     best_validation_loss=trainer.state.best_metric, gpu=torch.cuda.get_device_name(0))
     (a.output / 'training.json').write_text(json.dumps(evidence, indent=2) + '\n')
     print(json.dumps(evidence))
