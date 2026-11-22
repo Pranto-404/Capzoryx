@@ -1,4 +1,5 @@
 from datetime import date
+from api.tests.test_accounts import world  # noqa: F401
 
 import pytest
 
@@ -72,3 +73,19 @@ def test_drafts_only_from_verified_complete_cash_phrases():
     assert draft['amount_minor'] == 250000 and draft['direction'] == 'outflow' and draft['party'] == 'Karim Traders'
     assert brain.make_draft('will pay 500 to Karim tomorrow', Data) is None
     assert brain.make_draft('paid 500 or 600 to Karim', Data) is None
+
+
+def test_web_chat_answers_members_without_writing(world, monkeypatch):
+    from api.tests.test_accounts import signup
+    from api.tests.test_bill_email import bill
+    c, _ = world
+    signup(c, 'webchat_owner')
+    bill(c).raise_for_status()
+    reply = c.post('/api/chat/message', json={'text': 'supplier der koto dite hobe?'}).json()
+    assert reply['understood'] and '৳3,892.41' in reply['text'] and reply['buttons'][0]['payload'] == '__list_payables__'
+    reply = c.post('/api/chat/message', json={'text': '__list_payables__'}).json()
+    assert '৳3,892.41' in reply['text']
+    assert 'Hate cash' in c.post('/api/chat/message', json={'text': 'business kemon cholche'}).json()['text']
+    assert not c.post('/api/chat/message', json={'text': 'what is the capital of peru'}).json()['understood']
+    reply = c.post('/api/chat/message', json={'text': 'Rahim theke 500 taka pelam'}).json()
+    assert not reply['understood'] and not c.get('/api/workspace').json()['events']

@@ -68,7 +68,7 @@ export function QuickAdd({request,revision,onSaved,profile,owner,cloudAvailable,
     finally{setBusy('');}
   }
   return <section className="panel quick-add" aria-labelledby="quick-add-title">
-    <div className="panel-heading"><div><p className="eyebrow">{t('THE FAST WAY')}</p><h2 id="quick-add-title">{t('Add by photo or by typing')}</h2></div></div>
+    <div className="panel-heading"><div><p className="eyebrow">{t('The fast way')}</p><h2 id="quick-add-title">{t('Add by photo or by typing')}</h2></div></div>
     <div className="quick-grid">
       <div className="quick-box">
         <h3><Icon name="camera"/> {t('Photograph a bill or receipt')}</h3>

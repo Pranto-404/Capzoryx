@@ -165,7 +165,7 @@ export function Landing({onStart}:{onStart:()=>void}){
     <div className="stats" data-reveal>{stats.map(s=><div key={s.label}><Counter to={s.n} suffix={s.suffix}/><span>{t(s.label)}</span></div>)}</div>
 
     <section id="features" className="land-section" aria-labelledby="land-features">
-      <p className="eyebrow" data-reveal>{t('WHAT YOU GET')}</p>
+      <p className="eyebrow" data-reveal>{t('What you get')}</p>
       <h2 id="land-features" data-reveal>{t('Everything your business money needs, in one place')}</h2>
       <div className="bento">
         <article className="tile tile-wide spot" data-reveal onPointerMove={spot}><div><span className="feature-icon"><Icon name="camera"/></span><h3>{t('Photo to record')}</h3><p>{t('Snap a bill or receipt and we read the supplier, date, amount and due date for you.')}</p></div><ScanIllustration/></article>
@@ -185,7 +185,7 @@ export function Landing({onStart}:{onStart:()=>void}){
     </section>
 
     <section id="preview" className="land-section" aria-labelledby="land-how">
-      <p className="eyebrow" data-reveal>{t('HOW IT WORKS')}</p>
+      <p className="eyebrow" data-reveal>{t('How it works')}</p>
       <h2 id="land-how" data-reveal>{t('Three simple steps')}</h2>
       <div className="story">
         <ol className="story-steps">{story.map((s,i)=><li key={s.title} data-step={i} className={step===i?'active':''}><span className="step-n">{i+1}</span><h3>{t(s.title)}</h3><p>{t(s.text)}</p><div className="story-inline">{i===0?<ScanIllustration/>:i===1?<Preview/>:<ApprovalMock/>}</div></li>)}</ol>
@@ -194,12 +194,12 @@ export function Landing({onStart}:{onStart:()=>void}){
     </section>
 
     <section className="land-section" aria-labelledby="land-who">
-      <p className="eyebrow" data-reveal>{t('MADE FOR')}</p>
+      <p className="eyebrow" data-reveal>{t('Made for')}</p>
       <h2 id="land-who" data-reveal>{t('Built for the way small businesses work')}</h2>
       <div className="feature-grid">{audiences.map(f=><article key={f.title} className="feature spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name={f.icon}/></span><h3>{t(f.title)}</h3><p>{t(f.text)}</p></article>)}</div>
     </section>
     <section id="safety" className="land-section" aria-labelledby="land-safe">
-      <p className="eyebrow" data-reveal>{t('BUILT TO BE SAFE')}</p>
+      <p className="eyebrow" data-reveal>{t('Built to be safe')}</p>
       <h2 id="land-safe" data-reveal>{t('Your money, your control')}</h2>
       <div className="trust-grid">{trust.map(x=><article key={x.title} className="spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name={x.icon}/></span><div><h3>{t(x.title)}</h3><p>{t(x.text)}</p></div></article>)}</div>
     </section>
@@ -208,12 +208,12 @@ export function Landing({onStart}:{onStart:()=>void}){
       <div className="soon-grid">{recordTools.map(x=><article key={x.title} className="soon-card spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name={x.icon}/></span><h3>{t(x.title)}</h3><p>{t(x.text)}</p></article>)}</div>
     </section>
     <section className="land-section land-langs" aria-labelledby="land-lang" data-reveal>
-      <p className="eyebrow">{t('FOR EVERYONE')}</p>
+      <p className="eyebrow">{t('For everyone')}</p>
       <h2 id="land-lang">{t('Use it in your own language')}</h2>
       <div className="marquee" aria-hidden="true"><div className="marquee-track">{[...names,...names].map((n,i)=><span key={i}>{n}</span>)}</div></div>
     </section>
     <section id="faq" className="land-section" aria-labelledby="land-faq">
-      <p className="eyebrow" data-reveal>{t('QUESTIONS')}</p>
+      <p className="eyebrow" data-reveal>{t('Questions')}</p>
       <h2 id="land-faq" data-reveal>{t('Good to know')}</h2>
       <div className="faq" data-reveal>{faq.map(x=><details key={x.q}><summary>{t(x.q)}</summary><p>{t(x.a)}</p></details>)}</div>
     </section>

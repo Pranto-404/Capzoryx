@@ -39,6 +39,8 @@ class Context:
     chat_enabled: bool = True
     records_enabled: bool = False
     settings_hint: str = 'Settings'
+    role: str = 'owner'
+    allow_llm: bool = True
 
 
 @dataclass
@@ -48,6 +50,7 @@ class Reply:
     save: dict | None = None
     llm: str | None = None
     lang: str = 'en'
+    understood: bool = True
 
 
 # ---------- formatting ----------
@@ -362,6 +365,8 @@ def top_list(db, ctx, which, lang, ds):
         lines = [f'• {name} — {money(a, code, lang)}' + (' (overdue)' if late and lang == 'en' else ' (বকেয়া)' if late and lang == 'bn'
                  else ' (bokeya)' if late else f' · due {day_label(due, lang)}' if lang == 'en' else '') for name, (a, late, due) in rows]
         return head + '\n' + '\n'.join(lines)
+    if ctx.role != 'owner':  # customer names stay with the owner
+        return answer_topic(db, ctx, 'receivables', None, lang, ds)[0]
     from api.app.receivables import customer_book
     book = customer_book(db, ctx.business)
     names = {c['id']: c['name'] or '—' for c in book['customers']}
@@ -502,6 +507,8 @@ def decide(db, ctx, text):
         return Reply(say('off', lang, settings=ctx.settings_hint), lang=lang)
 
     if p.record_like and p.topic not in ('summary',) and not (p.question and p.topic):
+        if ctx.channel == 'web':  # the app reviews entries in its own draft card
+            return Reply('', lang=lang, understood=False)
         ds = sec.runtime_dataset(db, ctx.business)
         if ds.currency != 'BDT':
             return Reply(say('draft_currency', lang), lang=lang)
@@ -548,9 +555,9 @@ def decide(db, ctx, text):
         return Reply(text_out, buttons=buttons, lang=lang)
 
     save_state(db, ctx, lang, keep_topic=True)
-    if ctx.chat_enabled and llm_available(db, ctx.business):
+    if ctx.chat_enabled and ctx.allow_llm and llm_available(db, ctx.business):
         return Reply('', llm=text, lang=lang)
-    return Reply(say('unknown', lang), lang=lang)
+    return Reply(say('unknown', lang), lang=lang, understood=False)
 
 
 def finish(db, ctx, reply):

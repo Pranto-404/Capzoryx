@@ -25,10 +25,10 @@ export function QuickTour({ready,userId,currentPage,navigate}:{ready:boolean;use
  const [box,setBox]=useState<Box|null>(null);
  const checked=useRef(false),returnPage=useRef(currentPage),dialog=useRef<HTMLDialogElement>(null),launcher=useRef<HTMLButtonElement>(null),scrollPosition=useRef(0),heading=useRef<HTMLHeadingElement>(null);
  useEffect(()=>{
+  // The tour no longer opens by itself; new owners start it from Quick tutorial. Mark it offered once.
   if(!ready||checked.current)return;checked.current=true;
-  try{if(localStorage.getItem(key)==='done'||localStorage.getItem(key)==='skipped')return;}catch{/* Offer the tour once this session if storage is unavailable. */}
-  returnPage.current=currentPage;scrollPosition.current=window.scrollY;setStep(0);
- },[ready,key,currentPage]);
+  try{if(!localStorage.getItem(key))localStorage.setItem(key,'offered');}catch{/* storage is optional */}
+ },[ready,key]);
  useEffect(()=>{
   if(step===null)return;
   if(step>0)navigate(steps[step].page);
@@ -66,7 +66,7 @@ export function QuickTour({ready,userId,currentPage,navigate}:{ready:boolean;use
   <dialog ref={dialog} className={'quick-tour'+(box?.above?' tour-above':'')} aria-labelledby="tour-title" aria-describedby="tour-body" onKeyDown={onKey} onCancel={e=>{e.preventDefault();finish(false);}}>
    {active&&<>
     <svg className="tour-highlight" aria-hidden="true">{box&&<rect x={box.x} y={box.y} width={box.width} height={box.height} rx="12"/>}</svg>
-    <div className="tour-top"><span className="badge">{t('QUICK START')}</span><span className="tour-count" role="status">{t('Step {n} of {total}',{n:(step??0)+1,total:steps.length})}</span><button className="link" aria-label={t('Close tutorial')} onClick={()=>finish(false)}>×</button></div>
+    <div className="tour-top"><span className="badge">{t('Quick start')}</span><span className="tour-count" role="status">{t('Step {n} of {total}',{n:(step??0)+1,total:steps.length})}</span><button className="link" aria-label={t('Close tutorial')} onClick={()=>finish(false)}>×</button></div>
     <div className="tour-progress" role="group" aria-label={t('Tutorial steps')}>{steps.map((s,i)=><button key={i} type="button" className={step!==null&&i<=step?'complete':''} aria-label={t('Go to step {n}',{n:i+1})} aria-current={i===step?'step':undefined} onClick={()=>go(i)}/>)}</div>
     <h2 id="tour-title" ref={heading} tabIndex={-1}>{t(active.title)}</h2>
     <p id="tour-body">{t(active.body)}</p>
