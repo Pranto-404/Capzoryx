@@ -3,36 +3,28 @@
 Hisab-Chat is the first model the Telegram and in-app chat try (`api/app/chat/llm.py`). Free API tiers
 are only the fallback. Everything below is free: open models, your own GPU and a free Cloudflare tunnel.
 
-## No PC needed: train on Kaggle's free GPU, serve on a free Hugging Face Space
+## No PC needed: one Kaggle cell trains, publishes and starts the model
 
-Everything below runs in a browser, so it works from a phone and your PC can stay off.
+Nothing is installed on your computer, and it keeps running with the browser closed.
 
 1. **Hugging Face token**: huggingface.co → Settings → Access Tokens → New token, type **Write**.
-2. **Kaggle**: kaggle.com → Create → New Notebook. Settings → Accelerator **GPU T4 x2**, Internet **on**.
-   Add-ons → Secrets → add `HF_TOKEN` (the token) and `GROQ_KEY` (a free key from console.groq.com). Then run these three cells:
+2. **Kaggle**: kaggle.com → Create → New Notebook (keep it private). Settings → Accelerator **GPU T4 x2**,
+   Internet **on**. Add-ons → Secrets: `HF_TOKEN`, plus any of `GROQ_KEY`, `GEMINI_KEY`, `CEREBRAS_KEY`,
+   `OPENROUTER_KEY` (free keys; they write the natural conversations within their daily budgets).
+3. Paste one cell and press **Save Version → Save & Run All**:
 
    ```python
-   !git clone -q https://github.com/Pranto-404/Capzoryx && pip -q install unsloth httpx
+   !git clone -q https://github.com/Pranto-404/Capzoryx
+   %run Capzoryx/ml/hisab_chat/kaggle_run.py
    ```
-   ```python
-   import os; from kaggle_secrets import UserSecretsClient
-   secrets = UserSecretsClient(); os.chdir('/kaggle/working/Capzoryx')
-   os.environ['HF_TOKEN'] = secrets.get_secret('HF_TOKEN'); os.environ['CAPZORYX_CHAT_GROQ_KEY'] = secrets.get_secret('GROQ_KEY')
-   !python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 3000
-   ```
-   ```python
-   !python -m ml.hisab_chat.train --data data/hisab_chat --output runs/hisab-chat --gguf --push Pranto-404/hisab-chat-gguf
-   ```
-   Training takes about 2–3 hours on a T4. The notebook can keep running with the browser tab closed if you use
-   **Save Version → Save & Run All**. The model lands privately in `Pranto-404/hisab-chat-gguf`.
-3. **Space**: huggingface.co → New Space → name `hisab-chat`, SDK **Docker**, hardware **CPU basic (free)**, private.
-   Upload `ml/hisab_chat/space/Dockerfile` and `README.md`. In the Space settings add secrets `HF_TOKEN` (the same
-   token) and `LLAMA_API_KEY` (any long random text).
-4. **Render**: on `capzoryx-staging-api` set `CAPZORYX_CHAT_HISAB_URL=https://pranto-404-hisab-chat.hf.space/v1` and
-   `CAPZORYX_CHAT_HISAB_KEY` to the same `LLAMA_API_KEY`.
 
-The bot then asks Hisab-Chat first. A free Space sleeps after two days without requests and takes a minute to wake;
-during that minute the free API fallbacks answer.
+   About 1–1.5 hours later the log ends with two values. It has built the data, trained Hisab-Chat (one epoch),
+   uploaded it privately to `Pranto-404/hisab-chat-gguf`, and created the `Pranto-404/hisab-chat` Space that serves it.
+4. **Render** → `capzoryx-staging-api` → Environment: add `CAPZORYX_CHAT_HISAB_URL` and `CAPZORYX_CHAT_HISAB_KEY`
+   with those two values. The bot then asks Hisab-Chat first.
+
+A free Space sleeps after two days without requests and takes a minute to wake; during that minute the free API
+fallbacks answer.
 
 ## With your own GPU (RTX 5060 Ti)
 
