@@ -31,7 +31,7 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
   async function ask(question:string,mode:AskMode='default'){
     const q=question.trim();
     const useHisab=mode==='hisab';
-    if(!q||pending.current||(useHisab&&(!canUseHisab||q.length>400)))return;
+    if(!q||pending.current||(useHisab&&(!canUseHisab||q.length<3||q.length>400)))return;
     pending.current=true;setBusy(true);setTask('');
     add({role:'user',text:q,kind:useHisab?'hisab':undefined});
     try{
@@ -65,12 +65,16 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
     }catch(e){
       if(!mounted.current)return;
       let text=e instanceof Error?e.message:t('Something went wrong. Please try again.');
+      const editableHisabError=useHisab&&e instanceof ApiError&&e.status===422;
       if(useHisab&&e instanceof ApiError&&e.status===503){
         text=t('Hisab-LM is temporarily unavailable. You can send your message normally.');
+      }else if(editableHisabError&&e.code==='HISAB_REVIEW_NEEDED'){
+        text=t('Hisab-LM could not verify this payment. Check the amount and who paid, then try again or send it normally.');
       }else if(!useHisab&&e instanceof ApiError&&(e.code==='AI_QUOTA_EXHAUSTED'||e.status===503)){
         text=t('Smart assist is busy right now. Please try again in a minute. Your balance, invoices and cash-flow questions still work.');
       }
-      add({role:'assistant',kind:useHisab?'hisab':'device',text,retry:q});
+      if(editableHisabError)setTask(q);
+      add({role:'assistant',kind:useHisab?'hisab':'device',text,retry:editableHisabError?undefined:q});
     }finally{pending.current=false;if(mounted.current){setBusy(false);input.current?.focus();}}
   }
   async function prepare(){
@@ -104,7 +108,7 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
     {owner&&!!openBills.length&&smart&&!picking&&<div className="chat-chips"><button className="secondary small" disabled={busy} onClick={()=>setPicking(true)}>{t('Prepare a payment…')}</button></div>}
     <form className="chat-compose" onSubmit={(e:FormEvent)=>{e.preventDefault();void ask(task);}}><label htmlFor="agent-task" className="sr-only">{t('Message the assistant')}</label><textarea ref={input} id="agent-task" rows={2} placeholder={t('Ask, or say what you paid…')} maxLength={800} value={task} disabled={busy} onChange={e=>setTask(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form?.requestSubmit();}}}/><button disabled={busy||!task.trim()} aria-label={t('Send message')}>{busy?'…':<Icon name="send"/>}</button></form>
     {canUseHisab&&<div className="chat-hisab">
-      <button className="secondary small" type="button" disabled={busy||!task.trim()||task.trim().length>400} aria-describedby="assistant-hisab-privacy" onClick={()=>void ask(task,'hisab')}>{t('Use Hisab-LM')}</button>
+      <button className="secondary small" type="button" disabled={busy||task.trim().length<3||task.trim().length>400} aria-describedby="assistant-hisab-privacy" onClick={()=>void ask(task,'hisab')}>{t('Use Hisab-LM')}</button>
       <p id="assistant-hisab-privacy" className="small muted">{task.trim().length>400?t('Use 400 characters or fewer with Hisab-LM.'):t('Hisab-LM sends this sentence to a private Hugging Face service to draft one BDT cash record. Review it before saving.')}</p>
     </div>}
     <p className="chat-footnote">{smart?t('Smart assist is on · simple questions are answered on your device'):t('Answers on your device · turn on smart assist in Settings for more')}</p>
