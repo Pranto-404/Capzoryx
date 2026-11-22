@@ -128,9 +128,14 @@ const fs=require('node:fs/promises');
       await route.fulfill({response,json:{...(await response.json()),smart_assist:true}});
     });
     const hisabText='I paid BDT 1250.50 to Synthetic Supplier.';
+    const rejectedHisabText='I paid BDT 100 to someone.';
     const hisabRequests=[],otherRequests=[];
     await owner.route('**/api/assist/hisab',async route=>{
       hisabRequests.push(route.request().postDataJSON());
+      if(hisabRequests.at(-1).text===rejectedHisabText){
+        await route.fulfill({status:422,json:{error:{code:'HISAB_REVIEW_NEEDED'}}});
+        return;
+      }
       if(hisabRequests.length===1){
         await route.fulfill({status:503,json:{error:{code:'HISAB_NOT_AVAILABLE'}}});
         return;
@@ -161,12 +166,17 @@ const fs=require('node:fs/promises');
     assert.equal(await chat.getByLabel('Amount (BDT)',{exact:true}).inputValue(),'1250.50');
     assert.equal(await revision(),beforeDraft);
     await chat.getByRole('button',{name:'Discard',exact:true}).click();
+    await input.fill(rejectedHisabText);
+    await chat.getByRole('button',{name:'Use Hisab-LM',exact:true}).click();
+    await chat.getByText(/Hisab-LM could not verify this payment/).waitFor();
+    assert.equal(await input.inputValue(),rejectedHisabText,'A rejected sentence is available to edit');
     await input.fill('What is the weather in Dhaka right now?');
     await chat.getByRole('button',{name:'Send message',exact:true}).click();
     await chat.getByRole('button',{name:'It is about my business: try anyway'}).click();
     await chat.getByText('Synthetic assistant answer.',{exact:true}).waitFor();
     assert.equal(otherRequests.length,1);
     assert.ok(!JSON.stringify(otherRequests[0].history).includes(hisabText),'Hisab-LM submissions stay out of other model requests');
+    assert.ok(!JSON.stringify(otherRequests[0].history).includes(rejectedHisabText),'Rejected Hisab-LM submissions also stay private');
     assert.equal(await revision(),beforeDraft);
     console.log('PASS Assistant uses explicit Hisab-LM opt-in, keeps its text out of other providers, and returns an unsaved editable draft.');
   }finally{
