@@ -1,1 +1,1 @@
-"""Conversational layer shared by Telegram, WhatsApp and the in-app chat."""
+"""Conversational layer shared by Telegram and the in-app chat."""
