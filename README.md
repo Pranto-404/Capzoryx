@@ -32,6 +32,7 @@ Open http://127.0.0.1:5173, create an account and choose **Try a sample business
 ## Try the new features
 
 - Under **Add records**, choose a bill photo. The device reads a labelled total and lets you check the amount, supplier and dates. You can also type a sentence such as “Rahman ke 4 lakh 20 hajar dilam kal”.
+- A BDT workspace owner can open **Assistant**, type “I paid BDT 1250 to Rahman”, and select **Use Hisab-LM**. Check the resulting cash draft before adding it to your records. This option uses the hosted model and appears when the service is configured.
 - On **Overview**, load the sample business. The cash-gap section shows how much of the scheduled receipt would need to arrive early to cover the fabric bill.
 - Under **Activity**, an owner can publish a signed cash-flow passport once the signing keys are configured. Open its link to verify the signature, print a PDF or scan the QR. Revoking the link disables public verification.
 

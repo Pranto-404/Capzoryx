@@ -63,6 +63,12 @@ In **Add records → Voice**, the website first checks for a local browser langu
 
 The public landing page introduces Agentic Mode. Collection suggestions and reminder approvals are available from the signed-in Overview.
 
+## Hisab-LM in Assistant and Add records
+
+Owners of BDT workspaces can select **Use Hisab-LM** for one completed payment or receipt with a numeric amount. Capzoryx sends that sentence to a private Hugging Face Space and checks the returned amount, direction and currency before offering an editable draft. The user confirms any save. Messages sent through this button are excluded from the conversation history passed to other chat providers. Cash forecasts and loan comparisons still use the finance engine. Photo reading and speech use their dedicated recognition pipelines.
+
+Set `CAPZORYX_HISAB_HF_TOKEN` on the API host to a token with access to the private Space. Verify that `/api/auth/capabilities` returns `hisab_lm: true`, then test a synthetic sentence from an isolated BDT workspace. The capability confirms configuration. An editable draft for the expected amount, with the ledger revision unchanged before confirmation, verifies inference and the review flow. If the model returns an unverified amount or direction, correct the sentence or use the Assistant’s standard send button.
+
 ## Free-tier release gates
 
 See docs/RESOURCES.md for the website, app and isolated QA environments. A local keypair can be used in a separate development checkout by replacing the public key map and setting the corresponding private key through the environment.
