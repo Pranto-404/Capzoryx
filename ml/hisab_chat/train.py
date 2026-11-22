@@ -56,6 +56,8 @@ def main():
     p.add_argument('--base', choices=sorted(BASES), default='Qwen/Qwen3-4B-Instruct-2507')
     p.add_argument('--epochs', type=int, default=2)
     p.add_argument('--gguf', action='store_true', help='also export a q4_k_m GGUF for llama.cpp or Ollama')
+    p.add_argument('--push', metavar='OWNER/REPO', help='upload the GGUF and training.json to a private Hugging Face '
+                   'model repo (needs HF_TOKEN with write access)')
     a = p.parse_args()
     rows, manifest = load(a.data)
 
@@ -102,6 +104,26 @@ def main():
                     best_validation_loss=trainer.state.best_metric, gpu=torch.cuda.get_device_name(0))
     (a.output / 'training.json').write_text(json.dumps(evidence, indent=2) + '\n')
     print(json.dumps(evidence))
+    if a.push:
+        push(a.output, a.push)
+
+
+def push(output, repo):
+    """Publish the quantised model privately so the Hugging Face Space can serve it with the PC switched off."""
+    import shutil
+    from huggingface_hub import HfApi
+    files = sorted((output / 'gguf').glob('*.gguf'))
+    if not files:
+        raise SystemExit('No GGUF to upload; run with --gguf')
+    # A fixed file name lets the Space find the newest model without code changes.
+    shutil.copy(max(files, key=lambda f: f.stat().st_size), output / 'gguf' / 'hisab-chat-q4_k_m.gguf')
+    api = HfApi()
+    api.create_repo(repo, private=True, exist_ok=True)
+    api.upload_file(path_or_fileobj=str(output / 'gguf' / 'hisab-chat-q4_k_m.gguf'), path_in_repo='hisab-chat-q4_k_m.gguf',
+                    repo_id=repo, commit_message='Hisab-Chat model')
+    api.upload_file(path_or_fileobj=str(output / 'training.json'), path_in_repo='training.json', repo_id=repo,
+                    commit_message='Training record')
+    print(f'Uploaded to https://huggingface.co/{repo}')
 
 
 if __name__ == '__main__':
