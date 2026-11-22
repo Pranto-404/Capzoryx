@@ -12,6 +12,8 @@ const NEGATED_RECEIPT=/\b(?:na|nai|not|never)\b|নিইনি|(?<!\S)না(?!
 const isReceipt=(text:string)=>IN.test(text)||TAKEN.test(text)&&FROM_SOURCE.test(text);
 const OUT=/\b(?:paid|pay|spent|spend|bought|buy|purchased|purchase|expense|rent|salary|wages|withdrew|gave|dibo|dilam|diyechi|disi|kinechi|kinlam)\b|দিলাম|দিয়েছি|খরচ|কিনেছি|কিনলাম|ভাড়া|বেতন|পরিশোধ/i;
 const INVOICE=/\b(?:bill|invoice|payable|owe|owed|due)\b|বাকি|বিল|পাওনা/i;
+const PAID_ALREADY=/\b(?:paid|gave|dilam|diyechi|disi)\b|দিলাম|দিয়েছি|পরিশোধ/i;
+export const looksLikeOpenBill=(text:string)=>INVOICE.test(text)&&!PAID_ALREADY.test(text)&&!isReceipt(text);
 const QUESTION=/\?|^(?:how|what|why|when|where|which|who|can|could|should|do|does|is|are|will|would|please explain|show|tell|list|কত|কি|কী|কেন|কিভাবে|কীভাবে)\b/i;
 const MULT:Record<string,number>={k:1e3,thousand:1e3,হাজার:1e3,hajar:1e3,hazar:1e3,lakh:1e5,lac:1e5,লাখ:1e5,lakhs:1e5,crore:1e7,কোটি:1e7,m:1e6,million:1e6};
 const MONTHS=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
@@ -111,8 +113,7 @@ export function parseRecordSentence(raw:string,opts:ParseOptions,tagged?:TaggedF
   const warnings:string[]=[];
   if(!explicit && /\bkal\b|কাল/i.test(text))warnings.push('Please confirm the date: kal can mean yesterday or tomorrow.');
   // "paid"/"gave" with a past action is cash out; "owe"/"due"/"bill" without a payment verb is an unpaid supplier bill.
-  const paidAlready=/\b(?:paid|gave|dilam|diyechi|disi)\b|দিলাম|দিয়েছি|পরিশোধ/i.test(text);
-  const isInvoice=tagged?tagged.direction==='due':invoice&&!paidAlready&&!inflow;
+  const isInvoice=tagged?tagged.direction==='due':invoice&&!PAID_ALREADY.test(text)&&!inflow;
   const memo=title(text).slice(0,200);
   const base={ok:true,currency:opts.currency,workspace_currency:opts.currency,currency_mismatch:false,can_save:true,confidence:0.8,memo};
   if(isInvoice){
