@@ -1,6 +1,7 @@
 import json
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import httpx
 
@@ -21,6 +22,7 @@ def test_source_requires_one_unambiguous_settled_amount():
         Decimal("1500"), "outflow", date(2026, 11, 21)
     )
     assert hisab_hosted.facts("Rahman paid me 1,25,000", today) == (Decimal("125000"), "inflow", today)
+    assert hisab_hosted.facts("Got paid Tk 350.25 by Oak Shop.", today) == (Decimal("350.25"), "inflow", today)
     assert hisab_hosted.facts("ami 500 tk niyechi rahim theke", today) == (Decimal("500"), "inflow", today)
     for text in ("I paid 500 BDT and received 50 BDT", "I paid 5,00 BDT", "I paid 1e1 BDT",
                  "I didn't pay BDT 500", "I paid BDT -500", "I paid USD 12, equivalent to BDT 1500",
@@ -48,6 +50,19 @@ def test_private_transport_preserves_data_boundary(monkeypatch):
     monkeypatch.setattr(httpx, "Client", lambda **kwargs: real_client(transport=httpx.MockTransport(fake), **kwargs))
     assert hisab_hosted.hosted_extract("I paid BDT 1250.") == prediction
     assert calls == [("POST", hisab_hosted.SPACE), ("GET", f"{hisab_hosted.SPACE}/{event}")]
+
+
+def test_challenge_amount_and_direction_remain_available_without_any_model():
+    fixture = Path(__file__).resolve().parents[2] / 'evals/fixtures/hisab_cash_challenge.jsonl'
+    for line in fixture.read_bytes().splitlines():
+        case = json.loads(line)
+        source = hisab_hosted.facts(case['text'], date(2026, 11, 23))
+        if 'amount' not in case:
+            assert source is None, case['id']
+            continue
+        assert source[:2] == (Decimal(case['amount']), case['direction']), case['id']
+        if case.get('date'):
+            assert source[2].isoformat() == case['date'], case['id']
 
 
 def test_hosted_draft_needs_consent_and_never_posts_a_record(world, monkeypatch):
@@ -98,6 +113,7 @@ def test_hosted_failure_uses_only_consented_approved_api_and_revalidates_reply(w
     path = '/api/assist/hisab'
     assert client.post(path, json=payload).json()['source'] == 'verified'
     assert client.post('/api/account/profile', json={'smart_assist': True}).status_code == 200
+    assert client.get('/api/auth/capabilities').json()['record_api_fallback'] is False
     assert client.post(path, json=payload).json()['source'] == 'verified'  # free Gemini cannot read records
     assert not requests
     monkeypatch.setenv('SAFELEDGER_LLM_PROFILE', 'compatible')
@@ -105,6 +121,7 @@ def test_hosted_failure_uses_only_consented_approved_api_and_revalidates_reply(w
     monkeypatch.setenv('SAFELEDGER_LLM_MODEL', 'synthetic-record-model')
     monkeypatch.setenv('SAFELEDGER_LLM_ALLOWED_HOSTS', 'api.openai.com')
     monkeypatch.setenv('SAFELEDGER_RECORD_PROVIDER_NO_TRAINING', '1')
+    assert client.get('/api/auth/capabilities').json()['record_api_fallback'] is True
     assert client.post(path, json={**payload, 'allow_api_fallback': False}).json()['source'] == 'verified'
     assert client.post(path, json={**payload, 'text': 'I received USD 500'}).status_code == 422
     assert not requests
