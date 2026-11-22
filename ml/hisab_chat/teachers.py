@@ -1,6 +1,6 @@
 """Teachers for building Hisab-Chat data: a local model on the GPU plus free API models under a daily budget.
 
-The local teacher (for example Gemma-3-12B served by llama-server on the RTX 5060 Ti) does the bulk work without
+The local teacher (Qwen3-30B-A3B, or Gemma-3-12B with less RAM, served by llama-server on the RTX 5060 Ti) does the bulk work without
 limits. Free API teachers are spent where quality matters most, each held to its requests per minute and to a daily
 budget kept in a small usage file, leaving a reserve so the live bot's free quota is never used up. When a budget is
 spent, the local teacher takes over.
@@ -119,6 +119,6 @@ class Teachers:
 
 def add_arguments(parser):
     parser.add_argument('--local-teacher-url', default='', help='OpenAI-compatible URL of the GPU teacher, e.g. '
-                        'http://127.0.0.1:8081/v1 (llama-server with gemma-3-12b-it)')
+                        'http://127.0.0.1:8081/v1 (llama-server with Qwen3-30B-A3B)')
     parser.add_argument('--local-teacher-model', default='teacher')
     parser.add_argument('--local-teacher-key', default='')

@@ -53,10 +53,14 @@ git clone https://github.com/ggml-org/llama.cpp && cmake -S llama.cpp -B llama.c
 The GPU does the bulk work; free API teachers are only used for grading, within a daily budget that leaves 30% of
 each quota for the live bot (`teachers.py`, usage kept in `~/.cache/capzoryx/teacher_usage.json`).
 
-**A. Teacher on the GPU writes natural conversations (~30–40 min).** Gemma-3-12B, 4-bit, eight parallel slots:
+**A. Teacher on the GPU writes natural conversations (~30–40 min).** Qwen3-30B-A3B is a mixture-of-experts model:
+30B parameters of knowledge, but only 3B work on each word, so it runs about as fast as a small model. In 4-bit it
+needs ~19 GB, so `--n-cpu-moe` keeps some expert layers in system RAM (32 GB is enough) and the rest on the GPU.
+With 16 GB of RAM use `ggml-org/gemma-3-12b-it-GGUF:Q4_K_M` without `--n-cpu-moe` instead.
 
 ```bash
-llama-server -hf ggml-org/gemma-3-12b-it-GGUF:Q4_K_M --port 8081 -ngl 99 -c 32768 -np 8 -fa on &
+TEACHER=unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q4_K_M
+llama-server -hf $TEACHER --port 8081 -ngl 99 --n-cpu-moe 16 -c 16384 -np 8 -fa on &
 python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 3000 \
     --local-teacher-url http://127.0.0.1:8081/v1 --workers 8
 ```
@@ -72,7 +76,7 @@ python -m ml.hisab_chat.train --data data/hisab_chat --output runs/hisab-chat --
 
 ```bash
 llama-server -m runs/hisab-chat/gguf/hisab-chat-q4_k_m.gguf --port 8080 -ngl 99 -c 8192 -np 8 --api-key LOCAL &
-llama-server -hf ggml-org/gemma-3-12b-it-GGUF:Q4_K_M --port 8081 -ngl 99 -c 16384 -np 8 -fa on &
+llama-server -hf $TEACHER --port 8081 -ngl 99 --n-cpu-moe 26 -c 16384 -np 8 -fa on &   # more experts in RAM: the student uses part of the GPU
 python -m ml.hisab_chat.self_play --student-url http://127.0.0.1:8080/v1 --student-key LOCAL \
     --local-teacher-url http://127.0.0.1:8081/v1 --examples 600 --workers 8 --minutes 40 \
     --out data/hisab_chat/selfplay-r1.jsonl
@@ -89,11 +93,14 @@ calls spent today.
 ```bash
 kill %1 %2
 python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 3000 \
-    --local-teacher-url http://127.0.0.1:8081/v1 --extra data/hisab_chat/selfplay-r1.jsonl   # restart 8081 first
+    --local-teacher-url http://127.0.0.1:8081/v1 --extra data/hisab_chat/selfplay-r1.jsonl   # restart the step-A teacher first
 python -m ml.hisab_chat.train --data data/hisab_chat --output runs/hisab-chat-r2 --gguf --push Pranto-404/hisab-chat-gguf
 ```
 
 Repeat C–D (`-r2`, `-r3`) while the mean score keeps rising. One full round takes about 2–2.5 hours.
+
+If llama-server reports it is out of memory, raise `--n-cpu-moe` by 4 and start it again; if the GPU sits below
+~90% in `nvidia-smi` and memory is free, lower it by 4 for more speed.
 
 ### 3. Measure before you claim
 
