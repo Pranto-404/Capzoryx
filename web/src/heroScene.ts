@@ -19,7 +19,7 @@ export function mountHeroScene(host:HTMLElement,{theme,still}:{theme:Theme;still
 
   const scene=new THREE.Scene();
   const camera=new THREE.PerspectiveCamera(42,1,0.1,100);
-  camera.position.set(0,0.4,8.6);camera.lookAt(0,-0.35,0);
+  camera.position.set(0,0.4,8.6);camera.lookAt(0,-1.25,0);
   const world=new THREE.Group();
   scene.add(world);
   const disposables:{dispose:()=>void}[]=[];
@@ -105,7 +105,7 @@ export function mountHeroScene(host:HTMLElement,{theme,still}:{theme:Theme;still
     if(!width||!height)return;
     renderer.setSize(width,height,false);
     camera.aspect=width/height;
-    camera.position.z=width<520?10.6:8.6;
+    camera.position.z=width<520?11.2:9.8;
     camera.updateProjectionMatrix();
   }
   const sizes=new ResizeObserver(resize);sizes.observe(host);resize();
