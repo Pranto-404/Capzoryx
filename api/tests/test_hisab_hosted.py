@@ -21,10 +21,12 @@ def test_source_requires_one_unambiguous_settled_amount():
         Decimal("1500"), "outflow", date(2026, 11, 21)
     )
     assert hisab_hosted.facts("Rahman paid me 1,25,000", today) == (Decimal("125000"), "inflow", today)
+    assert hisab_hosted.facts("ami 500 tk niyechi rahim theke", today) == (Decimal("500"), "inflow", today)
     for text in ("I paid 500 BDT and received 50 BDT", "I paid 5,00 BDT", "I paid 1e1 BDT",
                  "I didn't pay BDT 500", "I paid BDT -500", "I paid USD 12, equivalent to BDT 1500",
                  "I paid 50 lakh 2 hajar taka", "On 2026-12-01 I paid BDT 100", "Did I pay Rahman 500?",
-                 "I paid 500.001", "I paid 500 CHF", "I paid −500", "I paid 500₴", "If I paid 500"):
+                 "I paid 500.001", "I paid 500 CHF", "I paid −500", "I paid 500₴", "If I paid 500",
+                 "ami 500 tk niyechi na rahim theke", "ami 500 tk niyechi"):
         assert hisab_hosted.facts(text, today) is None
 
 
@@ -65,7 +67,13 @@ def test_hosted_draft_needs_consent_and_never_posts_a_record(world, monkeypatch)
     assert reply.json()["draft"]["vendor_name"] == "rahman"
     assert reply.json()["draft"]["memo"] == sentence
     assert reply.json()["source"] == "hisab_lm"
-    prediction["amount"] = "1200"
+    prediction.update(direction="inflow", amount="500", vendor="Rahim")
+    receipt = client.post(path, json={"text": "ami 500 tk niyechi rahim theke", "consent": True}).json()
+    assert receipt["source"] == "hisab_lm"
+    assert receipt["draft"]["amount_minor"] == 50000
+    assert receipt["draft"]["direction"] == "inflow"
+    assert receipt["draft"]["vendor_name"] == "rahim"
+    prediction.update(direction="outflow", amount="1200")
     reply = client.post(path, json={"text": sentence, "consent": True}).json()
     assert reply["source"] == "verified" and reply["draft"]["amount_minor"] == 50000
     assert client.get("/api/workspace").json()["dataset_revision"] == baseline

@@ -6,6 +6,10 @@ import type {Model,TaggedFields} from './hisabTagger';
 const BN='০১২৩৪৫৬৭৮৯';
 export const asciiDigits=(s:string)=>s.replace(/[০-৯]/g,c=>String(BN.indexOf(c)));
 const IN=/\b(?:received|receive|got paid|got|earned|earn|sold|sale|sales|collected|collect|deposit(?:ed)?|income|came in|paid me|pailam|peyechi|pelam|peyesi|nilam)\b|পেয়েছি|পেলাম|বিক্রি|আয়|জমা|গ্রহণ/i;
+const TAKEN=/\b(?:niyechi|niyechhi|niyesi|nilam)\b|নিয়েছি|নিয়েছি|নিলাম/i;
+const FROM_SOURCE=/\b(?:from|theke)\b|থেকে/i;
+const NEGATED_RECEIPT=/\b(?:na|nai|not|never)\b|নিইনি|(?<!\S)না(?![\p{L}\p{M}])/iu;
+const isReceipt=(text:string)=>IN.test(text)||TAKEN.test(text)&&FROM_SOURCE.test(text);
 const OUT=/\b(?:paid|pay|spent|spend|bought|buy|purchased|purchase|expense|rent|salary|wages|withdrew|gave|dibo|dilam|diyechi|disi|kinechi|kinlam)\b|দিলাম|দিয়েছি|খরচ|কিনেছি|কিনলাম|ভাড়া|বেতন|পরিশোধ/i;
 const INVOICE=/\b(?:bill|invoice|payable|owe|owed|due)\b|বাকি|বিল|পাওনা/i;
 const QUESTION=/\?|^(?:how|what|why|when|where|which|who|can|could|should|do|does|is|are|will|would|please explain|show|tell|list|কত|কি|কী|কেন|কিভাবে|কীভাবে)\b/i;
@@ -58,7 +62,7 @@ function findDate(text:string,today:Date):{date:string;explicit:boolean}{
   if(/\byesterday\b|গতকাল|\bgotokal\b/.test(t))return {date:iso(addDays(today,-1)),explicit:true};
   if(/\btomorrow\b|আগামীকাল/.test(t))return {date:iso(addDays(today,1)),explicit:true};
   if(/\bkal\b|কাল/.test(t)) {
-    if(/\b(?:dilam|pailam|pelam|paid|received)\b|দিলাম|পেলাম/.test(t))return {date:iso(addDays(today,-1)),explicit:true};
+    if(/\b(?:dilam|pailam|pelam|paid|received)\b|দিলাম|পেলাম/.test(t)||TAKEN.test(t)&&FROM_SOURCE.test(t))return {date:iso(addDays(today,-1)),explicit:true};
     if(/\b(?:dibo|dite hobe|will)\b|দিবো|দেব|দিতে হবে/.test(t))return {date:iso(addDays(today,1)),explicit:true};
   }
   const isoM=t.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);if(isoM)return {date:isoM[0],explicit:true};
@@ -85,14 +89,16 @@ function findParty(text:string,amountSpan:[number,number]):string{
   // Local phrasing puts the party before its case marker (Shapla ke / শাপলাকে).
   const localHead=head.trim().replace(/^(?:(?:আমি|আজ|গতকাল|কাল|ami|aj|kal|gotokal)\s+)+/iu,'');
   const local=localHead.match(/^([\p{L}\p{M}][\p{L}\p{M}'.-]*(?:\s+[\p{L}\p{M}][\p{L}\p{M}'.-]*){0,2}?)(?:\s+(?:ke|theke|থেকে|কে)|কে)$/iu);
-  return title(named(tail)||named(head)||direct?.[1]||local?.[1]||'');
+  const localTail=tail.trim().match(/^(?:\b(?:niyechi|niyechhi|niyesi|nilam)\b|নিয়েছি|নিয়েছি|নিলাম)\s+([\p{L}\p{M}][\p{L}\p{M}'.-]*(?:\s+[\p{L}\p{M}][\p{L}\p{M}'.-]*){0,2}?)\s+(?:theke|থেকে)(?![\p{L}\p{M}])/iu);
+  return title(named(tail)||named(head)||direct?.[1]||local?.[1]||localTail?.[1]||'');
 }
 
 type ParseOptions={currency:string;digits:number;today?:Date};
 export function parseRecordSentence(raw:string,opts:ParseOptions,tagged?:TaggedFields):Draft|null{
   const text=expandLocalAmounts(asciiDigits(raw.normalize('NFC'))).replace(/\s+/g,' ').trim();
   if(text.length<4||text.length>400||QUESTION.test(text))return null;
-  const inflow=IN.test(text),outflow=OUT.test(text),invoice=INVOICE.test(text);
+  if(TAKEN.test(text)&&NEGATED_RECEIPT.test(text))return null;
+  const inflow=isReceipt(text),outflow=OUT.test(text),invoice=INVOICE.test(text);
   if(!tagged&&!inflow&&!outflow&&!invoice)return null;
   const ruleAmount=findAmount(text,opts.digits);
   if(tagged&&ruleAmount&&tagged.amountMinor!==ruleAmount.minor)return null;
@@ -150,5 +156,5 @@ export const slug=(name:string)=>name.toLowerCase().replace(/[^a-z0-9]+/g,'-').r
 /** True when a sentence looks like someone describing a transaction but the on-device parser could not read it. */
 export function looksLikeTransaction(raw:string):boolean{
   const text=asciiDigits(raw);
-  return !QUESTION.test(text)&&/\d/.test(text)&&(IN.test(text)||OUT.test(text)||INVOICE.test(text));
+  return !QUESTION.test(text)&&/\d/.test(text)&&(isReceipt(text)||OUT.test(text)||INVOICE.test(text));
 }
