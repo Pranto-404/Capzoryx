@@ -1,6 +1,6 @@
 # Hisab-Chat: train and serve Capzoryx's own chat model on one RTX 5060 Ti
 
-Hisab-Chat is the first model the Telegram, WhatsApp and in-app chat try (`api/app/chat/llm.py`). Free API tiers
+Hisab-Chat is the first model the Telegram and in-app chat try (`api/app/chat/llm.py`). Free API tiers
 are only the fallback. Everything below is free: open models, your own GPU and a free Cloudflare tunnel.
 
 ## 1. Set up (Windows: use WSL2 Ubuntu)

@@ -38,6 +38,9 @@ def schema(db):
         db.execute('ALTER TABLE telegram_links ADD COLUMN records_enabled INTEGER NOT NULL DEFAULT 0 CHECK(records_enabled IN (0,1))')
     from api.app.chat import brain
     brain.schema(db)
+    # The WhatsApp channel was retired before it was configured; drop its empty tables.
+    db.execute('DROP TABLE IF EXISTS whatsapp_links')
+    db.execute('DROP TABLE IF EXISTS whatsapp_updates')
 
 
 def configured():

@@ -3,8 +3,6 @@ import {Icon} from './Icon';
 import {LANGUAGES,t,T} from './i18n';
 import {Logo} from './Logo';
 import {money} from './api';
-import {formatDate} from './format';
-import type {Draft} from './types';
 
 const audiences:{icon:string;title:string;text:string}[]=[
  {icon:'Invoices',title:T('Shops and retailers'),text:T('Track daily cash and supplier bills without a spreadsheet.')},
@@ -53,38 +51,6 @@ function Counter({to,suffix}:{to:number;suffix:string}){
     io.observe(el);return()=>{io.disconnect();cancelAnimationFrame(raf);};
   },[to]);
   return <strong ref={ref}>{v}{suffix}</strong>;
-}
-
-/** A visitor can try the local record parser without creating a workspace. */
-export function HeroDemo(){
-  const [text,setText]=useState('ami 3000 taka peyechi');
-  const [draft,setDraft]=useState<Draft|null>(null);
-  const [error,setError]=useState('');
-  const [busy,setBusy]=useState(false);
-  async function preview(){
-    setBusy(true);setError('');setDraft(null);
-    try{
-      const {parseRecordSentence}=await import('./recordParser');
-      const next=parseRecordSentence(text,{currency:'BDT',digits:2});
-      if(!next)setError(t('Include an amount and say whether you paid or received it.'));
-      else if(next.currency_mismatch)setError(t('This example uses BDT. Try an amount in taka.'));
-      else setDraft(next);
-    }catch{setError(t('Could not load the preview. Please try again.'));}
-    finally{setBusy(false);}
-  }
-  return <form id="try-record" className="hero-demo record-demo" onSubmit={e=>{e.preventDefault();void preview();}}>
-    <label htmlFor="try-sentence">{t('Try a transaction in Bangla, Banglish or English')}</label>
-    <input id="try-sentence" value={text} maxLength={400} disabled={busy} required
-      onChange={e=>{setText(e.target.value);setDraft(null);setError('');}}/>
-    <div className="actions"><button disabled={busy||!text.trim()}>{busy?t('Reading…'):t('Preview record')}</button>
-      <small>{t('Private preview on this device. Nothing is saved.')}</small></div>
-    <a className="link" href="#agentic-demo">{t('Agentic Mode')}</a>
-    <div role="status">{error&&<p>{error}</p>}{draft&&<div className="record-result">
-      <strong>{draft.kind==='invoice'?t('Unpaid supplier invoice'):draft.direction==='inflow'?t('Money in'):t('Money out')}</strong>
-      <b>{money(draft.amount_minor,draft.currency)}</b><span>{formatDate(draft.effective_on)}</span>
-      {draft.warnings.map(warning=><small key={warning}>{t(warning)}</small>)}
-    </div>}</div>
-  </form>;
 }
 
 function ScanIllustration(){
@@ -176,12 +142,6 @@ export function Landing({onStart}:{onStart:()=>void}){
         <article className="tile spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name="globe"/></span><h3>{t('Your language, any currency')}</h3><p>{t('Use it in your language and see amounts at live exchange rates.')}</p></article>
         <article className="tile tile-half spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name="Audit"/></span><h3>{t('Reports and history')}</h3><p>{t('Download a PDF report and see a clear, tamper-evident history.')}</p></article><article className="tile tile-half spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name="Settings"/></span><h3>{t('Work with your team')}</h3><p>{t('Invite your accountant or a partner and choose what they can do.')}</p></article>
       </div>
-    </section>
-
-    <section id="agentic-demo" className="land-section" aria-labelledby="land-agentic">
-      <h2 id="land-agentic" data-reveal>{t('Agentic Mode')}</h2>
-      <p data-reveal>{t('Review collection suggestions and approve customer reminders in your workspace.')}</p>
-      <button type="button" className="secondary" onClick={onStart}>{t('Sign in')}</button>
     </section>
 
     <section id="preview" className="land-section" aria-labelledby="land-how">

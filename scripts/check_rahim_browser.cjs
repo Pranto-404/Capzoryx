@@ -40,9 +40,6 @@ const fs=require('node:fs/promises');
     }
     const owner=await session();
     await owner.goto(origin);
-    await owner.locator('#try-sentence').fill('আজ ৫০০০ টাকা খরচ করলাম');
-    await owner.getByRole('button',{name:'Preview record'}).click();
-    await owner.locator('#try-record [role="status"]').filter({hasText:'5,000.00'}).waitFor();
     await owner.getByRole('button',{name:'Create account',exact:true}).click();
     await owner.locator('#username').fill('rahim_synthetic');
     await owner.locator('#password').fill('Fictional demo business 57!');
