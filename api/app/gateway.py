@@ -71,10 +71,10 @@ def local_tasks():
     return set(os.getenv('SAFELEDGER_LOCAL_LLM_TASKS', '').split(',')) & {'explain','briefing','message','extract_text','agent_plan'}
 
 
-def providers_for(task, preferred=None):
+def providers_for(task, preferred=None, *, include_local=True):
     from api.app.agents.provider import ChatProvider
     configs = []
-    if task in local_tasks() and os.getenv('SAFELEDGER_LOCAL_LLM_URL'):
+    if include_local and task in local_tasks() and os.getenv('SAFELEDGER_LOCAL_LLM_URL'):
         configs.append({'profile':'hisab_lm'})
     if preferred:
         configs.append({'model':preferred})
@@ -109,6 +109,16 @@ def disclosure():
     except ProviderError:
         pass
     return configs
+
+
+def record_backup_configured():
+    from api.app.agents.provider import ChatProvider
+    try:
+        candidate = ChatProvider()
+        permitted(candidate, 'record_data', True)
+    except ProviderError:
+        return False
+    return True
 
 
 def cache_get(key):
@@ -179,7 +189,7 @@ def metered(db, task, business_id, trace_id, provider, model, data_class, prompt
 
 
 def complete(task, messages, *, db, business_id, data_class, consent=False, trace_id=None, schema=None,
-             max_tokens=600, vision=False, approved_messages=()):
+             max_tokens=600, vision=False, approved_messages=(), include_local=True):
     from api.app import cloud
     spec = TASKS.get(task)
     if not spec or spec['data_class'] != data_class:
@@ -195,7 +205,7 @@ def complete(task, messages, *, db, business_id, data_class, consent=False, trac
     attempts = 0
     last_error = None
     try:
-        for candidate in providers_for(task, preferred):
+        for candidate in providers_for(task, preferred, include_local=include_local):
             try:
                 permitted(candidate, data_class, consent)
             except ProviderError as exc:

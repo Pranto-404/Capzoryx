@@ -85,7 +85,7 @@ function findParty(text:string,amountSpan:[number,number]):string{
     const stop=words.findIndex(word=>stops.test(word));
     return words.slice(0,stop===-1?words.length:stop).join(' ');
   };
-  const direct=head.match(/\b(?:paid|pay|gave|sent)\s+([A-Z][\w&.'-]*(?:\s+[A-Z][\w&.'-]*){0,2})\s*$/);
+  const direct=head.match(/\b(?:paid|pay|gave|sent)\s+([A-Za-z][\w&.'-]*(?:\s+[A-Za-z][\w&.'-]*){0,2})\s*$/i);
   // Local phrasing puts the party before its case marker (Shapla ke / শাপলাকে).
   const localHead=head.trim().replace(/^(?:(?:আমি|আজ|গতকাল|কাল|ami|aj|kal|gotokal)\s+)+/iu,'');
   const local=localHead.match(/^([\p{L}\p{M}][\p{L}\p{M}'.-]*(?:\s+[\p{L}\p{M}][\p{L}\p{M}'.-]*){0,2}?)(?:\s+(?:ke|theke|থেকে|কে)|কে)$/iu);

@@ -65,9 +65,11 @@ The public landing page introduces Agentic Mode. Collection suggestions and remi
 
 ## Hisab-LM in Assistant and Add records
 
-Owners of BDT workspaces can select **Use Hisab-LM** for one completed payment or receipt with a numeric amount. Capzoryx sends that sentence to a private Hugging Face Space and checks the returned amount, direction and currency before offering an editable draft. The user confirms any save. Messages sent through this button are excluded from the conversation history passed to other chat providers. Cash forecasts and loan comparisons still use the finance engine. Photo reading and speech use their dedicated recognition pipelines.
+Owners of BDT workspaces can select **Use Hisab-LM** for one completed payment or receipt. A bare amount uses the workspace currency, so `i paid rahman 500` is valid. Capzoryx verifies the amount, direction and date from the sentence, then checks the private Hugging Face Space's prediction. If the model is down or disagrees, the server can still return the verified fields. The source appears alongside the draft. The user confirms any save. Messages sent through this button are excluded from the conversation history passed to other chat providers. Cash forecasts and loan comparisons use the finance engine. Photo reading and speech use their dedicated recognition pipelines.
 
-Set `CAPZORYX_HISAB_HF_TOKEN` on the API host to a token with access to the private Space. Verify that `/api/auth/capabilities` returns `hisab_lm: true`, then test a synthetic sentence from an isolated BDT workspace. The capability confirms configuration. An editable draft for the expected amount, with the ledger revision unchanged before confirmation, verifies inference and the review flow. If the model returns an unverified amount or direction, correct the sentence or use the Assistant’s standard send button.
+Set `CAPZORYX_HISAB_HF_TOKEN` on the API host to a token with access to the private Space. Verify that `/api/auth/capabilities` returns `hisab_lm: true`, then use an isolated BDT workspace to check that a synthetic test returns `source: hisab_lm` with the expected amount and that the ledger revision changes only after confirmation. The capability alone confirms configuration.
+
+The fallback API receives the sentence only when the selected button discloses the approved backup, the owner has Smart assist enabled, and the provider is approved for record data. It is checked against the same amount and direction. See [the model and evaluation plan](HISAB_MODEL_PLAN.md) for routing, training and release criteria.
 
 ## Free-tier release gates
 
