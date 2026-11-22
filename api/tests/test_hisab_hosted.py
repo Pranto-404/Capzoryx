@@ -16,7 +16,10 @@ def test_source_requires_one_literal_settled_amount():
     assert hisab_hosted.facts("গতকাল রাহমান থেকে ৫০০ টাকা পেলাম।", today) == (
         Decimal("500"), "inflow", date(2026, 11, 21)
     )
-    for text in ("I paid 500 BDT and received 50 BDT", "I paid 5,00 BDT", "I paid 1e1 BDT",
+    assert hisab_hosted.facts("ami 500 tk niyechi rahim theke", today) == (
+        Decimal("500"), "inflow", today
+    )
+    for text in ("ami 500 tk niyechi na rahim theke", "ami 500 tk niyechi", "I paid 500 BDT and received 50 BDT", "I paid 5,00 BDT", "I paid 1e1 BDT",
                  "I didn't pay BDT 500", "I paid BDT -500", "I paid USD 12, equivalent to BDT 1500",
                  "I paid 50 lakh taka", "On 2026-12-01 I paid BDT 100"):
         assert hisab_hosted.facts(text, today) is None
@@ -57,6 +60,13 @@ def test_hosted_draft_needs_consent_and_never_posts_a_record(world, monkeypatch)
     assert reply.status_code == 200
     assert reply.json()["draft"]["amount_minor"] == 125000
     assert reply.json()["model"] == "Hisab-LM"
-    prediction["amount"] = "1200"
+    prediction.update(direction="inflow", amount="500", vendor="Rahim")
+    reply = client.post(path, json={"text": "ami 500 tk niyechi rahim theke", "consent": True})
+    assert reply.status_code == 200
+    receipt = reply.json()["draft"]
+    assert receipt["amount_minor"] == 50000
+    assert receipt["direction"] == "inflow"
+    assert receipt["vendor_name"] == "Rahim"
+    prediction.update(direction="outflow", amount="1200")
     assert client.post(path, json={"text": sentence, "consent": True}).json()["error"]["code"] == "HISAB_REVIEW_NEEDED"
     assert client.get("/api/workspace").json()["dataset_revision"] == baseline
