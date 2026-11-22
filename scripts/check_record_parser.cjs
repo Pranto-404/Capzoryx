@@ -9,6 +9,7 @@ const opts = { currency: 'BDT', digits: 2, today };
 const p = q => parseRecordSentence(q, opts);
 
 const cases = [
+  ['i paid rahman 500', {kind:'cash', direction:'outflow', amount_minor:50000, vendor_name:'rahman'}],
   ['I paid Rahman 5000 taka for freight', { kind: 'cash', direction: 'outflow', amount_minor: 500000, status: 'cleared', effective_on: '2026-10-20' }],
   ['paid 5k to Dhaka Packaging yesterday', { kind: 'cash', direction: 'outflow', amount_minor: 500000, effective_on: '2026-10-19' }],
   ['received 20,000 from Karim Traders', { kind: 'cash', direction: 'inflow', amount_minor: 2000000 }],

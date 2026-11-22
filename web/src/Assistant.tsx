@@ -6,6 +6,7 @@ import {DraftCard} from './DraftCard';
 import {formatDate,prettyVendor} from './format';
 import {localAnswer,type AssistantAction} from './localAssistant';
 import {looksLikeTransaction,parseRecordForDraft} from './recordParser';
+import {hisabDraftMessage,hisabPrivacyNote,type HisabDraftResult} from './hisabDraft';
 import type {AgentResult,CashEvent,Draft,Forecast,Invoice,Profile,Session,Snapshot} from './types';
 import {t,T} from './i18n';
 
@@ -22,6 +23,7 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
   const log=useRef<HTMLDivElement>(null);const input=useRef<HTMLTextAreaElement>(null);
   const owner=session.role==='owner';const canAddRecords=owner||session.role==='bookkeeper';const smart=!!profile?.smart_assist&&cloudAvailable;
   const canUseHisab=owner&&hisabAvailable&&currency==='BDT';
+  const allowHisabBackup=!!profile?.smart_assist&&!!profile.record_api_fallback;
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   useEffect(()=>{if(visible)input.current?.focus();},[visible]);
   useEffect(()=>{if(log.current)log.current.scrollTop=log.current.scrollHeight;},[messages,busy]);
@@ -36,8 +38,8 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
     add({role:'user',text:q,kind:useHisab?'hisab':undefined});
     try{
       if(useHisab){
-        const result=await request<{draft:Draft}>('/assist/hisab',{text:q,consent:true});
-        if(mounted.current)add({role:'assistant',kind:'hisab',text:t('Draft prepared by Hisab-LM.'),draft:result.draft});
+        const result=await request<HisabDraftResult>('/assist/hisab',{text:q,consent:true,...(allowHisabBackup?{allow_api_fallback:true}:{})});
+        if(mounted.current)add({role:'assistant',kind:'hisab',text:hisabDraftMessage(result.source),draft:result.draft});
         return;
       }
       // 1. A sentence that describes a payment or a bill becomes a draft record to confirm.
@@ -92,7 +94,7 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
     <div className="chat-log" ref={log} role="log" aria-label={t('Conversation')} aria-live="polite">
       {!messages.length&&<div className="chat-welcome"><span aria-hidden="true"><Icon name="spark"/></span><h3>{t('How can I help?')}</h3><p>{t('Ask a question, or tell me what you paid or received. I can add records for you, explain your numbers and compare loan offers.')}</p><div className="chat-suggestions">{hints.filter(h=>canAddRecords||!/^I paid/.test(h)).map(h=><button key={h} className="secondary" onClick={()=>void ask(h)}>{t(h)}</button>)}</div></div>}
       {messages.map(m=><article className={'chat-message '+m.role} key={m.id}>
-        {m.role==='assistant'&&<small>{m.kind==='hisab'?'Hisab-LM':m.kind==='smart'?t('Smart answer'):'Assistant'}</small>}
+        {m.role==='assistant'&&<small>{m.kind==='smart'?t('Smart answer'):'Assistant'}</small>}
         {m.text.split('\n\n').map((para,i)=><p key={i}>{para}</p>)}
         {m.draft&&canAddRecords&&<DraftCard canTrustVendor={owner} compact draft={m.draft} revision={revision} request={request} onSaved={onSaved} onDiscard={()=>setMessages(cur=>cur.map(x=>x.id===m.id?{...x,draft:undefined,text:t('Discarded. Nothing was added.')}:x))}/>}
         {!!m.actions?.length&&<div className="chat-actions">{m.actions.map(a=><button className="secondary" key={a} onClick={()=>onNavigate(a)}>{({Financing:t('Open Loans'),Data:t('Open Add records'),Audit:t('Open Activity')} as Record<string,string>)[a]||`Open ${a}`}</button>)}</div>}
@@ -109,7 +111,7 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
     <form className="chat-compose" onSubmit={(e:FormEvent)=>{e.preventDefault();void ask(task);}}><label htmlFor="agent-task" className="sr-only">{t('Message the assistant')}</label><textarea ref={input} id="agent-task" rows={2} placeholder={t('Ask, or say what you paid…')} maxLength={800} value={task} disabled={busy} onChange={e=>setTask(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form?.requestSubmit();}}}/><button disabled={busy||!task.trim()} aria-label={t('Send message')}>{busy?'…':<Icon name="send"/>}</button></form>
     {canUseHisab&&<div className="chat-hisab">
       <button className="secondary small" type="button" disabled={busy||task.trim().length<3||task.trim().length>400} aria-describedby="assistant-hisab-privacy" onClick={()=>void ask(task,'hisab')}>{t('Use Hisab-LM')}</button>
-      <p id="assistant-hisab-privacy" className="small muted">{task.trim().length>400?t('Use 400 characters or fewer with Hisab-LM.'):t('Hisab-LM sends this sentence to a private Hugging Face service to draft one BDT cash record. Review it before saving.')}</p>
+      <p id="assistant-hisab-privacy" className="small muted">{task.trim().length>400?t('Use 400 characters or fewer with Hisab-LM.'):hisabPrivacyNote(allowHisabBackup)}</p>
     </div>}
     <p className="chat-footnote">{smart?t('Smart assist is on · simple questions are answered on your device'):t('Answers on your device · turn on smart assist in Settings for more')}</p>
   </section>;

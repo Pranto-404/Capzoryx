@@ -186,6 +186,11 @@ class ExtractBody(Exact):
     text: str = Field(min_length=3, max_length=600)
 
 
+def predict_draft(text, db, business_id, today, *, include_local=True):
+    reply = gateway.complete('extract_text', [{'role': 'system', 'content': 'You turn a sentence about a business transaction into structured data. ' + SCHEMA_HELP.replace('{today}', today.isoformat())}, {'role': 'user', 'content': text}], db=db, business_id=business_id, data_class='record_data', consent=True, max_tokens=300, schema={'type':'object'}, include_local=include_local)
+    return cloud.parse_json_object(reply)
+
+
 @router.post('/assist/extract')
 def extract(body: ExtractBody, actor=Depends(principal), db=Depends(db_connection)):
     if actor.role != 'owner':sec.fail(403, 'OWNER_REQUIRED')
@@ -193,8 +198,7 @@ def extract(body: ExtractBody, actor=Depends(principal), db=Depends(db_connectio
     sec.budgets(db, [('extract:' + actor.user_id, 12), ('assist-all', 40)])
     ws_currency = sec.runtime_dataset(db, actor.business_id).currency
     today = today_bd()
-    text = gateway.complete('extract_text', [{'role': 'system', 'content': 'You turn a sentence about a business transaction into structured data. ' + SCHEMA_HELP.replace('{today}', today.isoformat())}, {'role': 'user', 'content': body.text}], db=db, business_id=actor.business_id, data_class='record_data', consent=True, max_tokens=300, schema={'type':'object'})
-    return dict(draft=normalize_draft(cloud.parse_json_object(text), ws_currency, today), simulation_only=True)
+    return dict(draft=normalize_draft(predict_draft(body.text, db, actor.business_id, today), ws_currency, today), simulation_only=True)
 
 
 SCAN_SYSTEM = (

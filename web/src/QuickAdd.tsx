@@ -6,6 +6,7 @@ import {useCurrency} from './Currency';
 import {DraftCard} from './DraftCard';
 import {prepareDocumentPhoto} from './format';
 import {parseRecordForDraft} from './recordParser';
+import {hisabDraftMessage,hisabPrivacyNote,type HisabDraftResult} from './hisabDraft';
 import type {Draft,Profile} from './types';
 import {t,useI18n} from './i18n';
 
@@ -16,13 +17,14 @@ export function QuickAdd({request,revision,onSaved,profile,owner,cloudAvailable,
   const {currency,digits}=useCurrency();
   const {code}=useI18n();
   const [photoText,setPhotoText]=useState('');
-  const [hisabDraft,setHisabDraft]=useState(false);
+  const [hisabDraft,setHisabDraft]=useState<HisabDraftResult['source']|null>(null);
   const [text,setText]=useState('');const [busy,setBusy]=useState<''|'photo'|'text'|'hisab'>('');const [error,setError]=useState('');
   const [draft,setDraft]=useState<Draft|null>(null);const [preview,setPreview]=useState('');
   const file=useRef<HTMLInputElement>(null);const gallery=useRef<HTMLInputElement>(null);
   const smart=owner&&!!profile?.smart_assist&&cloudAvailable;
+  const allowHisabBackup=smart&&!!profile?.record_api_fallback;
   async function scan(f:File|undefined){
-    if(!f)return;setHisabDraft(false);setError('');setDraft(null);setPhotoText('');setPreview('');setBusy('photo');
+    if(!f)return;setHisabDraft(null);setError('');setDraft(null);setPhotoText('');setPreview('');setBusy('photo');
     try{
       const image=await prepareDocumentPhoto(f);setPreview(image);
       const {readPhotoText,draftFromBill}=await import('./billPhoto');
@@ -35,11 +37,11 @@ export function QuickAdd({request,revision,onSaved,profile,owner,cloudAvailable,
     finally{setBusy('');if(file.current)file.current.value='';if(gallery.current)gallery.current.value='';}
   }
   async function read(hosted=false){
-    const sentence=text.trim();if(!sentence)return;setHisabDraft(false);setError('');setDraft(null);setPhotoText('');setPreview('');setBusy(hosted?'hisab':'text');
+    const sentence=text.trim();if(!sentence||(hosted&&(sentence.length<3||sentence.length>400)))return;setHisabDraft(null);setError('');setDraft(null);setPhotoText('');setPreview('');setBusy(hosted?'hisab':'text');
     try{
       if(hosted){
-        const result=await request<{draft:Draft}>('/assist/hisab',{text:sentence,consent:true});
-        setDraft(result.draft);setHisabDraft(true);return;
+        const result=await request<HisabDraftResult>('/assist/hisab',{text:sentence,consent:true,...(allowHisabBackup?{allow_api_fallback:true}:{})});
+        setDraft(result.draft);setHisabDraft(result.source??'hisab_lm');return;
       }
       const local=await parseRecordForDraft(sentence,{currency,digits});
       if(local){setDraft(local);return;}
@@ -70,13 +72,13 @@ export function QuickAdd({request,revision,onSaved,profile,owner,cloudAvailable,
         {owner&&profile?.smart_assist&&profile.speech_provider&&<VoiceCapture provider={profile.speech_provider} request={request} onText={setText}/> }
         <div className="actions">
           <button disabled={busy!==''||!text.trim()} onClick={()=>void read()}>{busy==='text'?t('Reading…'):t('Read it')}</button>
-          {owner&&hisabAvailable&&currency==='BDT'&&<button className="secondary" type="button" disabled={busy!==''||!text.trim()} aria-describedby="hisab-privacy" onClick={()=>void read(true)}>{busy==='hisab'?t('Reading with Hisab-LM…'):t('Use Hisab-LM')}</button>}
+          {owner&&hisabAvailable&&currency==='BDT'&&<button className="secondary" type="button" disabled={busy!==''||text.trim().length<3||text.trim().length>400} aria-describedby="hisab-privacy" onClick={()=>void read(true)}>{busy==='hisab'?t('Reading with Hisab-LM…'):t('Use Hisab-LM')}</button>}
         </div>
-        {owner&&hisabAvailable&&currency==='BDT'&&<p id="hisab-privacy" className="small muted">{t('Hisab-LM sends this sentence to a private Hugging Face service to draft one BDT cash record. Review it before saving.')}</p>}
+        {owner&&hisabAvailable&&currency==='BDT'&&<p id="hisab-privacy" className="small muted">{text.trim().length>400?t('Use 400 characters or fewer with Hisab-LM.'):hisabPrivacyNote(allowHisabBackup)}</p>}
       </div>
     </div>
     {error&&<p className="error" role="alert">{error}</p>}
-    {draft&&hisabDraft&&<p className="notice small" role="status">{t('Draft prepared by Hisab-LM.')}</p>}
+    {draft&&hisabDraft&&<p className="notice small" role="status">{hisabDraftMessage(hisabDraft)}</p>}
     {draft&&<div className={preview?'scan-compare has-photo':'scan-compare'}>{preview&&<figure className="scan-photo"><img src={preview} alt={t('Your photo')}/><figcaption className="small muted">{t('Compare with your photo before adding')}</figcaption></figure>}<DraftCard canTrustVendor={owner} key={JSON.stringify(draft)} draft={draft} revision={revision} request={request} onDiscard={()=>{setDraft(null);setPreview('');}} onSaved={async()=>{await onSaved();setText('');setPreview('');}}/></div>}
   </section>;
 }

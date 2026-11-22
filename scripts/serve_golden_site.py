@@ -24,7 +24,7 @@ def main():
         origin=f"http://127.0.0.1:{sock.getsockname()[1]}"
         # The test never connects to a hosted database or sends messages.
         for key in list(os.environ):
-            if key.startswith(("SAFELEDGER_","TURSO_","VERCEL","RENDER","RESEND_","SMTP_")):
+            if key.startswith(("SAFELEDGER_","CAPZORYX_HISAB_","TURSO_","VERCEL","RENDER","RESEND_","SMTP_")):
                 del os.environ[key]
         key=Ed25519PrivateKey.generate()
         b64=lambda b:base64.b64encode(b).decode()

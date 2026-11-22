@@ -4,11 +4,11 @@ from decimal import Decimal
 
 import httpx
 
-from api.app import hisab_hosted
+from api.app import cloud, hisab_hosted
 from api.tests.test_accounts import signup, world
 
 
-def test_source_requires_one_literal_settled_amount():
+def test_source_requires_one_unambiguous_settled_amount():
     today = date(2026, 11, 22)
     assert hisab_hosted.facts("On 2026-11-21 I paid BDT 1,250.50 to Rahman.", today) == (
         Decimal("1250.50"), "outflow", date(2026, 11, 21)
@@ -16,9 +16,15 @@ def test_source_requires_one_literal_settled_amount():
     assert hisab_hosted.facts("গতকাল রাহমান থেকে ৫০০ টাকা পেলাম।", today) == (
         Decimal("500"), "inflow", date(2026, 11, 21)
     )
+    assert hisab_hosted.facts("i paid rahman 500", today) == (Decimal("500"), "outflow", today)
+    assert hisab_hosted.facts("Mitu ke 1.5k disi kal", today) == (
+        Decimal("1500"), "outflow", date(2026, 11, 21)
+    )
+    assert hisab_hosted.facts("Rahman paid me 1,25,000", today) == (Decimal("125000"), "inflow", today)
     for text in ("I paid 500 BDT and received 50 BDT", "I paid 5,00 BDT", "I paid 1e1 BDT",
                  "I didn't pay BDT 500", "I paid BDT -500", "I paid USD 12, equivalent to BDT 1500",
-                 "I paid 50 lakh taka", "On 2026-12-01 I paid BDT 100"):
+                 "I paid 50 lakh 2 hajar taka", "On 2026-12-01 I paid BDT 100", "Did I pay Rahman 500?",
+                 "I paid 500.001", "I paid 500 CHF", "I paid −500", "I paid 500₴", "If I paid 500"):
         assert hisab_hosted.facts(text, today) is None
 
 
@@ -45,18 +51,57 @@ def test_private_transport_preserves_data_boundary(monkeypatch):
 def test_hosted_draft_needs_consent_and_never_posts_a_record(world, monkeypatch):
     client, _ = world
     path = "/api/assist/hisab"
-    sentence = "I paid BDT 1250 to Rahman."
+    sentence = "i paid rahman 500"
     assert client.post(path, json={"text": sentence, "consent": True}).status_code == 401
     signup(client, "hisab_owner")
     monkeypatch.setenv("CAPZORYX_HISAB_HF_TOKEN", "synthetic-read-token")
     baseline = client.get("/api/workspace").json()["dataset_revision"]
-    prediction = {"kind": "cash", "direction": "outflow", "amount": "1250", "currency": "BDT", "vendor": "Rahman"}
+    prediction = {"kind": "cash", "direction": "outflow", "amount": "500", "currency": "BDT", "vendor": "Rahman"}
     monkeypatch.setattr(hisab_hosted, "hosted_extract", lambda _: prediction)
     assert client.post(path, json={"text": sentence, "consent": False}).status_code == 403
     reply = client.post(path, json={"text": sentence, "consent": True})
     assert reply.status_code == 200
-    assert reply.json()["draft"]["amount_minor"] == 125000
-    assert reply.json()["model"] == "Hisab-LM"
+    assert reply.json()["draft"]["amount_minor"] == 50000
+    assert reply.json()["draft"]["vendor_name"] == "rahman"
+    assert reply.json()["draft"]["memo"] == sentence
+    assert reply.json()["source"] == "hisab_lm"
     prediction["amount"] = "1200"
-    assert client.post(path, json={"text": sentence, "consent": True}).json()["error"]["code"] == "HISAB_REVIEW_NEEDED"
+    reply = client.post(path, json={"text": sentence, "consent": True}).json()
+    assert reply["source"] == "verified" and reply["draft"]["amount_minor"] == 50000
     assert client.get("/api/workspace").json()["dataset_revision"] == baseline
+
+
+def test_hosted_failure_uses_only_consented_approved_api_and_revalidates_reply(world, monkeypatch):
+    client, _ = world
+    signup(client, 'hisab_backup')
+    monkeypatch.delenv('CAPZORYX_HISAB_HF_TOKEN', raising=False)
+    monkeypatch.setenv('SAFELEDGER_LLM_API_KEY', 'synthetic-key')
+    monkeypatch.setenv('SAFELEDGER_LLM_FREE_TIER_CONFIRMED', '1')
+    monkeypatch.setenv('SAFELEDGER_LLM_PROFILE', 'gemini_free')
+    requests = []
+    prediction = {"kind": "cash", "direction": "inflow", "amount": "500", "currency": "BDT", "vendor": "Karim"}
+
+    def reply(request):
+        requests.append(json.loads(request.content)['messages'])
+        return httpx.Response(200, json={'choices': [{'message': {'content': json.dumps(prediction)}}]})
+
+    monkeypatch.setattr(cloud, 'TRANSPORT', httpx.MockTransport(reply))
+    payload = {'text': 'I received 500 from Karim', 'consent': True, 'allow_api_fallback': True}
+    path = '/api/assist/hisab'
+    assert client.post(path, json=payload).json()['source'] == 'verified'
+    assert client.post('/api/account/profile', json={'smart_assist': True}).status_code == 200
+    assert client.post(path, json=payload).json()['source'] == 'verified'  # free Gemini cannot read records
+    assert not requests
+    monkeypatch.setenv('SAFELEDGER_LLM_PROFILE', 'compatible')
+    monkeypatch.setenv('SAFELEDGER_LLM_BASE_URL', 'https://api.openai.com/v1')
+    monkeypatch.setenv('SAFELEDGER_LLM_MODEL', 'synthetic-record-model')
+    monkeypatch.setenv('SAFELEDGER_LLM_ALLOWED_HOSTS', 'api.openai.com')
+    monkeypatch.setenv('SAFELEDGER_RECORD_PROVIDER_NO_TRAINING', '1')
+    assert client.post(path, json={**payload, 'allow_api_fallback': False}).json()['source'] == 'verified'
+    assert client.post(path, json={**payload, 'text': 'I received USD 500'}).status_code == 422
+    assert not requests
+    assert client.post(path, json=payload).json()['source'] == 'api_backup'
+    assert requests[0][1:] == [{'role': 'user', 'content': payload['text']}]
+    prediction['amount'] = '900'
+    result = client.post(path, json=payload).json()
+    assert len(requests) == 2 and result['source'] == 'verified' and result['draft']['amount_minor'] == 50000

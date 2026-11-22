@@ -179,6 +179,20 @@ const fs=require('node:fs/promises');
     assert.ok(!JSON.stringify(otherRequests[0].history).includes(rejectedHisabText),'Rejected Hisab-LM submissions also stay private');
     assert.equal(await revision(),beforeDraft);
     console.log('PASS Assistant uses explicit Hisab-LM opt-in, keeps its text out of other providers, and returns an unsaved editable draft.');
+
+    await owner.unroute('**/api/assist/hisab');
+    await owner.locator('nav [data-tour="Data"]').click();
+    const quick=owner.getByRole('region',{name:'Add by photo or by typing'});
+    await quick.getByLabel('Describe the payment or bill').fill('i paid rahman 500');
+    await quick.getByRole('button',{name:'Use Hisab-LM',exact:true}).click();
+    await quick.getByText('Draft prepared from the details in your message.',{exact:true}).waitFor();
+    assert.equal(await quick.getByLabel('Amount (BDT)',{exact:true}).inputValue(),'500.00');
+    assert.equal(await quick.getByLabel('Note',{exact:true}).inputValue(),'i paid rahman 500');
+    assert.equal(await revision(),beforeDraft);
+    await quick.getByRole('button',{name:'Add to my records',exact:true}).click();
+    await quick.getByText('Added to your records.',{exact:true}).waitFor();
+    assert.notEqual(await revision(),beforeDraft);
+    console.log('PASS Add records handled the exact screenshot sentence without an AI provider and saved only after confirmation.');
   }finally{
     await browser?.close();
     line.close();
