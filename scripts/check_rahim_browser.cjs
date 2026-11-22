@@ -118,6 +118,57 @@ const fs=require('node:fs/promises');
     await guest.reload();await guest.getByText(/This passport could not be verified/).waitFor();
     await frame(guest,guest.getByText(/This passport could not be verified/),'05-revoked');
     console.log('PASS Rahim signup, sample cash flow, collection proof, task, public QR and revocation');
+
+    await owner.route('**/api/auth/capabilities',async route=>{
+      const response=await route.fetch();
+      await route.fulfill({response,json:{...(await response.json()),hisab_lm:true,cloud_assist:true}});
+    });
+    await owner.route('**/api/account/profile',async route=>{
+      const response=await route.fetch();
+      await route.fulfill({response,json:{...(await response.json()),smart_assist:true}});
+    });
+    const hisabText='I paid BDT 1250.50 to Synthetic Supplier.';
+    const hisabRequests=[],otherRequests=[];
+    await owner.route('**/api/assist/hisab',async route=>{
+      hisabRequests.push(route.request().postDataJSON());
+      if(hisabRequests.length===1){
+        await route.fulfill({status:503,json:{error:{code:'HISAB_NOT_AVAILABLE'}}});
+        return;
+      }
+      await route.fulfill({json:{draft:{ok:true,kind:'cash',direction:'outflow',amount_minor:125050,
+        currency:'BDT',workspace_currency:'BDT',effective_on:day(0),status:'cleared',
+        memo:'',vendor_name:'Synthetic Supplier',confidence:null,warnings:[],can_save:true,currency_mismatch:false},
+        model:'Hisab-LM',simulation_only:true}});
+    });
+    await owner.route('**/api/assist/ask',async route=>{
+      otherRequests.push(route.request().postDataJSON());
+      await route.fulfill({json:{answer:'Synthetic assistant answer.',simulation_only:true}});
+    });
+    await owner.reload();
+    const revision=async()=> (await (await owner.request.get(origin+'/api/workspace')).json()).dataset_revision;
+    const beforeDraft=await revision();
+    await owner.locator('nav [data-tour="Assistant"]').click();
+    const chat=owner.getByRole('region',{name:'Assistant',exact:true});
+    await chat.getByRole('button',{name:'What is my balance?',exact:true}).click();
+    await chat.getByRole('log').getByText(/150,000.00/).waitFor();
+    assert.equal(hisabRequests.length,0);
+    const input=chat.getByRole('textbox',{name:'Message the assistant'});
+    await input.fill(hisabText);
+    await chat.getByRole('button',{name:'Use Hisab-LM',exact:true}).click();
+    await chat.getByRole('button',{name:'Retry with Hisab-LM',exact:true}).click();
+    await chat.getByText('Draft prepared by Hisab-LM.',{exact:true}).waitFor();
+    assert.deepEqual(hisabRequests,[{text:hisabText,consent:true},{text:hisabText,consent:true}]);
+    assert.equal(await chat.getByLabel('Amount (BDT)',{exact:true}).inputValue(),'1250.50');
+    assert.equal(await revision(),beforeDraft);
+    await chat.getByRole('button',{name:'Discard',exact:true}).click();
+    await input.fill('What is the weather in Dhaka right now?');
+    await chat.getByRole('button',{name:'Send message',exact:true}).click();
+    await chat.getByRole('button',{name:'It is about my business: try anyway'}).click();
+    await chat.getByText('Synthetic assistant answer.',{exact:true}).waitFor();
+    assert.equal(otherRequests.length,1);
+    assert.ok(!JSON.stringify(otherRequests[0].history).includes(hisabText),'Hisab-LM submissions stay out of other model requests');
+    assert.equal(await revision(),beforeDraft);
+    console.log('PASS Assistant uses explicit Hisab-LM opt-in, keeps its text out of other providers, and returns an unsaved editable draft.');
   }finally{
     await browser?.close();
     line.close();

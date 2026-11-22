@@ -101,6 +101,7 @@ input,textarea,select{background:var(--input);color:var(--text);border:1px solid
 .draft-card .form-grid label{font-size:13px}
 .inline-actions{display:flex;gap:14px;margin-top:6px}.inline-actions .link{font-size:12px}
 .chat-pick{display:grid;gap:8px;padding:10px 14px;border-top:1px solid #e1e9e4}.chat-chips{padding:0 14px 8px}
+.chat-hisab{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0}.chat-hisab p{flex:1 1 170px;margin:0}
 .advanced{margin-top:16px}
 .check span small{color:#5f746c}
 @media(max-width:760px){.quick-grid{grid-template-columns:1fr}.settings-tabs button{flex:1 1 45%}.backup-codes ul{grid-template-columns:1fr}.identity-user small{display:block}}
