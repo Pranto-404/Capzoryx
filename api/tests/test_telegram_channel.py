@@ -33,17 +33,15 @@ def test_link_requires_user_confirmation_and_replays_never_duplicate(world,monke
     headers={'X-Telegram-Bot-Api-Secret-Token':secret}
     for _ in range(2):
         assert c.post(base,json=event,headers=headers).status_code==200
-    assert c.get(base+'/link').json()['pending']
+    status=c.get(base+'/link').json()
+    assert status['linked'] and status['chat_enabled'] and not status['records_enabled']
+    assert len(calls)==1 and 'Connected' in calls[0]
+    calls.clear()
+    assert c.post(base+'/confirm',json={}).status_code==200  # idempotent for older pages
+    c.post(base+'/chat',json={'enabled':False}).raise_for_status()  # reminders stay detail-free without book replies
     noon=int(telegram.datetime.now(telegram.BD).replace(hour=12,minute=0,second=0,microsecond=0).timestamp())
     with sqlite3.connect(path) as db:
-        with sec.transaction(db):
-            telegram.queue(db,business,noon)
-        telegram.deliver(db,business,noon)
-        assert len(calls)==1 and 'finish connecting' in calls[0]
-        calls.clear()
         assert db.execute('SELECT COUNT(*) FROM telegram_updates').fetchone()[0]==1
-    assert c.post(base+'/confirm',json={}).status_code==200
-    with sqlite3.connect(path) as db:
         for _ in range(2):
             with sec.transaction(db):telegram.queue(db,business,noon)
             telegram.deliver(db,business,noon)
@@ -86,10 +84,8 @@ def test_private_book_replies_are_conversational_opt_in_and_never_write_without_
         c.post(base,json={'update_id':update,'callback_query':query},headers=headers).raise_for_status()
     token=c.post(base+'/link-code',json={}).json()['code']
     incoming(101,'/start '+token)
-    incoming(102,'/balance')
-    assert len(sent)==2 and 'finish connecting' in sent[0]['text'] and 'confirm' in sent[1]['text']
-    assert c.post(base+'/chat',json={'enabled':True}).status_code==409
-    c.post(base+'/confirm',json={}).raise_for_status()
+    assert 'Connected' in sent[-1]['text'] and c.get(base+'/link').json()['chat_enabled']
+    c.post(base+'/chat',json={'enabled':False}).raise_for_status()
     incoming(103,'/balance')
     assert 'book replies are off' in sent[-1]['text']
     incoming(1031,'hi')

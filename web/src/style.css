@@ -581,3 +581,7 @@ nav button[aria-current]{background:var(--brand-soft)!important;color:var(--bran
 :root[data-theme=dark] input,:root[data-theme=dark] textarea,:root[data-theme=dark] select{border-color:var(--line-strong)}
 a{color:var(--brand)}a:visited{color:var(--brand)}
 @media(max-width:760px){.header-actions{justify-content:flex-start!important}}
+.sms-list{list-style:none;padding:0;margin:8px 0 14px}
+.sms-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 0;border-top:1px solid var(--line)}
+.sms-list small{display:block}
+.steps input{margin-top:6px;font-size:12px}

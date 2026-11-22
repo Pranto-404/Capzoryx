@@ -25,6 +25,7 @@ import {Financing} from './Financing';
 import {QuickAdd} from './QuickAdd';
 import {TelegramLink} from './TelegramLink';
 import {WhatsAppLink} from './WhatsAppLink';
+import {SmsInbox} from './SmsInbox';
 import {Avatar} from './Avatar';
 import {formatDate,formatTime,prettyVendor,roleLabel,workspaceLabel} from './format';
 import {t,T,LanguagePicker,useI18n,hasChosenLanguage} from './i18n';
@@ -248,6 +249,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {tab==='Settings'&&session.role==='owner'&&<ReadOnlyTokens request={request}/>}
       {tab==='Settings'&&session.role==='owner'&&<TelegramLink request={request}/>}
       {tab==='Settings'&&session.role==='owner'&&<WhatsAppLink request={request}/>}
+      {tab==='Settings'&&session.role==='owner'&&<SmsInbox request={request}/>}
       {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
       {chatLoaded&&<div id="workspace-assistant" hidden={tab!=='Assistant'&&!chatOpen} className={tab==='Assistant'?'assistant-page':'chat-float'} onKeyDown={(e:KeyboardEvent)=>{if(e.key==='Escape'&&tab!=='Assistant')closeChat();}}><LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening assistant…')}</section>}><Assistant visible={tab==='Assistant'||chatOpen} snapshot={snapshot} forecast={baselineMonth} week={week} events={events} invoices={invoices} session={session} profile={profile} cloudAvailable={cloudAvailable} hisabAvailable={hisabAvailable} revision={revision} request={request} onSaved={refresh} onNavigate={action=>{setTab(action);closeChat();}} onProposal={async()=>{await refresh();setTab('Approvals');closeChat();}} onClose={tab==='Assistant'?undefined:closeChat}/></Suspense></LazyBoundary></div>}
       {tab!=='Assistant'&&<button ref={chatButton} className="chat-launcher" aria-label={chatOpen?t('Close assistant'):t('Open assistant')} aria-expanded={chatOpen} aria-controls="workspace-assistant" onClick={()=>{setChatLoaded(true);setChatOpen(!chatOpen);}}><Icon name="spark"/> <span>{chatOpen?t('Close'):t('Assistant')}</span></button>}
