@@ -112,6 +112,14 @@ def answer(db, business, role, question):
         kind,entity=entity_search(text,entities)
     if kind is None:
         return dict(answered=False,reason='UNSUPPORTED_OR_AMBIGUOUS_QUESTION',simulation_only=True)
+    return compute(db,business,kind,window,entity,ds)
+
+
+def compute(db, business, kind, window=None, entity=None, ds=None):
+    """Figure for an already-understood question. Windows apply to income and expenses only."""
+    ds=ds or sec.runtime_dataset(db,business)
+    if kind not in ('income','expenses'):
+        window=None
     if kind=='balance':
         result=snapshot(ds)
         amount,sources=result['balance_minor'],result['source_ids']
@@ -120,6 +128,10 @@ def answer(db, business, role, question):
         first=end.replace(day=1)
         if window=='today':
             start=end
+        elif window=='yesterday':
+            start=end=end-timedelta(days=1)
+        elif window=='this_week':
+            start=end-timedelta(days=(end.weekday()+2)%7)  # Bangladesh weeks start on Saturday.
         elif window=='this_month':
             start=first
         elif window=='last_month':
