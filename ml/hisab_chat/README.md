@@ -44,62 +44,58 @@ pip install torch --index-url https://download.pytorch.org/whl/cu128   # RTX 50-
 pip install -r ml/hisab_lm/requirements-gpu.lock.txt                   # unsloth, transformers, peft, datasets
 pip install -r api/requirements.lock.txt
 nvidia-smi                                                             # the 5060 Ti should be listed
+git clone https://github.com/ggml-org/llama.cpp && cmake -S llama.cpp -B llama.cpp/build -DGGML_CUDA=ON \
+  && cmake --build llama.cpp/build -j --target llama-server && export PATH=$PWD/llama.cpp/build/bin:$PATH
 ```
 
-### 2. Build the data
+### 2. Full-speed pipeline on a 16 GB card
+
+The GPU does the bulk work; free API teachers are only used for grading, within a daily budget that leaves 30% of
+each quota for the live bot (`teachers.py`, usage kept in `~/.cache/capzoryx/teacher_usage.json`).
+
+**A. Teacher on the GPU writes natural conversations (~30–40 min).** Gemma-3-12B, 4-bit, eight parallel slots:
 
 ```bash
-export CAPZORYX_CHAT_GROQ_KEY=...   # free key from console.groq.com (more free keys = more teacher variety)
-python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 3000
+llama-server -hf ggml-org/gemma-3-12b-it-GGUF:Q4_K_M --port 8081 -ngl 99 -c 32768 -np 8 -fa on &
+python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 3000 \
+    --local-teacher-url http://127.0.0.1:8081/v1 --workers 8
 ```
 
-Why the teacher matters: in the live bot, figures, greetings and misspelt questions are answered by the
-deterministic brain (`api/app/chat/understand.py`, tested on noisy and formal messages). Hisab-Chat only receives
-open questions — advice, explanations, small talk — so its quality comes mostly from the teacher conversations.
-Every teacher reply must pass the same number check the live bot uses.
-
-Questions are rewritten the way owners type (typos, short Banglish such as "kto"/"kmn", capitals, no punctuation,
-"vai"/"apu", and formal phrasing with formal answers; see `augment.py`). No real customer data is used.
-
-### 3. Train at full speed
+**B. Train (~30–45 min).** Stop the teacher first (`kill %1`) so training has the whole card. On 16 GB the 4B model
+trains in 16-bit (faster and more accurate than 4-bit); add `--qlora` only if it runs out of memory.
 
 ```bash
 python -m ml.hisab_chat.train --data data/hisab_chat --output runs/hisab-chat --gguf
 ```
 
-| Base | VRAM | Time for 8k chats, 2 epochs (approx.) |
-| --- | --- | --- |
-| `Qwen/Qwen3-4B-Instruct-2507` (default) | 8 GB or 16 GB | 40–70 min |
-| `google/gemma-3-12b-it` (`--base`) | 16 GB | 2–3 h |
-
-The script uses 4-bit QLoRA, bf16, 8-bit AdamW and gradient checkpointing, which keeps the GPU fully busy without
-running out of memory. `runs/hisab-chat/training.json` records the base, data hashes, loss and GPU.
-
-### 3b. Self-play rounds: a big model quizzes, grades and corrects Hisab-Chat
-
-After the first training run, serve the model with eight parallel slots and let every free teacher test it at once.
-Put each teacher key you have in the shell (`CAPZORYX_CHAT_GROQ_KEY`, `CAPZORYX_CHAT_GEMINI_KEY`,
-`CAPZORYX_CHAT_CEREBRAS_KEY`, `CAPZORYX_CHAT_OPENROUTER_KEY`, `CAPZORYX_CHAT_MISTRAL_KEY`, `CAPZORYX_CHAT_GITHUB_KEY`):
+**C. Self-play round (~20–30 min).** Student and teacher share the card:
 
 ```bash
-llama-server -m runs/hisab-chat/gguf/hisab-chat-q4_k_m.gguf --port 8080 -ngl 99 -c 16384 -np 8 --api-key YOUR_LOCAL_KEY &
-python -m ml.hisab_chat.self_play --student-url http://127.0.0.1:8080/v1 --student-key YOUR_LOCAL_KEY \
-    --examples 600 --workers 8 --minutes 45 --out data/hisab_chat/selfplay-r1.jsonl
-python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 2000 --extra data/hisab_chat/selfplay-r1.jsonl
+llama-server -m runs/hisab-chat/gguf/hisab-chat-q4_k_m.gguf --port 8080 -ngl 99 -c 8192 -np 8 --api-key LOCAL &
+llama-server -hf ggml-org/gemma-3-12b-it-GGUF:Q4_K_M --port 8081 -ngl 99 -c 16384 -np 8 -fa on &
+python -m ml.hisab_chat.self_play --student-url http://127.0.0.1:8080/v1 --student-key LOCAL \
+    --local-teacher-url http://127.0.0.1:8081/v1 --examples 600 --workers 8 --minutes 40 \
+    --out data/hisab_chat/selfplay-r1.jsonl
+```
+
+The GPU teacher writes the test questions in twelve styles (typos, slang, formal, follow-ups, unsafe and off-topic).
+Grading and rewrites go to the strongest teacher with budget left: Groq, Cerebras, Mistral, OpenRouter, Gemini or
+GitHub Models when their `CAPZORYX_CHAT_*_KEY` is set, otherwise the GPU teacher. Rewrites that state an amount not in
+the facts, or answer in the wrong language, are dropped. `selfplay-r1.report.json` records the mean score and the API
+calls spent today.
+
+**D. Merge and retrain (~40 min), then publish.**
+
+```bash
+kill %1 %2
+python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 3000 \
+    --local-teacher-url http://127.0.0.1:8081/v1 --extra data/hisab_chat/selfplay-r1.jsonl   # restart 8081 first
 python -m ml.hisab_chat.train --data data/hisab_chat --output runs/hisab-chat-r2 --gguf --push Pranto-404/hisab-chat-gguf
 ```
 
-Teachers work in parallel, each held to its free requests per minute (Groq and Cerebras 28, Mistral 20,
-OpenRouter 15, Gemini and GitHub 10; override with `CAPZORYX_TEACHER_RPM_<NAME>`). A teacher that hits its quota
-rests while the others carry on. With three or more keys a 600-example round takes roughly 15–30 minutes, and
-`--minutes` saves whatever is finished when time runs out.
+Repeat C–D (`-r2`, `-r3`) while the mean score keeps rising. One full round takes about 2–2.5 hours.
 
-The teacher writes realistic owner messages in twelve styles (typos, slang, formal, follow-ups, unsafe and off-topic
-requests), grades each answer from 1 to 5 and rewrites the weak ones. Rewrites that state an amount not in the facts,
-or answer in the wrong language, are dropped. `selfplay-r1.report.json` records the mean score; repeat with
-`-r2`, `-r3` and keep going while the mean score rises.
-
-### 4. Measure before you claim
+### 3. Measure before you claim
 
 ```bash
 llama-server -m runs/hisab-chat/gguf/*.gguf --port 8080 -ngl 99 -c 4096 --api-key YOUR_LOCAL_KEY &
@@ -110,7 +106,7 @@ python -m ml.hisab_chat.eval --data data/hisab_chat --url https://api.groq.com/o
 Report `grounded` (no invented amounts), `fact_recall`, `language_match` and latency side by side. Before you
 present them, add a hand-written test set from real speakers; the bundled validation split is synthetic.
 
-### 5. Serve it to the live bot
+### 4. Serve it to the live bot
 
 ```bash
 llama-server -m runs/hisab-chat/gguf/*.gguf --host 127.0.0.1 --port 8080 -ngl 99 -c 4096 --api-key YOUR_LOCAL_KEY

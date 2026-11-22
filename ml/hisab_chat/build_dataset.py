@@ -7,19 +7,23 @@ the ways owners really type (typos, short Banglish, capitals, no punctuation; se
               only when every amount matches the facts and the reply is in the owner's language.
 
     python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 9000
-    python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 9000 --teacher 3000   # needs CAPZORYX_CHAT_* keys
+    python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 3000 \
+        --local-teacher-url http://127.0.0.1:8081/v1   # GPU teacher; API keys are optional extras
 """
 import argparse
 import hashlib
 import json
 import random
+import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from api.app.chat import llm
 from api.app.chat.brain import group_lakh
 from api.app.chat.understand import language
 from ml.hisab_chat.augment import variants
+from ml.hisab_chat.teachers import Teachers, add_arguments
 
 SEED = 20261121
 NAMES = ['Rahim', 'Karim', 'Salma', 'Jamal', 'Nasrin', 'Habib', 'Rupa', 'Sumon', 'Mitu', 'Babul', 'Shapla Store',
@@ -180,11 +184,15 @@ def teacher_prompts(rng):
     return pool
 
 
-def teacher_example(rng, pool):
+def teacher_example(rng, pool, teachers, deadline):
     _, facts_text = facts(rng)
     lang, question = rng.choice(pool)
-    answer, provider = llm.reply(question, facts=facts_text, share_facts=True)  # synthetic facts only
-    if not answer or (lang != 'en' and language(answer, answer.casefold().split()) != lang):
+    # Bulk natural replies come from the GPU teacher; API teachers are saved for self-play grading.
+    answer, provider = teachers.complete([{'role': 'system', 'content': system(facts_text)}, {'role': 'user', 'content': question}],
+                                         deadline, prefer='local', max_tokens=300, temperature=0.7)
+    answer = llm.clean(answer or '')
+    if not answer or not llm.grounded(answer, facts_text, question) or (
+            lang != 'en' and language(answer, answer.casefold().split()) != lang):
         return None
     return {'source': 'synthetic-teacher:' + provider, 'messages': [
         {'role': 'system', 'content': system(facts_text)}, {'role': 'user', 'content': question},
@@ -197,6 +205,8 @@ def main():
     p.add_argument('--size', type=int, default=9000, help='template examples')
     p.add_argument('--teacher', type=int, default=0, help='extra verified examples from the free provider chain')
     p.add_argument('--extra', type=Path, action='append', default=[], help='self-play rows to merge (repeatable)')
+    p.add_argument('--workers', type=int, default=8, help='parallel teacher requests (match llama-server -np)')
+    add_arguments(p)
     a = p.parse_args()
     rng = random.Random(SEED)
     rows, seen = [], Counter()
@@ -207,13 +217,16 @@ def main():
             seen[key] += 1
             rows.append(row)
     pool, kept = teacher_prompts(rng), 0
-    for _ in range(a.teacher * 2):  # allow for rejected replies
-        if kept >= a.teacher:
-            break
-        row = teacher_example(rng, pool)
-        if row:
-            rows.append(row)
-            kept += 1
+    teachers, deadline = Teachers(a.local_teacher_url, a.local_teacher_model, a.local_teacher_key), time.monotonic() + 6 * 3600
+    with ThreadPoolExecutor(max_workers=a.workers) as workers:  # keeps every llama-server slot busy
+        for start in range(0, a.teacher * 2, a.workers * 4):  # twice the target allows for rejected replies
+            if kept >= a.teacher:
+                break
+            seeds = range(SEED + start, SEED + start + a.workers * 4)
+            for row in workers.map(lambda s: teacher_example(random.Random(s), pool, teachers, deadline), seeds):
+                if row and kept < a.teacher:
+                    rows.append(row)
+                    kept += 1
     for path in a.extra:
         extra = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
         if any(not r.get('source', '').startswith('synthetic') for r in extra):
