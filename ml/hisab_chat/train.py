@@ -69,7 +69,7 @@ def main():
     from unsloth import FastLanguageModel
 
     model, tokenizer = FastLanguageModel.from_pretrained(model_name=a.base, max_seq_length=MAX_LEN, load_in_4bit=True)
-    model = FastLanguageModel.get_peft_model(model, r=32, lora_alpha=32, lora_dropout=0.0, bias='none',
+    model = FastLanguageModel.get_peft_model(model, r=16, lora_alpha=32, lora_dropout=0.0, bias='none',
                                              target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj'],
                                              use_gradient_checkpointing='unsloth', random_state=SEED)
     if tokenizer.pad_token_id is None:

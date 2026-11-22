@@ -9,15 +9,16 @@ Everything below runs in a browser, so it works from a phone and your PC can sta
 
 1. **Hugging Face token**: huggingface.co → Settings → Access Tokens → New token, type **Write**.
 2. **Kaggle**: kaggle.com → Create → New Notebook. Settings → Accelerator **GPU T4 x2**, Internet **on**.
-   Add-ons → Secrets → add `HF_TOKEN` with the token. Then run these three cells:
+   Add-ons → Secrets → add `HF_TOKEN` (the token) and `GROQ_KEY` (a free key from console.groq.com). Then run these three cells:
 
    ```python
    !git clone -q https://github.com/Pranto-404/Capzoryx && pip -q install unsloth httpx
    ```
    ```python
    import os; from kaggle_secrets import UserSecretsClient
-   os.environ['HF_TOKEN'] = UserSecretsClient().get_secret('HF_TOKEN'); os.chdir('/kaggle/working/Capzoryx')
-   !python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000
+   secrets = UserSecretsClient(); os.chdir('/kaggle/working/Capzoryx')
+   os.environ['HF_TOKEN'] = secrets.get_secret('HF_TOKEN'); os.environ['CAPZORYX_CHAT_GROQ_KEY'] = secrets.get_secret('GROQ_KEY')
+   !python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 3000
    ```
    ```python
    !python -m ml.hisab_chat.train --data data/hisab_chat --output runs/hisab-chat --gguf --push Pranto-404/hisab-chat-gguf
@@ -48,13 +49,17 @@ nvidia-smi                                                             # the 506
 ### 2. Build the data
 
 ```bash
-python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 8000
+export CAPZORYX_CHAT_GROQ_KEY=...   # free key from console.groq.com (more free keys = more teacher variety)
+python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 3000
 ```
 
-For more natural replies, distil from bigger free models. Put one or more free keys in the shell first
-(`CAPZORYX_CHAT_GROQ_KEY`, `CAPZORYX_CHAT_GEMINI_KEY`, `CAPZORYX_CHAT_CEREBRAS_KEY` …) and add `--teacher 3000`.
-Only replies whose every amount matches the synthetic facts, and whose language matches the question, are kept.
-No real customer data is used.
+Why the teacher matters: in the live bot, figures, greetings and misspelt questions are answered by the
+deterministic brain (`api/app/chat/understand.py`, tested on noisy and formal messages). Hisab-Chat only receives
+open questions — advice, explanations, small talk — so its quality comes mostly from the teacher conversations.
+Every teacher reply must pass the same number check the live bot uses.
+
+Questions are rewritten the way owners type (typos, short Banglish such as "kto"/"kmn", capitals, no punctuation,
+"vai"/"apu", and formal phrasing with formal answers; see `augment.py`). No real customer data is used.
 
 ### 3. Train at full speed
 
