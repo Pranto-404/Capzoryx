@@ -9,6 +9,7 @@ from api.app.chat import llm
 @pytest.fixture(autouse=True)
 def providers(monkeypatch):
     llm._cooldown.clear()
+    monkeypatch.delenv('SAFELEDGER_LLM_API_KEY', raising=False)
     for p in llm.PROVIDERS:
         for field in ('URL', 'KEY', 'MODEL'):
             monkeypatch.delenv(f'CAPZORYX_CHAT_{p.name.upper()}_{field}', raising=False)
@@ -55,6 +56,14 @@ def test_invented_amounts_are_rejected(monkeypatch):
     assert name == 'cerebras' and '150,000' in answer
     assert llm.grounded('Sell 3 items for 2,500 each', '', 'price is 2500?')
     assert not llm.grounded('You owe 4,000', 'Open bills 3,892.41', 'bills?')
+
+
+def test_chat_reuses_the_apps_existing_gemini_key(monkeypatch):
+    monkeypatch.delenv('SAFELEDGER_LLM_PROFILE', raising=False)
+    monkeypatch.setenv('SAFELEDGER_LLM_API_KEY', 'existing')
+    assert [p.name for p in llm.available()] == ['gemini']
+    monkeypatch.setenv('SAFELEDGER_LLM_PROFILE', 'compatible')
+    assert not llm.configured()
 
 
 def test_own_model_url_must_be_https_or_loopback(monkeypatch):
