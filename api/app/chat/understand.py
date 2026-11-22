@@ -20,6 +20,8 @@ BANGLISH = {
     'hoise', 'beshi', 'kom', 'cholche', 'obostha', 'bikri', 'becha', 'kara', 'kader', 'kar', 'kon', 'gula', 'shob',
     'samne', 'thakbe', 'hate', 'dao', 'den', 'diben', 'paben', 'lagbe', 'holo', 'korlam', 'korsi', 'cholbe', 'koi',
     'kothay', 'ekhon', 'mot', 'dekhi', 'bolo', 'janao', 'jante', 'chai', 'amr', 'apnr', 'kno', 'keno',
+    'kot', 'kotto', 'ace', 'asay', 'aso', 'kmn', 'hoilo', 'hoise', 'mase', 'vai', 'samner', 'soptahe', 'dibo', 'kase',
+    'manush', 'sondha', 'mile', 'hbe', 'tka',
 }
 PHRASE_BOOST = (
     ('how is my business', 'summary', 2), ('how s business', 'summary', 2), ('how is business', 'summary', 2),
@@ -27,6 +29,9 @@ PHRASE_BOOST = (
     ('how much do i have', 'balance', 2), ('koto ache', 'balance', 1), ('কত আছে', 'balance', 1),
     ('dite hobe', 'payables', 2), ('দিতে হবে', 'payables', 2), ('owe me', 'receivables', 1.5),
     ('pete hobe', 'receivables', 2), ('পেতে হবে', 'receivables', 2), ('cash flow', 'forecast', 1),
+    ('hate koto', 'balance', 1.5), ('hate kot', 'balance', 1.5), ('cash position', 'balance', 2), ('current cash', 'balance', 1.5),
+    ('obostha hobe', 'forecast', 2), ('ki hobe', 'forecast', 1), ('hisab dao', 'summary', 1.5), ('sob mile', 'summary', 1.5),
+    ('পুরো হিসাব', 'summary', 2),
 )
 
 # Finance topics. Weights add up; a topic needs at least 2.5 to count.
@@ -37,7 +42,7 @@ TOPICS = {
     },
     'income': {
         'income': 3, 'earned': 3, 'earn': 3, 'earning': 3, 'earnings': 3, 'revenue': 3, 'sales': 2.5, 'sale': 2.5,
-        'sold': 2.5, 'received': 2, 'aay': 3, 'ay': 1.5, 'bikri': 3, 'becha': 2.5, 'beche': 2.5,
+        'sold': 2.5, 'sell': 2.5, 'sells': 2.5, 'selling': 2.5, 'received': 2, 'aay': 3, 'ay': 1.5, 'bikri': 3, 'becha': 2.5, 'beche': 2.5,
         'kamai': 3, 'আয়': 3, 'আয়': 3, 'বিক্রি': 3, 'বেচা': 2.5, 'কামাই': 3, 'ইনকাম': 3,
     },
     'expenses': {
@@ -56,7 +61,7 @@ TOPICS = {
     },
     'forecast': {
         'forecast': 3, 'projection': 3, 'projected': 3, 'future': 2, 'predict': 3, 'prediction': 3, 'next': 1,
-        'will': 1, 'upcoming': 1.5, 'purbabhash': 3, 'agami': 2, 'samne': 1.5, 'থাকবে': 2, 'পূর্বাভাস': 3,
+        'will': 1, 'upcoming': 1.5, 'purbabhash': 3, 'agami': 2, 'samne': 1.5, 'samner': 2, 'থাকবে': 2, 'পূর্বাভাস': 3,
         'আগামী': 2, 'সামনে': 1.5, 'থাকব': 1.5, 'thakbe': 2,
     },
     'summary': {
@@ -85,17 +90,18 @@ SMALL_TALK = (
     ('greet', ('hi', 'hello', 'hey', 'hlw', 'helo', 'hii', 'yo', 'salam', 'slm', 'assalamualaikum', 'assalamu alaikum',
                'asalamualaikum', 'salamualaikum', 'as salamu alaikum', 'good morning', 'good evening', 'good afternoon',
                'shuvo sokal', 'suprovat', 'হ্যালো', 'হাই', 'সালাম', 'আসসালামু আলাইকুম', 'আসসালামুয়ালাইকুম', 'শুভ সকাল',
-               'নমস্কার', 'nomoskar', 'adab', 'আদাব')),
+               'নমস্কার', 'nomoskar', 'adab', 'আদাব', 'শুভ সন্ধ্যা', 'শুভ বিকাল', 'shuvo sondha', 'good day', 'hey there')),
     ('how_are_you', ('how are you', 'how r u', 'how are u', 'hows it going', 'how is it going', 'kemon acho',
-                     'kemon achen', 'kemon aso', 'kmn acho', 'kemon asen', 'ki obostha', 'ki khobor', 'কেমন আছ',
+                     'kemon achen', 'kemon aso', 'kmn acho', 'kmn aso', 'kmn achen', 'kmn asen', 'kemon asen', 'ki obostha',
+                     'ki khobor', 'ki obosta', 'কেমন আছ',
                      'কেমন আছো', 'কেমন আছেন', 'কী খবর', 'কি খবর')),
-    ('thanks', ('thanks', 'thank you', 'thx', 'tnx', 'ty', 'thank u', 'dhonnobad', 'dhonnobaad', 'dhanyabad', 'shukriya',
+    ('thanks', ('thanks', 'thank you', 'thx', 'thnx', 'thanx', 'tnx', 'ty', 'thank u', 'tq', 'dhonnobad', 'dhonnobaad', 'dhanyabad', 'shukriya',
                 'ধন্যবাদ', 'শুকরিয়া', 'শুকরিয়া', 'jazakallah')),
     ('bye', ('bye', 'goodbye', 'good night', 'see you', 'allah hafez', 'khoda hafez', 'bye bye', 'tata', 'আল্লাহ হাফেজ',
              'খোদা হাফেজ', 'বিদায়', 'বিদায়', 'শুভ রাত্রি')),
     ('who', ('who are you', 'what are you', 'your name', 'tumi ke', 'apni ke', 'ke tumi', 'ke apni', 'tomar nam',
              'apnar nam', 'তুমি কে', 'আপনি কে', 'তোমার নাম', 'আপনার নাম', 'are you a bot', 'are you human',
-             'are you ai', 'tumi ki bot')),
+             'are you ai', 'tumi ki bot', 'apni ki manush', 'tumi ki manush', 'are you real', 'tumi ki robot')),
     ('help', ('help', 'menu', 'commands', 'what can you do', 'how to use', 'ki korte paro', 'ki korte paren',
               'ki ki paro', 'sahajjo', 'shahajjo', 'help me', 'সাহায্য', 'কী করতে পার', 'কি করতে পারো', 'কী কী পারো',
               'কি কি পারেন', '/help', '/start')),
@@ -111,7 +117,8 @@ RECORD_VERB = re.compile(r'\b(?:received|paid|spent|got|sold|bought|dilam|diyech
                          r'nilam|kinlam|bechlam|khoroch korlam)\b|দিলাম|দিয়েছি|দিয়েছি|পেলাম|পেয়েছি|পেয়েছি|নিলাম|'
                          r'নিয়েছি|নিয়েছি|কিনলাম|বেচলাম|খরচ করলাম', re.I)
 HAS_AMOUNT = re.compile(r'\d')
-QUESTION = re.compile(r'[?？]|\b(?:koto|kto|how much|how many|what|when|which|who|kobe|ki)\b|কত|কী|কি|কবে|কখন', re.I)
+QUESTION = re.compile(r'[?？]|\b(?:koto|kto|kot|kotto|how much|how many|what|when|which|who|kobe|ki|kindly|please)\b'
+                      r'|কত|কী|কি|কবে|কখন|জানতে চাই|জানাবেন', re.I)
 
 
 @dataclass

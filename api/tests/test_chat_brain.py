@@ -29,6 +29,28 @@ CASES = [
 ]
 
 
+# Misspelt, slang, formal and mixed-script messages real owners send.
+NOISY = [
+    ('cash kto ase vai', 'balance'), ('hate kot taka ace', 'balance'), ('CASH KOTO??', 'balance'), ('blance ta bolo', 'balance'),
+    ('আমার বর্তমান নগদ স্থিতি জানতে চাই', 'balance'), ('Kindly let me know my current cash position', 'balance'),
+    ('ei mase khoros koto hoilo', 'expenses'), ('khrch kto', 'expenses'), ('এ মাসে খরচ কেমন হইছে', 'expenses'),
+    ('bikri koto hoise aj', 'income'), ('aj koto sell holo', 'income'), ('আজ বিক্রি কত', 'income'),
+    ('kar kase koto paona', 'receivables'), ('baki koto ase customer der', 'receivables'),
+    ('কাস্টমাররা কত টাকা বাকি রাখছে', 'receivables'), ('supplir k koto dibo', 'payables'), ('dena koto', 'payables'),
+    ('মহাজনের দেনা কত', 'payables'), ('samner soptahe ki obostha hobe', 'forecast'), ('next week e cash thakbe?', 'forecast'),
+    ('business er obostha ki', 'summary'), ('sob mile hisab dao', 'summary'),
+    ('Could you provide an overview of my business?', 'summary'), ('hlw', 'greet'), ('salam vai', 'greet'),
+    ('assalamualaikum', 'greet'), ('Good evening', 'greet'), ('শুভ সন্ধ্যা', 'greet'), ('kmn aso', 'how_are_you'),
+    ('kemon achen apni', 'how_are_you'), ('ki khobor', 'how_are_you'), ('thnx', 'thanks'), ('dhonnobad vai', 'thanks'),
+    ('tumi ke re', 'who'), ('apni ki manush', 'who'), ('ki ki korte paren', 'help'),
+]
+
+
+@pytest.mark.parametrize('message,expected', NOISY)
+def test_understands_misspelt_slang_and_formal_messages(message, expected):
+    parsed = understand.parse(message)
+    assert (parsed.topic or parsed.small_talk) == expected, parsed.scores
+
 @pytest.mark.parametrize('message,expected,lang', CASES)
 def test_understands_everyday_money_chat(message, expected, lang):
     parsed = understand.parse(message)
