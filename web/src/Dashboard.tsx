@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
 import {formatDate} from './format';
 import {HomeActions,type HomeNavigate} from './HomeActions';
 import {useCurrency} from './Currency';
@@ -24,6 +24,19 @@ export function Dashboard({role,nextCollection,snapshot,week,month,invoices,even
  </>;
 }
 
+/** Counts up to a figure once, so the overview feels alive; the final value is always exact. */
+function CountUp({value,format}:{value:number;format:(minor:number)=>string}){
+  const [shown,setShown]=useState(()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches?value:0;}catch{return value;}});
+  useEffect(()=>{
+    if(shown===value)return;
+    const from=shown,start=performance.now();let raf=0;
+    const step=(now:number)=>{const k=Math.min(1,(now-start)/700);const eased=1-Math.pow(1-k,3);
+      setShown(k<1?Math.round(from+(value-from)*eased):value);if(k<1)raf=requestAnimationFrame(step);};
+    raf=requestAnimationFrame(step);return()=>cancelAnimationFrame(raf);
+  },[value]);// eslint-disable-line react-hooks/exhaustive-deps
+  return <>{format(shown)}</>;
+}
+
 function CashTotals({snapshot,events}:{snapshot:Snapshot;events:CashEvent[]}){
   const {money,approx,nativeMoney}=useCurrency();
   const [selected,setSelected]=useState<number|null>(null);
@@ -40,7 +53,7 @@ function CashTotals({snapshot,events}:{snapshot:Snapshot;events:CashEvent[]}){
         <div className="metric-label"><p>{label}</p><Icon name={icon}/></div>
         <button type="button" className="metric-source" aria-expanded={selected===i} aria-controls="cash-sources"
           aria-label={t('Show records for {figure}',{figure:label})} onClick={()=>setSelected(selected===i?null:i)}>
-          <strong>{money(value)}</strong></button>
+          <strong><CountUp value={value} format={money}/></strong></button>
         {approx(value)&&<span className="approx">{approx(value)}</span>}<small>{hint}</small>
       </article>)}
     </section>

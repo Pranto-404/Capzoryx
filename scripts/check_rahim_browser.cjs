@@ -1,5 +1,11 @@
 // Run the actual web client, finance engine and an isolated public passport verifier.
 const {chromium}=require('../web/node_modules/playwright');
+// Phones show four pages plus More; open More first when a page button is tucked away.
+async function openPage(page,name){
+  const button=page.locator(`nav [data-tour="${name}"]`);
+  if(!await button.isVisible())await page.locator('nav .more-toggle').click();
+  await button.click();
+}
 const assert=require('node:assert/strict');
 const {spawn}=require('node:child_process');
 const {once}=require('node:events');
@@ -59,7 +65,7 @@ const fs=require('node:fs/promises');
       await sources.getByText(e.source_record_id,{exact:false}).waitFor();
     await owner.getByRole('button',{name:'Cash briefing',exact:true}).click();
     await owner.locator('#briefing-report').getByText(/Available cash is.*150,000.00/).waitFor();
-    await owner.locator('nav [data-tour="Settings"]').click();
+    await openPage(owner,'Settings');
     const lowData=owner.getByRole('checkbox',{name:'Reduce background downloads'});
     await lowData.check(); assert.equal(await owner.evaluate(()=>localStorage.getItem('capzoryx-data-saver')),'on');
     await owner.getByRole('tab',{name:'Data & workspaces'}).click();
@@ -68,7 +74,7 @@ const fs=require('node:fs/promises');
     await Promise.all([owner.waitForResponse(r=>r.url().endsWith('/features/passport_issue')&&r.request().method()==='POST'),issue.click()]);
     const switches=async()=>(await (await owner.request.get(origin+'/api/workspace/features')).json()).features;
     assert.equal((await switches()).find(flag=>flag.name==='passport_issue').enabled,false);
-    await Promise.all([owner.waitForResponse(r=>r.url().endsWith('/features/passport_issue')&&r.request().method()==='POST'),issue.click()]); await owner.locator('nav [data-tour="Overview"]').click();
+    await Promise.all([owner.waitForResponse(r=>r.url().endsWith('/features/passport_issue')&&r.request().method()==='POST'),issue.click()]); await openPage(owner,'Overview');
     assert.equal((await switches()).find(flag=>flag.name==='passport_issue').enabled,true);
     const asOf=new Date(bundle.snapshot.as_of+'T00:00:00Z');
     const day=(offset)=>new Date(asOf.getTime()+offset*86400000).toISOString().slice(0,10);
@@ -83,7 +89,7 @@ const fs=require('node:fs/promises');
     assert.ok((await review.locator('textarea').inputValue()).includes('BDT'));
     assert.equal(bundle.month.first_shortfall_on,day(6));
     await frame(owner,owner.getByRole('heading',{name:'Cover the cash gap'}),'01-outlook');
-    await owner.locator('nav [data-tour="Cash flow"]').click();
+    await openPage(owner,'Cash flow');
     const preview=owner.waitForResponse(res=>res.url()===origin+'/api/copilot/gap-fix'&&res.request().method()==='POST');
     await owner.getByRole('button',{name:'Find a collection plan'}).click();
     const {plan}=await (await preview).json();
@@ -95,7 +101,7 @@ const fs=require('node:fs/promises');
     await frame(owner,owner.getByRole('button',{name:'Mark task done'}),'03-task');
     const after=await (await owner.request.get(origin+'/api/workspace')).json();
     assert.equal(after.snapshot.balance_minor,bundle.snapshot.balance_minor);
-    await owner.getByRole('button',{name:'Activity',exact:true}).first().click();
+    await openPage(owner,'Audit');
     owner.once('dialog',async dialog=>{assert.ok(dialog.message().startsWith('Create a public passport?'));await dialog.accept();});
     await owner.getByRole('button',{name:'Create a signed passport'}).click();
     const link=owner.getByRole('link',{name:'View passport'}).first();
@@ -150,7 +156,7 @@ const fs=require('node:fs/promises');
     await owner.reload();
     const revision=async()=> (await (await owner.request.get(origin+'/api/workspace')).json()).dataset_revision;
     const beforeDraft=await revision();
-    await owner.locator('nav [data-tour="Assistant"]').click();
+    await openPage(owner,'Assistant');
     const chat=owner.getByRole('region',{name:'Assistant',exact:true});
     await chat.getByRole('button',{name:'What is my balance?',exact:true}).click();
     await chat.getByRole('log').getByText(/150,000.00/).waitFor();
@@ -179,7 +185,7 @@ const fs=require('node:fs/promises');
     console.log('PASS Assistant uses explicit Hisab-LM opt-in, keeps its text out of other providers, and returns an unsaved editable draft.');
 
     await owner.unroute('**/api/assist/hisab');
-    await owner.locator('nav [data-tour="Data"]').click();
+    await openPage(owner,'Data');
     const quick=owner.getByRole('region',{name:'Add by photo or by typing'});
     const quickRequests=[];
     owner.on('request',r=>{if(/\/api\/assist\/(?:hisab|extract)$/.test(r.url()))quickRequests.push(r.postDataJSON());});

@@ -36,7 +36,9 @@ export function QuickTour({ready,userId,currentPage,navigate}:{ready:boolean;use
   heading.current?.focus({preventScroll:true});
   let tries=0;const timer={id:0};
   function measure(){
-   const target=document.querySelector(steps[step!].target);
+   let target=document.querySelector(steps[step!].target);
+   // On phones most pages sit under More; point at that button instead.
+   if(target&&!target.getBoundingClientRect().width)target=document.querySelector('nav .more-toggle')||target;
    if(!target){setBox(null);return false;}
    const r=target.getBoundingClientRect();
    if(!r.width||!r.height){setBox(null);return false;}

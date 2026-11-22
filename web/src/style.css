@@ -378,7 +378,7 @@ main.welcome>.welcome-story>h1{order:3}
 main.welcome>.welcome-story>.welcome-copy{order:4;margin:0 0 12px}
 main.welcome>.welcome-story>.welcome-benefits{order:5;margin:0 0 18px;display:flex;flex-wrap:wrap;gap:6px 14px}
 main.welcome>.welcome-entry{order:6;margin-bottom:22px!important}
-main.welcome>.welcome-story>.hero3d{order:7;width:100%}
+main.welcome>.welcome-story>.hero-demo{order:7;margin-top:0;width:100%}
 main.welcome>.welcome-story>.scroll-cue{order:8;align-self:flex-start;margin-top:18px}
 }
 /* Hero extras: glass card with gradient edge, trust line, floating chips with parallax */
@@ -495,32 +495,12 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
   .currency-controls p{display:none}
 }
 
-/* ===== Futuristic 3D hero ===== */
-.hero3d{position:relative;min-height:540px;margin:10px -10px 0;padding:0 10px 6px;display:flex;flex-direction:column;justify-content:flex-end;perspective:900px}
-.hero3d-layer{position:absolute;inset:0}
-.hero3d-stage{position:absolute;inset:0;border-radius:28px;overflow:hidden}
-.hero3d-stage canvas{display:block;width:100%;height:100%}
-.hero3d::before{content:"";position:absolute;inset:12% 14%;border-radius:50%;filter:blur(48px);opacity:.55;pointer-events:none;
-  background:radial-gradient(circle at 40% 40%,#39d5ff66,#7c5cff44 55%,transparent 70%);animation:hero-breathe 6s ease-in-out infinite}
-.hero3d-stage.fallback{display:grid;place-items:center}
-.hero3d-orb{width:min(58%,260px);aspect-ratio:1;border-radius:50%;
-  background:conic-gradient(from 0deg,#1b6cff,#39d5ff,#7c5cff,#f5c451,#1b6cff);filter:saturate(1.2);
-  mask:radial-gradient(circle,#000 55%,transparent 72%);animation:orb-spin 14s linear infinite}
-.hud{position:absolute;padding:7px 12px;border-radius:999px;font-size:12px;font-weight:650;white-space:nowrap;pointer-events:none;
-  color:var(--text);background:color-mix(in srgb,var(--surface) 72%,transparent);border:1px solid color-mix(in srgb,var(--brand) 35%,transparent);
-  box-shadow:0 8px 26px #0f2a6a26,inset 0 0 0 1px #ffffff14;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-  animation:hud-float 5s ease-in-out infinite}
-.hud-a{top:14%;left:4%}
-.hud-b{top:30%;right:2%;animation-delay:-1.6s}
-@keyframes hud-float{0%,100%{transform:translate3d(0,0,0) rotateX(0)}50%{transform:translate3d(0,-10px,30px) rotateX(8deg)}}
-@keyframes hero-breathe{0%,100%{transform:scale(1);opacity:.45}50%{transform:scale(1.12);opacity:.7}}
-@keyframes orb-spin{to{transform:rotate(1turn)}}
 /* subtle depth on cards */
 .metric,.tile,.feature{transition:transform .35s cubic-bezier(.2,.8,.2,1),box-shadow .35s}
 .metric:hover,.tile:hover,.feature:hover{transform:perspective(900px) rotateX(2deg) translateY(-3px);box-shadow:0 18px 40px #0f2a6a1f}
-@media(max-width:760px){.hero3d{min-height:500px;margin:6px -6px 0;padding:0 6px 4px}.hud{font-size:11px;padding:6px 10px}.hero-demo{max-width:none}}
-@media(prefers-reduced-motion:reduce){.hud,.hero3d::before,.hero3d-orb,.hd-caret{animation:none}.metric:hover,.tile:hover,.feature:hover{transform:none}}
-/* typing assistant demo, floating in front of the 3D scene */
+@media(max-width:760px){.hero-demo{max-width:none}}
+@media(prefers-reduced-motion:reduce){.hd-caret{animation:none}.metric:hover,.tile:hover,.feature:hover{transform:none}}
+/* typing assistant demo on the sign-in page */
 .hero-demo{margin-top:26px;max-width:470px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:blur(8px);box-shadow:0 24px 60px #0003;overflow:hidden}
 .hd-bar{display:flex;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
 .hd-bar b{margin-inline-start:8px;font-weight:600}
@@ -539,4 +519,50 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
 .hd-add{grid-column:1/3;margin-top:8px;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#0f9b7c}
 .hd-add .ui-icon{width:16px;height:16px}
 :root:not([data-theme=dark]) .hd-badge,:root:not([data-theme=dark]) .hd-add,:root:not([data-theme=dark]) .hd-card em{color:#0b7a62;fill:#0b7a62}
-.hero3d .hero-demo{position:relative;z-index:1;margin-top:0;width:100%;max-width:460px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 24px 60px #0f2a6a30}
+
+/* ===== Interaction layer (UX audit, Nov 2026) ===== */
+#workspace.page-enter>*{animation:page-in .38s cubic-bezier(.2,.8,.2,1) both}
+#workspace.page-enter>*:nth-child(2){animation-delay:.03s}#workspace.page-enter>*:nth-child(3){animation-delay:.06s}
+#workspace.page-enter>*:nth-child(n+4){animation-delay:.09s}
+@keyframes page-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.eyebrow{font-size:12px;letter-spacing:.02em}
+.icon-button{min-width:40px;min-height:40px;padding:8px;display:inline-grid;place-items:center}
+.icon-button .ui-icon{width:18px;height:18px}
+.spin{display:inline-grid;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(1turn)}}
+.notice.dismissible{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-right:8px}
+.close-notice{margin-left:auto;min-height:32px;min-width:32px;padding:6px;background:transparent;border:0;color:inherit;display:inline-grid;place-items:center;border-radius:8px}
+.close-notice:hover{background:#0000000f}
+.close-notice .ui-icon{width:16px;height:16px}
+.how-it-works{margin-top:10px}
+.how-it-works summary{font-weight:600;color:var(--brand)}
+.success{animation:toast-in .3s ease-out}
+@keyframes toast-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+/* assistant launcher: smaller, never covers figures */
+#workspace{padding-bottom:104px}
+.chat-launcher{padding:12px 18px}
+/* more menu: desktop shows every page, phones show four plus More */
+nav .more-toggle{display:none}
+@media(max-width:760px){
+  .shell>aside nav .more-item{display:none}
+  .shell>aside nav .more-toggle{display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .shell>aside nav.open{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;max-height:70vh;overflow:auto;padding-top:12px;border-radius:18px 18px 0 0}
+  .shell>aside nav.open .more-item{display:flex;flex-direction:column;align-items:center}
+  .shell>aside nav button{flex:1 1 0;min-width:0}
+  .chat-launcher{bottom:84px;right:14px;padding:0;width:52px;height:52px;border-radius:50%;display:grid;place-items:center}
+  .chat-launcher span{display:none}
+  .identity .language-picker,.identity select{max-width:120px}
+}
+/* quick jump palette */
+.palette-backdrop{position:fixed;inset:0;z-index:90;background:#0b1220a6;backdrop-filter:blur(4px);display:grid;place-items:start center;padding:12vh 16px 16px;animation:toast-in .18s ease-out}
+.palette{width:min(560px,100%);background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:16px;box-shadow:0 30px 80px #0006;overflow:hidden}
+.palette-search{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.palette-search input{border:0;background:transparent;min-height:40px;padding:4px;font-size:16px;box-shadow:none}
+.palette-search input:focus{outline:none}
+.palette kbd{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+.palette ul{list-style:none;margin:0;padding:6px;max-height:50vh;overflow:auto}
+.palette li button{width:100%;display:flex;align-items:center;gap:12px;justify-content:flex-start;background:transparent;border:0;color:var(--text);font-weight:500;min-height:44px;border-radius:10px;box-shadow:none}
+.palette li button.active{background:color-mix(in srgb,var(--brand) 14%,transparent);color:var(--brand)}
+.palette-empty{padding:14px}
+@media(prefers-reduced-motion:reduce){#workspace.page-enter>*,.success,.palette-backdrop,.spin{animation:none}}
+@media(max-width:760px){.header-actions>*{flex:0 0 auto;width:auto}}
