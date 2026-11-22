@@ -173,7 +173,8 @@ def incoming(payload):
         data=callback.get('data')
         if (isinstance(sender,dict) and chat.get('type')=='private' and type(chat.get('id'))==int and chat['id']>0
                 and sender.get('id')==chat['id'] and not sender.get('is_bot') and isinstance(data,str)
-                and data in ('__save__','__cancel__','__summary__','__list_receivables__','__list_payables__')):
+                and (data in ('__save__','__cancel__','__summary__','__list_receivables__','__list_payables__')
+                     or re.fullmatch(r'sms:(?:save|skip):[a-f0-9]{32}',data))):
             callback_id=callback.get('id') if isinstance(callback.get('id'),str) and len(callback['id'])<=64 else None
             return chat['id'],data,None,callback_id
         return None

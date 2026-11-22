@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import random
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -475,12 +476,25 @@ def make_draft(text, ds):
 def decide(db, ctx, text):
     """Understand one message inside the caller's transaction and return what to say next."""
     reply = _decide(db, ctx, text)
-    if reply.text and not text.strip().startswith('__'):
+    if reply.text and not text.strip().startswith(('__', 'sms:')):
         remember(db, ctx, text, reply.text)
     return reply
 
 
+SMS_BUTTON = re.compile(r'sms:(save|skip):([a-f0-9]{32})')
+
+
 def _decide(db, ctx, text):
+    sms = SMS_BUTTON.fullmatch(text.strip())
+    if sms:
+        from api.app.notifications import sms_inbox
+        entry = sms_inbox.item(db, ctx.business, sms[2])
+        if not entry:
+            return Reply('That SMS was already handled. 👍')
+        if sms[1] == 'skip':
+            sms_inbox.mark(db, ctx.business, sms[2], 'skipped')
+            return Reply('Skipped — nothing was saved.')
+        return Reply('', save=sms_inbox.as_draft(entry))
     p = understand.parse(text)
     state = load_state(db, ctx)
     lang = p.lang if p.lang != 'en' or not state['lang'] or len(p.tokens) > 2 else state['lang']
@@ -604,6 +618,9 @@ def save_draft(db, ctx, draft, lang):
             actor = sec.Principal(ctx.user, ctx.business, 'owner', '')
             append_record(db, actor, body, manual_entry=True)
             sec.audit(db, actor, 'chat-' + draft['request_id'], 'CHAT_RECORD_CONFIRMED', {'channel': ctx.channel})
+            if draft.get('sms_id'):
+                from api.app.notifications import sms_inbox
+                sms_inbox.mark(db, ctx.business, draft['sms_id'], 'saved')
             save_state(db, ctx, lang, pending=None, keep_topic=True)
             balance = figure(db, ctx.business, 'balance')['amount_minor']
         return Reply(say('saved', lang, draft=draft_text(draft, lang), balance=money(balance, 'BDT', lang)), lang=lang)
