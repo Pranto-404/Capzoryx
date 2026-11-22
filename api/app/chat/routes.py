@@ -22,10 +22,12 @@ def message(body: Message, actor=Depends(principal), db=Depends(db_connection)):
         if current.role not in ('owner', 'approver', 'viewer', 'bookkeeper'):
             sec.fail(403, 'MEMBER_REQUIRED')
         ctx = brain.Context('web', sec.signature('web-chat', current.business_id + '/' + current.user_id),
-                            current.business_id, current.user_id, role=current.role, allow_llm=False)
+                            current.business_id, current.user_id, role=current.role)
         # The app has its own reviewed draft card for entries, so the web brain only answers.
         reply = brain.decide(db, ctx, body.text)
-    if reply.save is not None or (reply.llm is not None):
+    if reply.save is not None:
         return dict(understood=False, text='', buttons=[], simulation_only=True)
+    if reply.llm is not None:
+        reply = brain.finish(db, ctx, reply)
     return dict(understood=reply.understood, text=reply.text, buttons=[dict(label=l, payload=p) for l, p in reply.buttons],
                 lang=reply.lang, simulation_only=True)

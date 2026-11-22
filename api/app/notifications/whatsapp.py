@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
 
 from api.app import security as sec
-from api.app.notifications.telegram import ChatPreference, Empty
+from api.app.notifications.telegram import CONNECTED, ChatPreference, Empty
 from api.app.receivables import owner_transaction
 from api.app.routes import db_connection, principal
 from api.app.services.receivables import customer_key, key_tag, seal, unseal
@@ -238,9 +238,13 @@ def webhook(request: Request, body: bytes = Depends(raw_body), db=Depends(db_con
                     key = customer_key(db, business, create=True)
                     cipher = seal(key, sec.canonical({'id': sender, 'label': '…' + sender[-4:]}).encode(),
                                   business + '/' + user + '/whatsapp')
-                    db.execute('UPDATE whatsapp_links SET chat_hash=?,chat_enc=?,key_tag=?,code_hash=NULL '
-                               'WHERE business_id=? AND user_id=?', (chat_hash, cipher, key_tag(key), business, user))
-                    reply = brain.Reply('Almost there! Go back to Capzoryx Settings and confirm this WhatsApp number to finish connecting.')
+                    # The single-use code came from the signed-in owner's Settings page, so sending it connects the chat.
+                    db.execute('UPDATE whatsapp_links SET chat_hash=?,chat_enc=?,key_tag=?,code_hash=NULL,expires_at=NULL,'
+                               'confirmed_at=?,chat_enabled=1 WHERE business_id=? AND user_id=?',
+                               (chat_hash, cipher, key_tag(key), now, business, user))
+                    sec.audit(db, sec.Principal(user, business, 'owner', ''), uuid.uuid4().hex, 'WHATSAPP_LINK_CONFIRMED',
+                              {'channel': 'whatsapp'})
+                    reply = brain.Reply(CONNECTED)
                 else:
                     reply = brain.Reply(UNLINKED)
             elif previous and not previous[2]:

@@ -149,6 +149,8 @@ def unlink(body:Empty,actor=Depends(principal),db=Depends(db_connection)):
 
 CHAT_COMMANDS={'/balance':'cash balance','/bills':'supplier bills','/dues':'customer dues','/forecast':'7 day forecast',
                '/summary':'__summary__','/help':'help','/save':'__save__','/cancel':'__cancel__'}
+CONNECTED=('Connected ✅ Ami Capzoryx, apnar hisab-er assistant. Just talk to me like a person — '
+           '“cash koto?”, “ke koto paona?”, “business kemon cholche?” or “Rahim theke 500 taka pelam”.')
 UNLINKED=('Hi! I\'m Capzoryx, your money assistant. 👋\nTo connect me to your books, sign in to Capzoryx and open '
           'Settings → Telegram, then tap “Connect Telegram”. After that you can just chat with me — “cash koto?”, '
           '“who owes me?”, “Rahim theke 500 taka pelam”.')
@@ -238,9 +240,11 @@ def webhook(payload:dict,request:Request,db=Depends(db_connection)):
                 username=sender.get('username')
                 label='@'+username if isinstance(username,str) and re.fullmatch(r'[A-Za-z0-9_]{3,32}',username) else '…'+str(chat_id)[-4:]
                 cipher=seal(key,sec.canonical({'id':str(chat_id),'label':label}).encode(),business+'/'+user+'/telegram')
-                db.execute('UPDATE telegram_links SET chat_hash=?,chat_enc=?,key_tag=?,code_hash=NULL WHERE business_id=? AND user_id=?',
-                           (chat_hash,cipher,key_tag(key),business,user))
-                reply=brain.Reply('Almost there! Return to Capzoryx Settings and confirm this Telegram account to finish connecting.')
+                # The single-use code came from the signed-in owner's Settings page, so opening it connects the chat.
+                db.execute('''UPDATE telegram_links SET chat_hash=?,chat_enc=?,key_tag=?,code_hash=NULL,confirmed_at=?,chat_enabled=1
+                              WHERE business_id=? AND user_id=?''',(chat_hash,cipher,key_tag(key),now,business,user))
+                sec.audit(db,sec.Principal(user,business,'owner',''),uuid.uuid4().hex,'TELEGRAM_LINK_CONFIRMED',{'channel':'telegram'})
+                reply=brain.Reply(CONNECTED)
             else:
                 reply=brain.Reply('That connect link has expired. Open Capzoryx Settings → Telegram and tap “Connect Telegram” again.')
         elif previous:

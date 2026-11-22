@@ -75,12 +75,10 @@ def test_whatsapp_links_chats_and_saves_only_after_confirmation(world, monkeypat
     assert link['number'] == ENV['NUMBER'] and len(link['code']) == 8
     assert c.get(base + '/link').json()['awaiting_message']
     text(c, 'LINK ' + link['code'].lower())
-    assert 'confirm this WhatsApp number' in sent[-1]['text']['body']
+    assert 'Connected' in sent[-1]['text']['body']
     status = c.get(base + '/link').json()
-    assert status['pending'] and status['chat_label'] == '…1111'
-    text(c, 'cash koto?')
-    assert 'confirm this WhatsApp number' in sent[-1]['text']['body']
-    c.post(base + '/confirm', json={}).raise_for_status()
+    assert status['linked'] and status['chat_enabled'] and status['chat_label'] == '…1111'
+    c.post(base + '/chat', json={'enabled': False}).raise_for_status()
     text(c, 'cash koto?')
     assert 'book reply bondho' in sent[-1]['text']['body']
     c.post(base + '/chat', json={'enabled': True}).raise_for_status()

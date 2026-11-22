@@ -30,16 +30,28 @@ export function ChannelLink({request,channel}:{request:Request;channel:Channel})
   }
   async function load(){setStatus(await request<Status>(path+'/link'));}
   useEffect(()=>{void run(load);},[channel]);// eslint-disable-line react-hooks/exhaustive-deps
+  // After the chat opens, watch for the bot to confirm the link (every 3 s for up to 5 minutes).
+  useEffect(()=>{
+    if(!url||status?.linked)return;
+    let tries=0;
+    const timer=window.setInterval(()=>{
+      if(++tries>100){window.clearInterval(timer);return;}
+      request<Status>(path+'/link').then(next=>{setStatus(next);if(next.linked){setUrl('');setCode('');}}).catch(()=>undefined);
+    },3000);
+    return()=>window.clearInterval(timer);
+  },[url,status?.linked]);// eslint-disable-line react-hooks/exhaustive-deps
   const reset=async()=>{await request(path+'/unlink',{});setUrl('');setCode('');await load();};
   const toggle=(kind:'chat'|'records',on:boolean)=>run(async()=>{await request(path+'/'+kind,{enabled:on});await load();});
   async function start(){
     if(channel==='telegram'){
       const link=await request<{bot:string;code:string}>(path+'/link-code',{});
-      setUrl('https://t.me/'+encodeURIComponent(link.bot)+'?start='+encodeURIComponent(link.code));
+      const target='https://t.me/'+encodeURIComponent(link.bot)+'?start='+encodeURIComponent(link.code);
+      setUrl(target);window.open(target,'_blank','noopener');
     }else{
       const link=await request<{number:string;code:string}>(path+'/link-code',{});
       setCode(link.code);
-      setUrl('https://wa.me/'+encodeURIComponent(link.number)+'?text='+encodeURIComponent('LINK '+link.code));
+      const target='https://wa.me/'+encodeURIComponent(link.number)+'?text='+encodeURIComponent('LINK '+link.code);
+      setUrl(target);window.open(target,'_blank','noopener');
     }
   }
   let body;
@@ -59,10 +71,11 @@ export function ChannelLink({request,channel}:{request:Request;channel:Channel})
   else if(url)body=<>
     <ol className="steps">
       <li>{t('Open the chat and send the message.')}{code&&<> <code>{'LINK '+code}</code></>}</li>
-      <li>{t('Come back here and confirm.')}</li>
+      <li>{t('That is all — this page updates when the bot replies.')}</li>
     </ol>
+    <p className="muted">{t('Waiting for your message…')}</p>
     <div className="actions"><a className="button" href={url} target="_blank" rel="noreferrer">{t(c.open)}</a>
-      <button className="secondary" disabled={busy} onClick={()=>void run(load)}>{t('I sent it')}</button></div></>;
+      <button className="secondary" disabled={busy} onClick={()=>void run(load)}>{t('Check now')}</button></div></>;
   else body=<><p className="muted">{t(c.intro)}</p>
     <button disabled={busy} onClick={()=>void run(start)}>{t(c.connect)}</button></>;
   return <section className="panel channel"><h2>{t(c.title)}</h2>{body}{message&&<p role="status">{message}</p>}</section>;
