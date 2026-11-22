@@ -32,19 +32,30 @@ def load(data):
     return rows, manifest
 
 
+END_MARKERS = ('<|im_end|>', '<end_of_turn>', '<|eot_id|>', '</s>')
+
+
 def encode(tokenizer, messages):
-    """Token ids for the whole chat, with labels only on assistant replies."""
-    ids, labels = [], []
-    for end in range(1, len(messages) + 1):
-        if messages[end - 1]['role'] != 'assistant':
+    """Token ids for the whole chat, with labels only on assistant replies (and the marker that ends each one).
+
+    The chat is rendered as text and replies are located by character offsets, so this works with any chat
+    template, including ones that render the final turn differently from earlier turns.
+    """
+    text = tokenizer.apply_chat_template(messages, tokenize=False)
+    spans, cursor = [], 0
+    for message in messages:
+        start = text.find(message['content'], cursor) if message['content'] else -1
+        if start < 0:
             continue
-        prompt = tokenizer.apply_chat_template(messages[:end - 1], add_generation_prompt=True, tokenize=True)
-        full = tokenizer.apply_chat_template(messages[:end], tokenize=True)
-        if full[:len(prompt)] != prompt or full[:len(ids)] != ids:
-            raise ValueError('Chat template is not prefix-stable; choose an instruct base model')
-        labels += [-100] * (len(prompt) - len(ids)) + full[len(prompt):]
-        ids = full
-    if len(ids) > MAX_LEN:
+        end = cursor = start + len(message['content'])
+        if message['role'] == 'assistant':
+            end += next((len(m) for m in END_MARKERS if text.startswith(m, end)), 0)
+            spans.append((start, end))
+    encoded = tokenizer(text, add_special_tokens=False, return_offsets_mapping=True)
+    ids = list(encoded['input_ids'])
+    labels = [token if any(s <= first < e for s, e in spans) else -100
+              for token, (first, _) in zip(ids, encoded['offset_mapping'])]
+    if len(ids) > MAX_LEN or all(label == -100 for label in labels):
         return None
     return dict(input_ids=ids, labels=labels)
 
@@ -62,6 +73,7 @@ def main():
     a = p.parse_args()
     rows, manifest = load(a.data)
 
+    import unsloth  # noqa: F401 - must load before transformers so its speed-ups apply
     import torch
     if not torch.cuda.is_available():
         raise SystemExit('A CUDA GPU is required. RTX 50-series cards need a PyTorch build for CUDA 12.8 or newer.')

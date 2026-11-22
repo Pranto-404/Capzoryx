@@ -98,6 +98,10 @@ class Teachers:
                     llm.rest(provider, 90)
                     continue
                 if response.status_code != 200:
+                    if provider is not self.local and response.status_code in (400, 404) and provider.name not in llm._models:
+                        provider.discover()  # retired model name: switch to a current one and try again
+                        if provider.name in llm._models:
+                            continue
                     if provider is not self.local:
                         llm.rest(provider, 300)
                     continue

@@ -3,7 +3,7 @@
 In a Kaggle notebook (Accelerator: GPU T4 x2, Internet: on) add these secrets under Add-ons -> Secrets:
 HF_TOKEN (Hugging Face write token) and any of GROQ_KEY, GEMINI_KEY, CEREBRAS_KEY, OPENROUTER_KEY. Then run:
 
-    !git clone -q https://github.com/Pranto-404/Capzoryx
+    !rm -rf Capzoryx && git clone -q https://github.com/Pranto-404/Capzoryx
     %run Capzoryx/ml/hisab_chat/kaggle_run.py
 
 Use Save Version -> Save & Run All to keep it running with the browser closed. It ends by printing the two values
@@ -40,6 +40,30 @@ def load_secrets():
             pass
 
 
+def probe_teachers():
+    """Pick each teacher's current model and send it one tiny request, so problems show at the start."""
+    import httpx
+    sys.path.insert(0, str(ROOT))
+    from api.app.chat import llm
+    working = []
+    for provider in [p for p in llm.available() if not p.own]:
+        provider.discover()
+        try:
+            reply = httpx.post(provider.url + '/chat/completions', timeout=30,
+                               headers={'Authorization': 'Bearer ' + provider.key},
+                               json={'model': provider.model_name, 'max_tokens': 5, 'messages': [{'role': 'user', 'content': 'hi'}]})
+            status = reply.status_code
+            detail = '' if status == 200 else ' ' + reply.text[:160].replace('\n', ' ')
+        except httpx.HTTPError as error:
+            status, detail = 'error', ' ' + type(error).__name__
+        print(f'Teacher {provider.name}: model {provider.model_name} -> {status}{detail}', flush=True)
+        if status == 200:
+            working.append(provider.name)
+            os.environ[f'CAPZORYX_CHAT_{provider.name.upper()}_MODEL'] = provider.model_name  # reuse in child steps
+    print('Working teachers:', ', '.join(working) or 'none (template data only)', flush=True)
+    return working
+
+
 def start_space():
     from huggingface_hub import HfApi
     api = HfApi()
@@ -57,8 +81,7 @@ def main():
     load_secrets()
     if not os.getenv('HF_TOKEN'):
         raise SystemExit('Add a Hugging Face write token as the Kaggle secret HF_TOKEN.')
-    teachers = [env for env in TEACHER_SECRETS.values() if os.getenv(env)]
-    print('Teachers available:', ', '.join(teachers) or 'none (template data only)')
+    teachers = probe_teachers()
     step('Install training libraries', sys.executable, '-m', 'pip', '-q', 'install', 'unsloth', 'httpx')
     step('Build conversations', sys.executable, '-m', 'ml.hisab_chat.build_dataset', '--out', 'data/hisab_chat',
          '--size', '6000', '--teacher', '1500' if teachers else '0')
