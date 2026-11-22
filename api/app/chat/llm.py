@@ -37,7 +37,10 @@ class Provider:
 
     @property
     def key(self):
-        return self.env('KEY')
+        key = self.env('KEY')
+        if not key and self.name == 'gemini' and os.getenv('SAFELEDGER_LLM_PROFILE', 'gemini_free') == 'gemini_free':
+            key = os.getenv('SAFELEDGER_LLM_API_KEY', '').strip()  # reuse the app's existing Gemini key
+        return key
 
     @property
     def model_name(self):
