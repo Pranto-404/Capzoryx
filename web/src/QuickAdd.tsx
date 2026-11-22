@@ -5,12 +5,13 @@ import {useRef,useState} from 'react';
 import {useCurrency} from './Currency';
 import {DraftCard} from './DraftCard';
 import {prepareDocumentPhoto} from './format';
-import {parseRecordForDraft} from './recordParser';
+import {looksLikeOpenBill,parseRecordForDraft} from './recordParser';
 import {hisabDraftMessage,hisabPrivacyNote,type HisabDraftResult} from './hisabDraft';
 import type {Draft,Profile} from './types';
 import {t,useI18n} from './i18n';
 
 type Props={request:<T>(path:string,body?:unknown)=>Promise<T>;revision:string;onSaved:()=>Promise<void>|void;profile:Profile|null;owner:boolean;cloudAvailable:boolean;hisabAvailable:boolean};
+type OnlineRead={sentence:string;source:'hisab'|'api'};
 
 /** The fast way to add records: photograph a bill or receipt, or just type or say what happened. */
 export function QuickAdd({request,revision,onSaved,profile,owner,cloudAvailable,hisabAvailable}:Props){
@@ -18,13 +19,20 @@ export function QuickAdd({request,revision,onSaved,profile,owner,cloudAvailable,
   const {code}=useI18n();
   const [photoText,setPhotoText]=useState('');
   const [hisabDraft,setHisabDraft]=useState<HisabDraftResult['source']|null>(null);
-  const [text,setText]=useState('');const [busy,setBusy]=useState<''|'photo'|'text'|'hisab'>('');const [error,setError]=useState('');
+  const [text,setText]=useState('');const [busy,setBusy]=useState<''|'photo'|'text'>('');const [error,setError]=useState('');
+  const [onlineRead,setOnlineRead]=useState<OnlineRead|null>(null);
   const [draft,setDraft]=useState<Draft|null>(null);const [preview,setPreview]=useState('');
   const file=useRef<HTMLInputElement>(null);const gallery=useRef<HTMLInputElement>(null);
   const smart=owner&&!!profile?.smart_assist&&cloudAvailable;
   const allowHisabBackup=smart&&!!profile?.record_api_fallback;
+  const canUseHisab=owner&&hisabAvailable&&currency==='BDT';
+  const canUseRecordApi=allowHisabBackup||smart&&!!profile?.cloud_providers?.some(p=>p.allowed.includes('record_data'));
+  const sentence=text.trim();
+  const online=onlineRead?.sentence===sentence&&
+    (onlineRead.source==='hisab'?canUseHisab:canUseRecordApi)?onlineRead.source:null;
+  function updateText(value:string){setText(value);setOnlineRead(null);}
   async function scan(f:File|undefined){
-    if(!f)return;setHisabDraft(null);setError('');setDraft(null);setPhotoText('');setPreview('');setBusy('photo');
+    if(!f)return;setOnlineRead(null);setHisabDraft(null);setError('');setDraft(null);setPhotoText('');setPreview('');setBusy('photo');
     try{
       const image=await prepareDocumentPhoto(f);setPreview(image);
       const {readPhotoText,draftFromBill}=await import('./billPhoto');
@@ -36,19 +44,26 @@ export function QuickAdd({request,revision,onSaved,profile,owner,cloudAvailable,
     }catch(e){setError(e instanceof Error?e.message:t('The photo could not be read.'));}
     finally{setBusy('');if(file.current)file.current.value='';if(gallery.current)gallery.current.value='';}
   }
-  async function read(hosted=false){
-    const sentence=text.trim();if(!sentence||(hosted&&(sentence.length<3||sentence.length>400)))return;setHisabDraft(null);setError('');setDraft(null);setPhotoText('');setPreview('');setBusy(hosted?'hisab':'text');
+  async function read(){
+    if(!sentence||busy)return;setHisabDraft(null);setError('');setDraft(null);setPhotoText('');setPreview('');setBusy('text');
     try{
-      if(hosted){
+      if(online==='hisab'){
         const result=await request<HisabDraftResult>('/assist/hisab',{text:sentence,consent:true,...(allowHisabBackup?{allow_api_fallback:true}:{})});
-        setDraft(result.draft);setHisabDraft(result.source??'hisab_lm');return;
+        setDraft(result.draft);setHisabDraft(result.source??'hisab_lm');setOnlineRead(null);return;
       }
+      if(online==='api'){
+        const r=await request<{draft:Draft}>('/assist/extract',{text:sentence});
+        if(!r.draft.ok)throw new Error(t('I could not find an amount or a payment in that. Try something like "I paid Rahman 5000 for freight yesterday".'));
+        setDraft(r.draft);setOnlineRead(null);return;
+      }
+      setOnlineRead(null);
       const local=await parseRecordForDraft(sentence,{currency,digits});
       if(local){setDraft(local);return;}
-      if(!smart)throw new Error(t('I could not understand that. Try something like "I paid Rahman 5000 for freight yesterday".'));
-      const r=await request<{draft:Draft}>('/assist/extract',{text:sentence});
-      if(!r.draft.ok)throw new Error(t('I could not find an amount or a payment in that. Try something like "I paid Rahman 5000 for freight yesterday".'));
-      setDraft(r.draft);
+      if(sentence.length>=3&&sentence.length<=400&&(canUseHisab||canUseRecordApi)){
+        const billUsesApi=canUseRecordApi&&looksLikeOpenBill(sentence);
+        setOnlineRead({sentence,source:canUseHisab&&!billUsesApi?'hisab':'api'});return;
+      }
+      throw new Error(t('I could not understand that. Try something like "I paid Rahman 5000 for freight yesterday".'));
     }catch(e){setError(e instanceof Error?e.message:t('Could not read that.'));}
     finally{setBusy('');}
   }
@@ -67,14 +82,13 @@ export function QuickAdd({request,revision,onSaved,profile,owner,cloudAvailable,
       <div className="quick-box">
         <h3><Icon name="pen"/> {t('Type it like a message')}</h3>
         <label htmlFor="quick-text" className="sr-only">{t('Describe the payment or bill')}</label>
-        <textarea id="quick-text" rows={3} maxLength={400} value={text} onChange={e=>setText(e.target.value)} placeholder={'e.g. "I paid Rahman 5000 for freight yesterday"\n"Received 20,000 from Karim Traders"\n"Bill from Dhaka Packaging 12000 due in 10 days"'}/>
-        <LocalVoice onText={setText}/>
-        {owner&&profile?.smart_assist&&profile.speech_provider&&<VoiceCapture provider={profile.speech_provider} request={request} onText={setText}/> }
+        <textarea id="quick-text" rows={3} maxLength={400} value={text} disabled={busy!==''} onChange={e=>updateText(e.target.value)} placeholder={'e.g. "I paid Rahman 5000 for freight yesterday"\n"Received 20,000 from Karim Traders"\n"Bill from Dhaka Packaging 12000 due in 10 days"'}/>
+        <LocalVoice onText={updateText}/>
+        {owner&&profile?.smart_assist&&profile.speech_provider&&<VoiceCapture provider={profile.speech_provider} request={request} onText={updateText}/> }
         <div className="actions">
-          <button disabled={busy!==''||!text.trim()} onClick={()=>void read()}>{busy==='text'?t('Reading…'):t('Read it')}</button>
-          {owner&&hisabAvailable&&currency==='BDT'&&<button className="secondary" type="button" disabled={busy!==''||text.trim().length<3||text.trim().length>400} aria-describedby="hisab-privacy" onClick={()=>void read(true)}>{busy==='hisab'?t('Reading with Hisab-LM…'):t('Use Hisab-LM')}</button>}
+          <button type="button" disabled={busy!==''||!sentence} aria-describedby={online?'quick-read-privacy':undefined} onClick={()=>void read()}>{busy==='text'?t('Reading…'):online?t('Read online'):t('Read it')}</button>
         </div>
-        {owner&&hisabAvailable&&currency==='BDT'&&<p id="hisab-privacy" className="small muted">{text.trim().length>400?t('Use 400 characters or fewer with Hisab-LM.'):hisabPrivacyNote(allowHisabBackup)}</p>}
+        {online&&<p id="quick-read-privacy" role="status" className="small muted">{online==='hisab'?hisabPrivacyNote(allowHisabBackup):t('Reading online sends this sentence to your configured AI provider to prepare a draft.')}</p>}
       </div>
     </div>
     {error&&<p className="error" role="alert">{error}</p>}
