@@ -21,12 +21,16 @@ _cooldown = {}
 _lock = threading.Lock()
 
 
+_models = {}  # provider name -> model chosen from its live /models list
+
+
 @dataclass(frozen=True)
 class Provider:
     name: str
     base: str  # empty for the own model, whose URL comes from the environment
     model: str
     own: bool = False
+    alternatives: tuple = ()  # used when the preferred model has been retired
 
     def env(self, field):
         return os.getenv(f'CAPZORYX_CHAT_{self.name.upper()}_{field}', '').strip()
@@ -44,7 +48,21 @@ class Provider:
 
     @property
     def model_name(self):
-        return self.env('MODEL') or self.model
+        return self.env('MODEL') or _models.get(self.name) or self.model
+
+    def discover(self, timeout=8):
+        """Pick the first preferred model the provider still offers; free model names change often."""
+        if self.own or self.env('MODEL') or self.name in _models:
+            return
+        try:
+            with httpx.Client(transport=TRANSPORT, trust_env=False, timeout=timeout) as client:
+                listed = client.get(self.url + '/models', headers={'Authorization': 'Bearer ' + self.key})
+            offered = {str(m.get('id', '')).removeprefix('models/') for m in listed.json().get('data', [])}
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return
+        choice = next((m for m in (self.model, *self.alternatives) if m in offered), None)
+        if choice:
+            _models[self.name] = choice
 
     def configured(self):
         if self.own:
@@ -60,12 +78,17 @@ class Provider:
 
 PROVIDERS = (
     Provider('hisab', '', 'hisab-chat', own=True),
-    Provider('groq', 'https://api.groq.com/openai/v1', 'llama-3.3-70b-versatile'),
-    Provider('gemini', 'https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-flash-latest'),
-    Provider('cerebras', 'https://api.cerebras.ai/v1', 'llama-3.3-70b'),
-    Provider('openrouter', 'https://openrouter.ai/api/v1', 'meta-llama/llama-3.3-70b-instruct:free'),
-    Provider('mistral', 'https://api.mistral.ai/v1', 'mistral-small-latest'),
-    Provider('github', 'https://models.github.ai/inference', 'openai/gpt-4.1-mini'),
+    Provider('groq', 'https://api.groq.com/openai/v1', 'llama-3.3-70b-versatile',
+             alternatives=('openai/gpt-oss-120b', 'moonshotai/kimi-k2-instruct', 'qwen/qwen3-32b', 'llama-3.1-8b-instant')),
+    Provider('gemini', 'https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-flash-latest',
+             alternatives=('gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-lite-latest')),
+    Provider('cerebras', 'https://api.cerebras.ai/v1', 'llama-3.3-70b',
+             alternatives=('gpt-oss-120b', 'qwen-3-235b-a22b-instruct-2507', 'llama3.1-8b')),
+    Provider('openrouter', 'https://openrouter.ai/api/v1', 'meta-llama/llama-3.3-70b-instruct:free',
+             alternatives=('deepseek/deepseek-chat-v3-0324:free', 'qwen/qwen3-235b-a22b:free', 'google/gemma-3-27b-it:free',
+                           'mistralai/mistral-small-3.2-24b-instruct:free')),
+    Provider('mistral', 'https://api.mistral.ai/v1', 'mistral-small-latest', alternatives=('open-mistral-nemo',)),
+    Provider('github', 'https://models.github.ai/inference', 'openai/gpt-4.1-mini', alternatives=('openai/gpt-4o-mini',)),
 )
 
 SYSTEM = (
@@ -137,6 +160,10 @@ def call(provider, messages, deadline):
         rest(provider, 600)
         raise RuntimeError('quota')
     if response.status_code != 200:
+        if response.status_code in (400, 404) and provider.name not in _models:
+            provider.discover()  # a retired model name: look up a current one and retry next time
+            if provider.name in _models:
+                raise RuntimeError('model')
         rest(provider, 120)
         raise RuntimeError('status')
     data = response.json()
@@ -155,7 +182,12 @@ def reply(question, history=(), facts='', share_facts=False):
         system = SYSTEM + (FACTS_HEADER + facts if sees_facts else NO_FACTS)
         messages = [{'role': 'system', 'content': system}, *turns, {'role': 'user', 'content': question[:400]}]
         try:
-            answer = call(provider, messages, deadline)
+            try:
+                answer = call(provider, messages, deadline)
+            except RuntimeError as error:
+                if str(error) != 'model':
+                    raise
+                answer = call(provider, messages, deadline)  # retry once with the newly discovered model
         except (httpx.HTTPError, TimeoutError, RuntimeError, ValueError, KeyError, IndexError, TypeError):
             if time.monotonic() >= deadline:
                 break

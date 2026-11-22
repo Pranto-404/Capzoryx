@@ -14,7 +14,7 @@ Nothing is installed on your computer, and it keeps running with the browser clo
 3. Paste one cell and press **Save Version → Save & Run All**:
 
    ```python
-   !git clone -q https://github.com/Pranto-404/Capzoryx
+   !rm -rf Capzoryx && git clone -q https://github.com/Pranto-404/Capzoryx
    %run Capzoryx/ml/hisab_chat/kaggle_run.py
    ```
 

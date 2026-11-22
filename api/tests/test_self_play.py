@@ -68,3 +68,39 @@ def test_daily_budget_keeps_a_reserve_and_hands_over_to_the_gpu_teacher(monkeypa
     used.clear()
     pool.ask_json('write questions', far, prefer='local')
     assert used == ['gpu.local']
+
+
+def test_training_labels_only_assistant_replies_for_any_chat_template():
+    from ml.hisab_chat.train import encode
+
+    class CharTokenizer:  # one token per character, like offsets from a fast tokenizer
+        def apply_chat_template(self, messages, tokenize=False):
+            return ''.join(f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n" for m in messages)
+
+        def __call__(self, text, add_special_tokens=False, return_offsets_mapping=True):
+            return {'input_ids': [ord(c) for c in text], 'offset_mapping': [(i, i + 1) for i in range(len(text))]}
+
+    messages = [{'role': 'system', 'content': 'facts'}, {'role': 'user', 'content': 'cash koto?'},
+                {'role': 'assistant', 'content': 'Ekhon ৳500.'}, {'role': 'user', 'content': 'ar?'},
+                {'role': 'assistant', 'content': 'Bas.'}]
+    row = encode(CharTokenizer(), messages)
+    learned = ''.join(chr(t) for t in row['labels'] if t != -100)
+    assert learned == 'Ekhon ৳500.<|im_end|>Bas.<|im_end|>'
+
+
+def test_retired_model_names_are_replaced_from_the_live_model_list(monkeypatch):
+    calls = []
+
+    def fake(request):
+        calls.append((request.method, request.url.path))
+        if request.method == 'GET':
+            return httpx.Response(200, json={'data': [{'id': 'openai/gpt-oss-120b'}, {'id': 'llama-3.1-8b-instant'}]})
+        body = json.loads(request.content)
+        if body['model'] == 'llama-3.3-70b-versatile':
+            return httpx.Response(404, json={'error': 'model_decommissioned'})
+        return httpx.Response(200, json={'choices': [{'message': {'content': 'Bhalo achi!'}}]})
+    monkeypatch.setattr(llm, 'TRANSPORT', httpx.MockTransport(fake))
+    monkeypatch.setattr(llm, '_models', {})
+    monkeypatch.setenv('CAPZORYX_CHAT_GEMINI_KEY', '')
+    assert llm.reply('kemon acho') == ('Bhalo achi!', 'groq')
+    assert llm.PROVIDERS[1].model_name == 'openai/gpt-oss-120b' and ('GET', '/openai/v1/models') in calls
