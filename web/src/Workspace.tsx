@@ -8,6 +8,7 @@ import {QuickTour} from './QuickTour';
 import {LazyBoundary} from './LazyBoundary';
 import {ThemeButton} from './Theme';
 import {Icon} from './Icon';
+import {CommandPalette} from './CommandPalette';
 import {CashBriefing} from './CashBriefing';
 import {AgentReview} from './AgentReview';
 import {Dashboard} from './Dashboard';
@@ -39,6 +40,7 @@ const Settings=lazy(()=>import('./Settings'));
 const Assistant=lazy(()=>import('./Assistant'));
 const tabs=['Overview','Data','Invoices','Cash flow','Financing','Assistant','Approvals','Audit','Settings'] as const;
 type Tab=typeof tabs[number];
+const primaryTabs:readonly Tab[]=['Overview','Data','Cash flow','Assistant'];
 const tabLabel:Record<Tab,string>={Overview:T('Overview'),Data:T('Add records'),Invoices:T('Invoices'),'Cash flow':T('Cash flow'),Financing:T('Loans'),Assistant:T('Assistant'),Approvals:T('Approvals'),Audit:T('Activity'),Settings:T('Settings')};
 const pageTitle:Record<Tab,string>={Overview:T('Financial overview'),Data:T('Add your records'),Invoices:T('Invoices'),'Cash flow':T('Cash flow'),Financing:T('Loan offers'),Assistant:T('Assistant'),Approvals:T('Payment approvals'),Audit:T('Activity'),Settings:T('Settings')};
 
@@ -52,7 +54,7 @@ function CorrectionSummary({payload}:{payload:Record<string,unknown>}){
   return <small>{t('Previous entry: {entry}',{entry:describe(payload.previous)})}<br/>{t('Correction: {entry}',{entry:describe(payload.replacement)})}</small>;
 }
 function Basis({count}:{count:number}){return <p className="small muted">{t('Based on {count} of your records.',{count})}</p>;}
-function Notes({values}:{values:string[]}){return <ul className="notes">{values.map((v,i)=><li key={i}>{t(v)}</li>)}</ul>;}
+function Notes({values}:{values:string[]}){return <details className="how-it-works"><summary>{t('How this forecast works')}</summary><ul className="notes">{values.map((v,i)=><li key={i}>{t(v)}</li>)}</ul></details>;}
 function Metric({label,value,hint}:{label:string;value:number;hint?:string}){const {money}=useCurrency();return <article className="metric"><p>{label}</p><strong className={value<0?'negative':''}>{money(value)}</strong>{hint&&<small>{hint}</small>}</article>;}
 function Panel({title,children}:{title:string;children:ReactNode}){return <section className="panel"><h2>{title}</h2>{children}</section>;}
 
@@ -81,6 +83,21 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const tourNavigate=useCallback((page:string)=>{setTab(page as Tab);setSelected(null);setChatOpen(false);},[]);
   const [nextCollection,setNextCollection]=useState<NextCollection|null>(null);
   const focusTarget=useRef<string|null>(null);
+  const [moreOpen,setMoreOpen]=useState(false);
+  const [paletteOpen,setPaletteOpen]=useState(false);
+  const [dismissed,setDismissed]=useState(()=>{try{return localStorage.getItem('capzoryx-email-nudge')==='hidden';}catch{return false;}});
+  // A new page starts at the top with a short entrance, unless a deep link is scrolling to a target.
+  useEffect(()=>{
+    setMoreOpen(false);
+    if(!focusTarget.current)window.scrollTo({top:0});
+    const main=document.getElementById('workspace');
+    if(main){main.classList.remove('page-enter');void main.offsetWidth;main.classList.add('page-enter');}
+  },[tab]);
+  // Ctrl/⌘+K opens the quick jump palette.
+  useEffect(()=>{
+    const onKey=(e:globalThis.KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setPaletteOpen(open=>!open);}};
+    window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);
+  },[]);
   const [openStatement,setOpenStatement]=useState(false);
   function showDashboardDestination(page:Tab,target='workspace-title'){
     focusTarget.current=target;
@@ -102,6 +119,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const [forecast,setForecast]=useState<Forecast|null>(null);
   const [baselineMonth,setBaselineMonth]=useState<Forecast|null>(null);
   const [error,setError]=useState('');const [message,setMessage]=useState('');
+  useEffect(()=>{if(!message)return;const id=window.setTimeout(()=>setMessage(''),6000);return()=>window.clearTimeout(id);},[message]);
   const [busy,setBusy]=useState(true);const [missing,setMissing]=useState(false);const [exporting,setExporting]=useState(false);
   const [reserve,setReserve]=useState('0');const [delay,setDelay]=useState('0');
   const [query,setQuery]=useState('');const [selected,setSelected]=useState<Proposal|null>(null);
@@ -176,21 +194,28 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const name=profile?.display_name||session.display_name||session.username||'You';
   const number=(id:string)=>invoices.find(i=>i.invoice_id===id)?.invoice_number||'';
   const visible=invoices.filter(i=>`${i.vendor_id} ${i.invoice_number}`.toLowerCase().includes(query.toLowerCase()));
+  const paletteItems=[
+    ...tabs.map(tb=>({id:'go-'+tb,label:t(tabLabel[tb]),icon:tb,run:()=>{setTab(tb);setSelected(null);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}}})),
+    {id:'ask',label:t('Ask your assistant'),icon:'spark',run:()=>{setChatLoaded(true);setChatOpen(true);}},
+    {id:'pdf',label:t('Download PDF'),icon:'download',run:()=>void exportPdf()},
+    {id:'refresh',label:t('Refresh'),icon:'refresh',run:()=>void run(refresh)},
+  ];
   return <div className="shell"><aside>
     <Brand/>
-    <nav aria-label={t('Workspace')}>{tabs.map(tb=><button key={tb} data-tour={tb} aria-current={tab===tb?'page':undefined} onClick={()=>{setTab(tb);setSelected(null);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}}}><Icon name={tb}/>{t(tabLabel[tb])}</button>)}</nav>
+    <nav aria-label={t('Workspace')} className={moreOpen?'open':undefined}>{tabs.map(tb=><button key={tb} data-tour={tb} className={primaryTabs.includes(tb)?undefined:'more-item'} aria-current={tab===tb?'page':undefined} onClick={()=>{setTab(tb);setSelected(null);setMoreOpen(false);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}}}><Icon name={tb}/>{t(tabLabel[tb])}</button>)}
+      <button className="more-toggle" aria-expanded={moreOpen} onClick={()=>setMoreOpen(!moreOpen)}><Icon name={moreOpen?'close':'more'}/>{t('More')}</button></nav>
     <div className="identity">
       <button className="identity-user" onClick={()=>setTab('Settings')} title={t('Open your profile and settings')}><Avatar profile={profile} name={name}/><span><strong>{name}</strong><small>{roleLabel(session.role)}</small></span></button>
       {lists.workspaces.length>1&&<><label htmlFor="workspace-switch" className="sr-only">{t('Switch workspace')}</label><select id="workspace-switch" value={session.business_id} disabled={busy} onChange={e=>void switchTo(e.target.value)}>{lists.workspaces.map(w=><option key={w.business_id} value={w.business_id}>{workspaceLabel(w.name)}{w.currency?` · ${w.currency}`:''}{w.role!=='owner'?' · '+t('shared'):''}</option>)}</select></>}
       <LanguagePicker compact id="language-side" onPicked={code=>{void request('/account/profile',{language:code}).catch(()=>{});}}/>
       <button className="secondary" onClick={logout}>{t('Sign out')}</button></div></aside>
     <main id="workspace"><header><div><p className="eyebrow">{workspaceLabel(session.workspace_name||'My workspace')}</p><h1 tabIndex={-1} id="workspace-title">{t(pageTitle[tab])}</h1><p className="muted">{snapshot?t('Up to date as of {date} · {currency}',{date:formatDate(snapshot.as_of),currency}):t('Your business finances in one place')}</p></div>
-      <div className="header-actions"><QuickTour ready={!!snapshot&&!busy} userId={session.user_id} currentPage={tab} navigate={tourNavigate}/><ThemeButton/><button className="secondary" disabled={busy||!snapshot||exporting} onClick={()=>void exportPdf()}>{exporting?t('Preparing PDF…'):t('Download PDF')}</button><button className="secondary" disabled={busy} onClick={()=>void run(refresh)}>{t('Refresh')}</button></div></header>
+      <div className="header-actions"><QuickTour ready={!!snapshot&&!busy} userId={session.user_id} currentPage={tab} navigate={tourNavigate}/><ThemeButton/><button className="secondary icon-button" title={t('Find a page or action (Ctrl+K)')} aria-label={t('Find a page or action')} onClick={()=>setPaletteOpen(true)}><Icon name="search"/></button><button className="secondary icon-button" title={t('Download PDF')} aria-label={exporting?t('Preparing PDF…'):t('Download PDF')} disabled={busy||!snapshot||exporting} onClick={()=>void exportPdf()}><Icon name="download"/></button><button className="secondary icon-button" title={t('Refresh')} aria-label={t('Refresh')} disabled={busy} onClick={()=>void run(refresh)}><span className={busy?'spin':undefined}><Icon name="refresh"/></span></button></div></header>
       <CurrencyControls key={currency} ready={!!snapshot}/>
       <div aria-live="polite" role="status">{busy&&<p className="notice">{t('Loading your latest data…')}</p>}{message&&<p className="success">{message}</p>}</div>
       {error&&<p className="error" role="alert">{error}</p>}
       {profile&&profile.email&&!profile.email_verified&&profile.email_service&&tab!=='Settings'&&<p className="notice">{t('Verify your email so you can reset your password with a code.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Verify now')}</button></p>}
-      {profile&&!profile.email&&tab==='Overview'&&<p className="notice">{t('Add an email address to reset your password with a code if you ever forget it.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Add email')}</button></p>}
+      {profile&&!profile.email&&tab==='Overview'&&!dismissed&&<p className="notice dismissible">{t('Add an email address to reset your password with a code if you ever forget it.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Add email')}</button><button className="close-notice" aria-label={t('Dismiss')} onClick={()=>{setDismissed(true);try{localStorage.setItem('capzoryx-email-nudge','hidden');}catch{/* optional */}}}><Icon name="close"/></button></p>}
       {missing&&<p className="notice">Nothing here yet. {canAddRecords?<button className="link" onClick={()=>setTab('Data')}>{t('Add your first record')}</button>:t('Ask the owner to add records.')}</p>}
       {tab==='Overview'&&<Dashboard role={session.role} nextCollection={nextCollection} snapshot={snapshot} week={week} month={baselineMonth} invoices={invoices} events={events} proposals={proposals} audit={audit} navigate={showDashboardDestination} openAssistant={()=>{setChatLoaded(true);setChatOpen(true);}} onSample={session.role==='owner'&&!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0?()=>void importRaw(sampleBusiness(snapshot.currency)).catch(e=>report(e)):undefined}/>}
       {tab==='Overview'&&snapshot&&session.role==='owner'&&<AgentReview initiallyOpen={focusTarget.current==='agent-mode'} key={'agent-'+revision} request={request} invoices={invoices} forecast={baselineMonth} navigate={showDashboardDestination}/>}
@@ -251,6 +276,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
       {chatLoaded&&<div id="workspace-assistant" hidden={tab!=='Assistant'&&!chatOpen} className={tab==='Assistant'?'assistant-page':'chat-float'} onKeyDown={(e:KeyboardEvent)=>{if(e.key==='Escape'&&tab!=='Assistant')closeChat();}}><LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening assistant…')}</section>}><Assistant visible={tab==='Assistant'||chatOpen} snapshot={snapshot} forecast={baselineMonth} week={week} events={events} invoices={invoices} session={session} profile={profile} cloudAvailable={cloudAvailable} hisabAvailable={hisabAvailable} revision={revision} request={request} onSaved={refresh} onNavigate={action=>{setTab(action);closeChat();}} onProposal={async()=>{await refresh();setTab('Approvals');closeChat();}} onClose={tab==='Assistant'?undefined:closeChat}/></Suspense></LazyBoundary></div>}
       {tab!=='Assistant'&&<button ref={chatButton} className="chat-launcher" aria-label={chatOpen?t('Close assistant'):t('Open assistant')} aria-expanded={chatOpen} aria-controls="workspace-assistant" onClick={()=>{setChatLoaded(true);setChatOpen(!chatOpen);}}><Icon name="spark"/> <span>{chatOpen?t('Close'):t('Assistant')}</span></button>}
+      <CommandPalette open={paletteOpen} items={paletteItems} onClose={()=>setPaletteOpen(false)}/>
       {tab==='Audit'&&nativeBuild&&<LazyBoundary><Suspense fallback={null}><AndroidReminders scope={notificationScope}/></Suspense></LazyBoundary>}
       {snapshot&&<CaptureSync session={session} currency={snapshot.currency} request={request} onSaved={refresh} onInvoices={()=>setTab('Invoices')}/>}
       <footer>{!nativeBuild&&<InstallControl/>}{t('Capzoryx Copilot · Your records · A second person approves every payment · Nothing leaves your control')}</footer></main></div>;

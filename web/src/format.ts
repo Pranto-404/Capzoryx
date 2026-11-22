@@ -14,6 +14,7 @@ export function roleLabel(role:string):string{
 }
 export const formatTime=(ts:number)=>new Date(ts*1000).toLocaleString(locale(),{dateStyle:'medium',timeStyle:'short'});
 export const formatDate=(iso:string)=>{const d=new Date(iso+'T00:00:00');return Number.isNaN(d.getTime())?iso:d.toLocaleDateString(locale(),{day:'numeric',month:'short',year:'numeric'});};
+export const shortDate=(iso:string)=>{const d=new Date(iso+'T00:00:00');return Number.isNaN(d.getTime())?iso:d.toLocaleDateString(locale(),{day:'numeric',month:'short'});};
 export const todayIso=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 
 async function loadBitmap(file:File):Promise<ImageBitmap>{
