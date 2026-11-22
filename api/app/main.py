@@ -1,4 +1,5 @@
 """Authenticated financial recordkeeping; ledger posting only after human approval."""
+import asyncio
 from contextlib import asynccontextmanager, closing
 import os
 import logging
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI):
         statements.schema(db)
         feature_flags.schema(db)
         accounts.archive_legacy_examples(db)
+    await asyncio.to_thread(telegram.register_webhook)
     yield
 
 app = FastAPI(title="Capzoryx Copilot", version="0.7.6", lifespan=lifespan)
