@@ -196,6 +196,7 @@ def main():
     p.add_argument('--out', type=Path, required=True)
     p.add_argument('--size', type=int, default=9000, help='template examples')
     p.add_argument('--teacher', type=int, default=0, help='extra verified examples from the free provider chain')
+    p.add_argument('--extra', type=Path, action='append', default=[], help='self-play rows to merge (repeatable)')
     a = p.parse_args()
     rng = random.Random(SEED)
     rows, seen = [], Counter()
@@ -213,6 +214,11 @@ def main():
         if row:
             rows.append(row)
             kept += 1
+    for path in a.extra:
+        extra = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        if any(not r.get('source', '').startswith('synthetic') for r in extra):
+            raise SystemExit(f'{path} contains non-synthetic rows')
+        rows += extra
     rng.shuffle(rows)
     cut = max(1, len(rows) // 10)
     a.out.mkdir(parents=True, exist_ok=True)
