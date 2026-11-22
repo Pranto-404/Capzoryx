@@ -77,19 +77,27 @@ running out of memory. `runs/hisab-chat/training.json` records the base, data ha
 
 ### 3b. Self-play rounds: a big model quizzes, grades and corrects Hisab-Chat
 
-After the first training run, serve the model (step 5's `llama-server` line) and let the teacher test it:
+After the first training run, serve the model with eight parallel slots and let every free teacher test it at once.
+Put each teacher key you have in the shell (`CAPZORYX_CHAT_GROQ_KEY`, `CAPZORYX_CHAT_GEMINI_KEY`,
+`CAPZORYX_CHAT_CEREBRAS_KEY`, `CAPZORYX_CHAT_OPENROUTER_KEY`, `CAPZORYX_CHAT_MISTRAL_KEY`, `CAPZORYX_CHAT_GITHUB_KEY`):
 
 ```bash
+llama-server -m runs/hisab-chat/gguf/hisab-chat-q4_k_m.gguf --port 8080 -ngl 99 -c 16384 -np 8 --api-key YOUR_LOCAL_KEY &
 python -m ml.hisab_chat.self_play --student-url http://127.0.0.1:8080/v1 --student-key YOUR_LOCAL_KEY \
-    --examples 600 --out data/hisab_chat/selfplay-r1.jsonl
+    --examples 600 --workers 8 --minutes 45 --out data/hisab_chat/selfplay-r1.jsonl
 python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 2000 --extra data/hisab_chat/selfplay-r1.jsonl
 python -m ml.hisab_chat.train --data data/hisab_chat --output runs/hisab-chat-r2 --gguf --push Pranto-404/hisab-chat-gguf
 ```
 
+Teachers work in parallel, each held to its free requests per minute (Groq and Cerebras 28, Mistral 20,
+OpenRouter 15, Gemini and GitHub 10; override with `CAPZORYX_TEACHER_RPM_<NAME>`). A teacher that hits its quota
+rests while the others carry on. With three or more keys a 600-example round takes roughly 15–30 minutes, and
+`--minutes` saves whatever is finished when time runs out.
+
 The teacher writes realistic owner messages in twelve styles (typos, slang, formal, follow-ups, unsafe and off-topic
 requests), grades each answer from 1 to 5 and rewrites the weak ones. Rewrites that state an amount not in the facts,
 or answer in the wrong language, are dropped. `selfplay-r1.report.json` records the mean score; repeat with
-`-r2`, `-r3` and keep going while the mean score rises. About 1.2 teacher calls per example fit the free Groq limits.
+`-r2`, `-r3` and keep going while the mean score rises.
 
 ### 4. Measure before you claim
 

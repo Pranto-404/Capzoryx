@@ -13,14 +13,18 @@ score is the round's measurable progress.
     python -m ml.hisab_chat.build_dataset --out data/hisab_chat --size 6000 --teacher 2000 \\
         --extra data/hisab_chat/selfplay-r1.jsonl
 
-Teacher keys come from the same CAPZORYX_CHAT_* variables as the live bot (Groq is used first).
+Every teacher with a CAPZORYX_CHAT_* key works in parallel (Groq, Cerebras, Mistral, OpenRouter, Gemini, GitHub),
+each held to its free requests-per-minute, so 600 examples take roughly 15-30 minutes with three or more keys.
 """
 import argparse
 import json
+import os
 import random
 import re
 import statistics
+import threading
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 import httpx
@@ -30,6 +34,8 @@ from api.app.chat.understand import language
 from ml.hisab_chat.build_dataset import facts, system
 
 TRANSPORT = None  # tests inject an httpx.MockTransport
+# Free-tier requests per minute for each teacher; override with CAPZORYX_TEACHER_RPM_<NAME>.
+DEFAULT_RPM = {'groq': 28, 'cerebras': 28, 'mistral': 20, 'openrouter': 15, 'gemini': 10, 'github': 10}
 STYLES = ['casual Banglish with spelling mistakes', 'formal Bangla script', 'short English with typos',
           'polite formal English', 'Banglish slang with "vai" or "apu"', 'mixed Bangla script and English words',
           'a follow-up that refers to the previous answer', 'a vague question that needs clarifying',
@@ -47,26 +53,56 @@ JUDGE = ("You grade a bookkeeping assistant for Bangladeshi shop owners. It must
          'Return only JSON: {{"score": 1-5, "problems": "short reason", "better": "the ideal reply"}}')
 
 
-def teacher_call(prompt, deadline, max_tokens=900):
-    """Ask the first available free teacher for a JSON object."""
-    for provider in llm.available():
-        if provider.own:
-            continue
-        try:
-            with httpx.Client(transport=TRANSPORT, trust_env=False, timeout=min(40, max(5, deadline - time.monotonic()))) as client:
-                response = client.post(provider.url + '/chat/completions', headers={'Authorization': 'Bearer ' + provider.key},
-                                       json={'model': provider.model_name, 'temperature': 0.9, 'max_tokens': max_tokens,
-                                             'messages': [{'role': 'user', 'content': prompt}]})
-            if response.status_code == 429:
-                llm.rest(provider, 120)
+class Teachers:
+    """Spread teacher calls over every configured free provider, each held to its own requests-per-minute."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.next_slot = {}
+
+    def rpm(self, provider):
+        raw = os.getenv(f'CAPZORYX_TEACHER_RPM_{provider.name.upper()}', '')
+        return int(raw) if raw.isdigit() and int(raw) > 0 else DEFAULT_RPM.get(provider.name, 10)
+
+    def reserve(self, deadline):
+        """The provider whose next free slot is soonest, after waiting for that slot."""
+        with self.lock:
+            options = [p for p in llm.available() if not p.own]
+            if not options:
+                return None
+            now = time.monotonic()
+            provider = min(options, key=lambda p: self.next_slot.get(p.name, now))
+            start = max(now, self.next_slot.get(provider.name, now))
+            self.next_slot[provider.name] = start + 60 / self.rpm(provider)
+        if start > deadline:
+            return None
+        time.sleep(max(0.0, start - time.monotonic()))
+        return provider
+
+    def ask(self, prompt, deadline, max_tokens=900):
+        """A JSON object from the next free teacher; a provider that hits its quota rests and another is tried."""
+        for _ in range(6):
+            provider = self.reserve(deadline)
+            if provider is None:
+                return None
+            try:
+                with httpx.Client(transport=TRANSPORT, trust_env=False, timeout=40) as client:
+                    response = client.post(provider.url + '/chat/completions', headers={'Authorization': 'Bearer ' + provider.key},
+                                           json={'model': provider.model_name, 'temperature': 0.9, 'max_tokens': max_tokens,
+                                                 'messages': [{'role': 'user', 'content': prompt}]})
+                if response.status_code == 429:
+                    llm.rest(provider, 90)
+                    continue
+                if response.status_code != 200:
+                    llm.rest(provider, 300)
+                    continue
+                text = response.json()['choices'][0]['message']['content'] or ''
+                match = re.search(r'\{.*\}', text, re.S)
+                if match:
+                    return json.loads(match.group(0))
+            except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
                 continue
-            text = response.json()['choices'][0]['message']['content'] or ''
-            match = re.search(r'\{.*\}', text, re.S)
-            if match:
-                return json.loads(match.group(0))
-        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
-            continue
-    return None
+        return None
 
 
 def student_answer(url, model, key, messages):
@@ -77,41 +113,54 @@ def student_answer(url, model, key, messages):
     return llm.clean(reply.json()['choices'][0]['message']['content'] or '')
 
 
-def run(student_url, student_model, student_key, examples, keep_below, seed=7):
+def grade_batch(teachers, student, seed, deadline):
+    """One teacher-written batch: (score, training row or None, rejected) for each question."""
     rng = random.Random(seed)
-    rows, scores, rejected = [], [], 0
-    deadline = time.monotonic() + 6 * 3600
-    while len(scores) < examples and time.monotonic() < deadline:
-        batch = teacher_call(ASK.format(n=8, style=rng.choice(STYLES), topics=', '.join(rng.sample(TOPICS, 3))), deadline)
-        questions = [q for q in (batch or {}).get('messages', []) if isinstance(q, str) and 1 < len(q) <= 300]
-        if not questions:
+    batch = teachers.ask(ASK.format(n=8, style=rng.choice(STYLES), topics=', '.join(rng.sample(TOPICS, 3))), deadline)
+    results = []
+    for question in [q for q in (batch or {}).get('messages', []) if isinstance(q, str) and 1 < len(q) <= 300]:
+        _, facts_text = facts(rng)
+        prompt = [{'role': 'system', 'content': system(facts_text)}, {'role': 'user', 'content': question}]
+        try:
+            answer = student_answer(*student, prompt)
+        except (httpx.HTTPError, ValueError, KeyError, IndexError):
             continue
-        for question in questions:
-            if len(scores) >= examples:
-                break
-            _, facts_text = facts(rng)
-            prompt = [{'role': 'system', 'content': system(facts_text)}, {'role': 'user', 'content': question}]
-            try:
-                answer = student_answer(student_url, student_model, student_key, prompt)
-            except (httpx.HTTPError, ValueError, KeyError, IndexError):
-                continue
-            verdict = teacher_call(JUDGE.format(facts=facts_text, question=question, answer=answer), deadline, 500)
-            try:
-                score = int((verdict or {}).get('score'))
-            except (TypeError, ValueError):
-                continue
-            scores.append(min(5, max(1, score)))
-            better = llm.clean(str((verdict or {}).get('better') or ''))
-            asked = language(question, question.casefold().split())
-            usable = (better and llm.grounded(better, facts_text, question)
-                      and (asked == 'en' or language(better, better.casefold().split()) == asked))
-            if score < keep_below and usable:
-                rows.append({'source': 'synthetic-selfplay', 'messages': [*prompt, {'role': 'assistant', 'content': better}]})
-            elif score < keep_below:
-                rejected += 1
+        verdict = teachers.ask(JUDGE.format(facts=facts_text, question=question, answer=answer), deadline, 500)
+        try:
+            score = min(5, max(1, int((verdict or {}).get('score'))))
+        except (TypeError, ValueError):
+            continue
+        better = llm.clean(str((verdict or {}).get('better') or ''))
+        asked = language(question, question.casefold().split())
+        usable = bool(better) and llm.grounded(better, facts_text, question) and (
+            asked == 'en' or language(better, better.casefold().split()) == asked)
+        row = {'source': 'synthetic-selfplay', 'messages': [*prompt, {'role': 'assistant', 'content': better}]}
+        results.append((score, row if usable else None))
+    return results
+
+
+def run(student_url, student_model, student_key, examples, keep_below, *, workers=8, minutes=50, seed=7):
+    """Grade `examples` answers using every free teacher in parallel; stop early at the time limit."""
+    deadline = time.monotonic() + minutes * 60
+    teachers, student = Teachers(), (student_url, student_model, student_key)
+    graded, seeds = [], iter(range(seed, seed + 10**6))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        running = {pool.submit(grade_batch, teachers, student, next(seeds), deadline) for _ in range(workers)}
+        while running:
+            done, running = wait(running, return_when=FIRST_COMPLETED)
+            for future in done:
+                if len(graded) < examples:
+                    graded += future.result()
+            if len(graded) < examples and time.monotonic() < deadline:
+                running |= {pool.submit(grade_batch, teachers, student, next(seeds), deadline) for _ in done}
+    graded = graded[:examples]
+    scores = [score for score, _ in graded]
+    rows = [row for score, row in graded if score < keep_below and row]
+    rejected = sum(1 for score, row in graded if score < keep_below and not row)
     report = dict(graded=len(scores), mean_score=round(statistics.mean(scores), 3) if scores else None,
                   share_good=round(sum(s >= 4 for s in scores) / len(scores), 3) if scores else None,
-                  new_training_rows=len(rows), rejected_by_checker=rejected)
+                  new_training_rows=len(rows), rejected_by_checker=rejected,
+                  teachers=sorted(p.name for p in llm.available() if not p.own))
     return rows, report
 
 
@@ -122,11 +171,14 @@ def main():
     p.add_argument('--student-key', default='')
     p.add_argument('--examples', type=int, default=600)
     p.add_argument('--keep-below', type=int, default=4, help='keep teacher rewrites for answers scored below this')
+    p.add_argument('--workers', type=int, default=8, help='parallel batches (match llama-server --parallel)')
+    p.add_argument('--minutes', type=int, default=50, help='stop and save after this long')
     p.add_argument('--out', type=Path, required=True)
     a = p.parse_args()
     if not any(not provider.own for provider in llm.available()):
         raise SystemExit('Set at least one teacher key, e.g. CAPZORYX_CHAT_GROQ_KEY')
-    rows, report = run(a.student_url, a.student_model, a.student_key, a.examples, a.keep_below)
+    rows, report = run(a.student_url, a.student_model, a.student_key, a.examples, a.keep_below,
+                       workers=a.workers, minutes=a.minutes)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in rows))
     a.out.with_suffix('.report.json').write_text(json.dumps(report, indent=2) + '\n')
