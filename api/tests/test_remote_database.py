@@ -77,3 +77,28 @@ def test_turso_auth_failure_reports_status_without_credentials():
         db.execute('SELECT 1')
     assert str(caught.value) == 'Remote database operation failed (Turso HTTP 401, authentication)'
     db.close()
+
+
+def test_schemas_start_twice_on_a_remote_database():
+ """Like Turso, any failed statement closes the stream, so a schema must never rely on 'try it and ignore the error'.
+ Running each schema twice is what a second deploy does; it must not fail."""
+ from api.app import advisor, business, market, monitor, payroll
+ real=sqlite3.connect(':memory:')
+ def handler(request):
+  out=[]
+  for op in json.loads(request.content)['requests']:
+   sql=op['stmt']['sql'] if op['type']=='execute' else op.get('sql','')
+   try:
+    if op['type']=='sequence':real.executescript(sql);rows,cols=[],[]
+    else:
+     cur=real.execute(sql,[a.get('value') for a in op['stmt'].get('args',[])]);rows=cur.fetchall();cols=[{'name':d[0]} for d in (cur.description or [])]
+   except sqlite3.Error as error:
+    out.append({'type':'error','error':{'message':str(error),'code':'SQLITE_ERROR'}});continue
+   out.append({'type':'ok','response':{'type':op['type'],'result':{'cols':cols,'rows':[[encode(v) for v in r] for r in rows]}}})
+  return httpx.Response(200,json={'baton':'b','base_url':None,'results':out})
+ for _ in range(2):
+  db=client(handler)
+  for module in (payroll,business,market,monitor,advisor):module.schema(db)
+  assert not db.failed
+  db.close()
+ assert 'inputs' in {r[1] for r in real.execute('PRAGMA table_info(research_runs)')}
