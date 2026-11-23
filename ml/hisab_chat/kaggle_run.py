@@ -26,9 +26,15 @@ MERGED_REPO, ZERO_SPACE = f'{OWNER}/hisab-chat-merged', f'{OWNER}/hisab-chat-zer
 ZEROGPU = os.getenv('HISAB_TARGET', '').lower() == 'zerogpu'
 # Free plan default: Qwen3-1.7B answers in 1-3 GPU seconds (many replies per free ZeroGPU quota) and still runs on a
 # free 2-core CPU Space. HISAB_BASE=Qwen/Qwen3-4B-Instruct-2507 gives better Bangla at about twice the cost.
-BASE = os.getenv('HISAB_BASE', 'Qwen/Qwen3-1.7B' if ZEROGPU else 'Qwen/Qwen3-4B-Instruct-2507')
+BASE = os.getenv('HISAB_BASE', 'Qwen/Qwen3-4B-Instruct-2507')
+SMALL = '1.7B' in BASE
+# Data size: 1.0 is about 6,900 conversations. The 4B default uses 60% so the whole run fits in about 2 hours on a T4.
+SCALE = float(os.getenv('HISAB_SCALE', '1.0' if SMALL else '0.6'))
+# A free 2-core CPU Space is only fast enough for the small model; the 4B one is served on ZeroGPU alone.
+CPU_COPY = SMALL or not ZEROGPU or os.getenv('HISAB_CPU') == '1'
 TEACHER_SECRETS = {'GROQ_KEY': 'CAPZORYX_CHAT_GROQ_KEY', 'GEMINI_KEY': 'CAPZORYX_CHAT_GEMINI_KEY',
-                   'CEREBRAS_KEY': 'CAPZORYX_CHAT_CEREBRAS_KEY', 'OPENROUTER_KEY': 'CAPZORYX_CHAT_OPENROUTER_KEY'}
+                   'CEREBRAS_KEY': 'CAPZORYX_CHAT_CEREBRAS_KEY', 'OPENROUTER_KEY': 'CAPZORYX_CHAT_OPENROUTER_KEY',
+                   'GITHUB_KEY': 'CAPZORYX_CHAT_GITHUB_KEY'}  # GitHub Models: a GitHub token with models:read (Student Pro works)
 
 
 def step(title, *command):
@@ -100,6 +106,7 @@ def start_zerogpu_space():
                         repo_type='space', commit_message='Serve Hisab-Chat on ZeroGPU')
     api.add_space_secret(ZERO_SPACE, 'HF_TOKEN', os.environ['HF_TOKEN'])
     api.add_space_variable(ZERO_SPACE, 'MODEL_REPO', MERGED_REPO)
+    api.add_space_variable(ZERO_SPACE, 'GPU_SECONDS', '12' if SMALL else '20')
     return True
 
 
@@ -110,13 +117,14 @@ def main():
     teachers = probe_teachers()
     step('Install training libraries', sys.executable, '-m', 'pip', '-q', 'install', 'unsloth', 'httpx')
     # Short everyday chat plus whole-business answers (any industry), so the model knows the owner's business.
+    n = lambda count: str(int(count * SCALE))
     step('Build conversations', sys.executable, '-m', 'ml.hisab_chat.build_dataset', '--out', 'data/hisab_chat',
-         '--size', '3000', '--teacher', '800' if teachers else '0',
-         '--business', '2200', '--business-teacher', '900' if teachers else '0')
+         '--size', n(3000), '--teacher', n(800) if teachers else '0',
+         '--business', n(2200), '--business-teacher', n(900) if teachers else '0')
     step('Train, export and upload', sys.executable, '-m', 'ml.hisab_chat.train', '--data', 'data/hisab_chat',
-         '--output', 'runs/hisab-chat', '--epochs', '1', '--base', BASE, *(['--qlora'] if '4B' in BASE else []),
-         '--gguf', '--push', MODEL_REPO, *(['--merged', MERGED_REPO] if ZEROGPU else []))
-    key = start_space()  # the free CPU copy always runs, so the model answers even when GPU quota is used up
+         '--output', 'runs/hisab-chat', '--epochs', '1', '--base', BASE, *([] if SMALL else ['--qlora']),
+         *(['--gguf', '--push', MODEL_REPO] if CPU_COPY else []), *(['--merged', MERGED_REPO] if ZEROGPU else []))
+    key = start_space() if CPU_COPY else None  # the free CPU copy answers when GPU quota is used up (small model only)
     cpu = f"https://{SPACE_REPO.replace('/', '-').lower()}.hf.space/v1"
     if ZEROGPU and start_zerogpu_space():
         print('\n=== Done: ZeroGPU first, free CPU copy second, free APIs last ===')
@@ -125,9 +133,12 @@ def main():
         print(f"  CAPZORYX_CHAT_HISAB_URL      = https://{ZERO_SPACE.replace('/', '-').lower()}.hf.space")
         print('  CAPZORYX_CHAT_HISAB_MODE     = zerogpu')
         print('  CAPZORYX_CHAT_HISAB_KEY      = a Hugging Face READ token (Settings -> Access Tokens); its account pays the GPU minutes')
-        print(f'  CAPZORYX_CHAT_HISAB_CPU_URL  = {cpu}')
-        print(f'  CAPZORYX_CHAT_HISAB_CPU_KEY  = {key}')
+        if key:
+            print(f'  CAPZORYX_CHAT_HISAB_CPU_URL  = {cpu}')
+            print(f'  CAPZORYX_CHAT_HISAB_CPU_KEY  = {key}')
         return
+    if not key:
+        raise SystemExit('The ZeroGPU Space could not be created and no CPU copy was built. Rerun with HISAB_BASE=Qwen/Qwen3-1.7B.')
     print('\n=== Done ===')
     print('Model:', f'https://huggingface.co/{MODEL_REPO}')
     print('Space (takes ~5 minutes to start):', f'https://huggingface.co/spaces/{SPACE_REPO}')

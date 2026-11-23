@@ -130,8 +130,9 @@ def main():
         push(a.output, a.push)
     if a.merged:
         # Full-precision weights for a GPU Space (ZeroGPU runs transformers, not GGUF).
-        model.push_to_hub_merged(a.merged, tokenizer, save_method='merged_16bit', token=os.environ['HF_TOKEN'], private=True)
         from huggingface_hub import HfApi
+        HfApi().create_repo(a.merged, private=True, exist_ok=True)  # private before any weights are uploaded
+        model.push_to_hub_merged(a.merged, tokenizer, save_method='merged_16bit', token=os.environ['HF_TOKEN'])
         HfApi().upload_file(path_or_fileobj=str(a.output / 'training.json'), path_in_repo='training.json', repo_id=a.merged,
                             commit_message='Training record')
         print(f'Uploaded merged weights to https://huggingface.co/{a.merged}')
