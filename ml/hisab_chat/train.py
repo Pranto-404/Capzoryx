@@ -61,6 +61,20 @@ def encode(tokenizer, messages):
     return dict(input_ids=ids, labels=labels)
 
 
+def compatible(cls, settings):
+    """Training settings that work across Transformers releases (v5 removed warmup_ratio and renamed a few)."""
+    import inspect
+    known = inspect.signature(cls.__init__).parameters
+    if 'warmup_ratio' in settings and 'warmup_ratio' not in known:
+        settings['warmup_steps'] = settings.pop('warmup_ratio')  # v5: a warmup_steps value below 1 is a ratio
+    if 'eval_strategy' in settings and 'eval_strategy' not in known and 'evaluation_strategy' in known:
+        settings['evaluation_strategy'] = settings.pop('eval_strategy')
+    dropped = sorted(k for k in settings if k not in known)
+    if dropped:
+        print('Settings not supported by this Transformers release, skipped:', ', '.join(dropped), flush=True)
+    return {k: v for k, v in settings.items() if k in known}
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--data', type=Path, required=True)
@@ -106,14 +120,14 @@ def main():
     plan = dict(BASES[a.base])
     if full_precision:
         plan = dict(batch=8, accumulate=2)  # same effective batch of 16, fewer, fuller GPU steps
-    args = TrainingArguments(
+    args = TrainingArguments(**compatible(TrainingArguments, dict(
         output_dir=str(a.output / 'checkpoints'), num_train_epochs=a.epochs, seed=SEED, report_to='none',
         per_device_train_batch_size=plan['batch'], gradient_accumulation_steps=plan['accumulate'],
         per_device_eval_batch_size=plan['batch'], learning_rate=2e-4, lr_scheduler_type='cosine', warmup_ratio=0.03,
         weight_decay=0.01, bf16=torch.cuda.is_bf16_supported(), fp16=not torch.cuda.is_bf16_supported(),
         optim='adamw_8bit', logging_steps=10, eval_strategy='epoch', save_strategy='epoch', save_total_limit=2,
         load_best_model_at_end=True, metric_for_best_model='eval_loss', greater_is_better=False,
-        dataloader_num_workers=4, group_by_length=True)
+        dataloader_num_workers=4, group_by_length=True)))
     trainer = Trainer(model=model, args=args, train_dataset=sets['train'], eval_dataset=sets['validation'],
                       data_collator=collate)
     trainer.train()
