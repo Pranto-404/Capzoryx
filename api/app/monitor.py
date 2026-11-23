@@ -83,7 +83,7 @@ def message(level, pos, currency, moved, recovered=False):
         advice = 'The earlier warning no longer applies at this price.'
     elif level == 3:
         title = f"CRITICAL: {pos['name']} profitability at risk"
-        advice = ('This price is at or past your estimated net break-even. Check the price a dealer will actually pay you before '
+        advice = ('This price is at or past your estimated net break-even. Check the price buyers will actually pay you before '
                   'selling, and compare selling now with holding. Prices can keep moving either way; nothing is sold automatically.')
     elif level == 2:
         title = f"Warning: {pos['name']} profit buffer is thin" if pos['cushion_bp'] is not None and pos['cushion_bp'] >= 0 else f"Warning: {pos['name']}"
@@ -157,7 +157,7 @@ def evaluate(db, business, at):
     """Check one business against its own costs. Returns the ids of alerts that should reach the owner."""
     from api.app.business import load_profile, products
     from api.app.insights import position, reference_for
-    from api.app.market import INDICATORS
+    from api.app.market import stale_after
     profile, _, _, _ = load_profile(db, business)
     consent = profile.get('consent') or {}
     if not consent.get('monitoring'):
@@ -170,7 +170,7 @@ def evaluate(db, business, at):
         if not ref or ref['basis'] != 'market':
             continue
         observed = datetime.fromisoformat(ref['observed_at']).timestamp()
-        if at - observed > INDICATORS[ref['indicator']][4]:
+        if at - observed > stale_after(ref['indicator']):
             continue  # out-of-date prices never raise alerts
         pos = position(product, ref)
         if pos['status'] == 'incomplete':

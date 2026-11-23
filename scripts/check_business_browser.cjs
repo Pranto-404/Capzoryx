@@ -71,7 +71,7 @@ async function openPage(page,name){
     await wizard.getByLabel(/Purchase cost per unit/).fill('194000');
     await wizard.getByLabel(/Selling price per unit/).fill('220,000');
     await wizard.getByRole('button',{name:'Add product'}).click();
-    await wizard.getByText('Market price tracked').waitFor();
+    await wizard.getByText('Live metal price').waitFor();
     const file=path.join(require('node:os').tmpdir(),'capzoryx-products.csv');
     await fs.writeFile(file,'Product,Category,Unit,Cost,Price\nSilver ring,Silver,pcs,1200,1800\n22K Gold,Gold,bhori,,\n');
     await wizard.locator('input[type=file]').setInputFiles(file);

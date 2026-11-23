@@ -197,14 +197,17 @@ def products(db, business):
     out = []
     for identity, box, tag, market in rows:
         if key and key_tag(key) == tag:
-            out.append(dict(json.loads(unseal(key, box, identity + '/product')), id=identity, market_key=market))
+            item = dict(json.loads(unseal(key, box, identity + '/product')), id=identity, market_key=market)
+            if item.get('quantity'):
+                item['quantity'] = format(Decimal(item['quantity']).normalize(), 'f')  # rows saved before the fix read '4E+1'
+            out.append(item)
     return out
 
 
 def normal_product(body):
     data = body.model_dump()
     data['unit'] = cat.unit_of(data['unit'])
-    data['quantity'] = None if data['quantity'] is None else str(data['quantity'].normalize())
+    data['quantity'] = None if data['quantity'] is None else format(data['quantity'].normalize(), 'f')  # 40, not 4E+1
     for field in ('name', 'category', 'variant', 'brand'):
         data[field] = ' '.join(data[field].split())
     dedupe = sec.signature('biz-product', '|'.join((data['name'].lower(), data['variant'].lower(), data['unit'])))

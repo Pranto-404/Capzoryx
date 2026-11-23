@@ -115,8 +115,8 @@ function IdentityStep({catalog,value,busy,mode,submit}:{catalog:Catalog;value:Re
   return <form onSubmit={e=>{e.preventDefault();submit({name:f.name,industry:f.industry,niche:f.niche,business_types:types,country:f.country,city:f.city,website:f.website,
     facebook:f.facebook,instagram:f.instagram,store:f.store,year_established:f.year?Number(f.year):null,description:f.description});}}>
     <div className="form-row">
-      <label>{t('Business name')}<input required minLength={2} maxLength={80} value={f.name} onChange={set('name')} placeholder="Golden Heritage BD"/></label>
-      <label>{t('What exactly do you do?')}<input required minLength={2} maxLength={80} list="biz-niches" value={f.niche} onChange={set('niche')} placeholder={t('e.g. Gold trading and jewelry retail')}/></label>
+      <label>{t('Business name')}<input required minLength={2} maxLength={80} value={f.name} onChange={set('name')} placeholder={t('e.g. Rahman Traders')}/></label>
+      <label>{t('What exactly do you do?')}<input required minLength={2} maxLength={80} list="biz-niches" value={f.niche} onChange={set('niche')} placeholder={t('e.g. Women\'s clothing shop')}/></label>
     </div>
     <datalist id="biz-niches">{niches.map(n=><option key={n} value={n}/>)}</datalist>
     <label>{t('Industry')}<select required value={f.industry} onChange={set('industry')}><option value="">{t('Choose…')}</option>
@@ -161,16 +161,16 @@ function ProductsStep({view,catalog,request,setView,busy,mode,next}:{view:Busine
   return <div>
     <p className="muted">{t('Add what you sell. Purchase cost and selling price are optional, but they let Capzoryx work out your real profit and break-even price.')}</p>
     {!!view.products.length&&<div className="table-wrap"><table className="biz-products"><thead><tr><th>{t('Product')}</th><th>{t('Quantity')}</th><th>{t('Cost')}</th><th>{t('Price')}</th><th/></tr></thead>
-      <tbody>{view.products.map(p=><tr key={p.id}><td><b>{p.name}</b><small>{[p.category,p.variant].filter(Boolean).join(' · ')}{p.market_key&&<span className="pill">{t('Market price tracked')}</span>}</small></td>
+      <tbody>{view.products.map(p=><tr key={p.id}><td><b>{p.name}</b><small>{[p.category,p.variant].filter(Boolean).join(' · ')}{p.market_key&&<span className="pill">{t('Live metal price')}</span>}</small></td>
         <td>{p.quantity?`${p.quantity} ${p.unit}`:p.unit||'—'}</td><td className="amount">{p.cost_minor==null?<span className="muted">{t('Not set')}</span>:money(p.cost_minor,c)}</td>
         <td className="amount">{p.price_minor==null?<span className="muted">{t('Not set')}</span>:money(p.price_minor,c)}</td>
         <td><button type="button" className="ghost small-button" onClick={()=>{setEditing(p.id);setF({name:p.name,category:p.category,variant:p.variant,unit:p.unit,quantity:p.quantity||'',cost:fromMinor(p.cost_minor),price:fromMinor(p.price_minor),expense:fromMinor(p.expense_minor)});}}>{t('Edit')}</button>
           <button type="button" className="ghost small-button" disabled={working} onClick={()=>void act(()=>request<BusinessView>(`/business/products/${p.id}/delete`,{}))}>{t('Remove')}</button></td></tr>)}</tbody></table></div>}
     <form className="biz-product-form" onSubmit={e=>{e.preventDefault();void act(()=>request<BusinessView>(editing?`/business/products/${editing}`:'/business/products',payload()),editing?t('Product updated.'):t('{name} added.',{name:f.name})).then(()=>{setF(blank);setEditing(null);});}}>
       <div className="form-row">
-        <label>{t('Product or service')}<input required maxLength={80} value={f.name} onChange={set('name')} placeholder={t('e.g. 22K Gold')}/></label>
-        <label>{t('Category')}<input maxLength={80} value={f.category} onChange={set('category')} placeholder={t('e.g. Gold')}/></label>
-        <label>{t('Unit')}<input maxLength={20} list="biz-units" value={f.unit} onChange={set('unit')} placeholder="bhori"/></label>
+        <label>{t('Product or service')}<input required maxLength={80} value={f.name} onChange={set('name')} placeholder={t('e.g. Cotton saree')}/></label>
+        <label>{t('Category')}<input maxLength={80} value={f.category} onChange={set('category')} placeholder={t('e.g. Sarees')}/></label>
+        <label>{t('Unit')}<input maxLength={20} list="biz-units" value={f.unit} onChange={set('unit')} placeholder={t('e.g. piece, kg, set')}/></label>
       </div>
       <datalist id="biz-units">{catalog.units.map(u=><option key={u} value={u}/>)}</datalist>
       <div className="form-row">
@@ -178,7 +178,7 @@ function ProductsStep({view,catalog,request,setView,busy,mode,next}:{view:Busine
         <label>{t('Purchase cost per unit ({currency})',{currency:c})}<input inputMode="decimal" value={f.cost} onChange={set('cost')} placeholder={t('optional')}/></label>
         <label>{t('Selling price per unit ({currency})',{currency:c})}<input inputMode="decimal" value={f.price} onChange={set('price')} placeholder={t('optional')}/></label>
       </div>
-      <label>{t('Costs to sell one unit ({currency})',{currency:c})}<input inputMode="decimal" value={f.expense} onChange={set('expense')} placeholder={t('optional: making charge, buyback deduction, transport')}/></label>
+      <label>{t('Costs to sell one unit ({currency})',{currency:c})}<input inputMode="decimal" value={f.expense} onChange={set('expense')} placeholder={t('optional: delivery, packaging, commission, making charge')}/></label>
       <div className="actions"><button className="secondary" disabled={working||!f.name.trim()}>{editing?t('Update product'):t('Add product')}</button>
         {editing&&<button type="button" className="ghost" onClick={()=>{setEditing(null);setF(blank);}}>{t('Cancel')}</button>}
         <label className="button-like secondary">{t('Import Excel/CSV')}<input type="file" accept=".csv,text/csv" hidden onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;
@@ -204,7 +204,7 @@ function OperationsStep({catalog,value,currency,busy,mode,submit}:{catalog:Catal
       <input type="radio" name="biz-mode" checked={modeOf===m} onChange={()=>setMode(m)}/>{m==='offline'?t('In person'):m==='online'?t('Online'):t('Both')}</label>)}</div></fieldset>
     <fieldset className="biz-field"><legend>{t('Sales channels')}</legend><Chips options={catalog.channels} labels={CHANNEL_LABEL} value={channels} onChange={setChannels}/></fieldset>
     <div className="form-row">
-      <label>{t('Who are your customers?')}<input value={f.customers} onChange={set('customers')} placeholder={t('e.g. families, wedding buyers, shops')}/></label>
+      <label>{t('Who are your customers?')}<input value={f.customers} onChange={set('customers')} placeholder={t('e.g. families, students, offices, shops')}/></label>
       <label>{t('Areas you serve')}<input value={f.locations} onChange={set('locations')} placeholder={t('e.g. Dhanmondi, Mirpur')}/></label>
       <label>{t('Branches')}<input inputMode="numeric" value={f.branches} onChange={set('branches')}/></label>
     </div>

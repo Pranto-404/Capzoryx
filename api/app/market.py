@@ -57,6 +57,37 @@ PRODUCT_INDICATORS = {'gold_22k': ('gold_intl', 'gold_22k_local'), 'gold_21k': (
                       'silver': ('silver_intl', 'silver_local')}
 
 
+PRODUCT_STALE = 14 * 86400
+TRACK_LIMIT = 25
+
+
+def product_indicator(product_id):
+    """Every product can have its own market price (what it sells for around you), from quotes or cited research."""
+    return 'p:' + product_id
+
+
+def stale_after(indicator):
+    return INDICATORS[indicator][4] if indicator in INDICATORS else PRODUCT_STALE
+
+
+def tracked(items):
+    """Products whose market price is followed: the most valuable first. Gold and silver use the shared metal prices."""
+    own = [p for p in items if (p.get('market_key') or '') not in PRODUCT_INDICATORS]
+    value = lambda p: Decimal(p.get('quantity') or 0) * (p.get('cost_minor') or p.get('price_minor') or 0)
+    return sorted(own, key=lambda p: -value(p))[:TRACK_LIMIT]
+
+
+def product_view(db, business, product, currency, now):
+    unit = 'per ' + (product.get('unit') or 'unit')
+    last = latest(db, business, product_indicator(product['id']), currency, unit)
+    status = 'needs_quote' if not last else 'stale' if now - datetime.fromisoformat(last['observed_at']).timestamp() > PRODUCT_STALE else 'ok'
+    gap = None
+    if last and product.get('price_minor'):
+        gap = round((product['price_minor'] - last['value_minor']) * 10000 / last['value_minor'])
+    return dict(id=product['id'], name=product['name'], indicator=product_indicator(product['id']), unit=unit, currency=currency,
+                price_minor=product.get('price_minor'), cost_minor=product.get('cost_minor'), latest=last, status=status, your_price_gap_bp=gap)
+
+
 def schema(db):
     db.executescript("""
       CREATE TABLE IF NOT EXISTS market_observations(id TEXT PRIMARY KEY, business_id TEXT NOT NULL DEFAULT '', indicator TEXT NOT NULL,
@@ -204,8 +235,12 @@ def research_prompt(profile, products, currency):
     label = cat.INDUSTRIES.get(ident.get('industry', ''), ('',))[0]
     names = ', '.join(sorted({p['name'] for p in products})[:15]) or 'not listed'
     keys = sorted({k for p in products for k in PRODUCT_INDICATORS.get(p.get('market_key') or '', ()) if k.endswith('_local')})
-    price_ask = (f"\nPRICES: for each of {', '.join(keys)} give today's published local dealer selling price in {currency} per "
-                 f"{weight_unit(currency)} as 'PRICE: key | number | YYYY-MM-DD'. Only prices you found in a search result.") if keys else ''
+    items = tracked(products)[:10]
+    asks = [f"{k} (local dealer price per {weight_unit(currency)})" for k in keys] + \
+           [f"{n} ({p['name']}, per {p.get('unit') or 'unit'})" for n, p in enumerate(items, start=1)]
+    price_ask = (f"\nPRICES: for each of these, give the typical current selling price in {ident.get('city')} in {currency} seen in shops "
+                 f"or online listings, as 'PRICE: key-or-number | number | YYYY-MM-DD': {'; '.join(asks)}. "
+                 "Only prices you found in a search result.") if asks else ''
     return (f"Research this small business's market using Google Search. Business: {ident.get('niche')} ({label}); sells as "
             f"{', '.join(ident.get('business_types', []))}; located in {ident.get('city')}, {ident.get('country')}. Products: {names}. "
             f"Competitors the owner named: {', '.join(ops.get('competitors', [])) or 'none'}.\n"
@@ -267,13 +302,16 @@ def parse_research(body):
                                         area=(parts[2] if len(parts) > 2 else '')[:80], why=(parts[3] if len(parts) > 3 else '')[:200], sources=sources(line)))
         elif head == 'PRICE':
             parts = [p.strip() for p in rest.split('|')]
-            if len(parts) >= 3 and parts[0] in INDICATORS and INDICATORS[parts[0]][2] == 'quote':
+            target = parts[0] if parts and parts[0] in INDICATORS and INDICATORS[parts[0]][2] == 'quote' else \
+                (int(parts[0]) if parts and parts[0].isdigit() else None)
+            if len(parts) >= 3 and target is not None:
                 try:
                     value = int((Decimal(re.sub(r'[^\d.]', '', parts[1])) * 100).to_integral_value())
                     day = date.fromisoformat(parts[2][:10]).isoformat()
                 except (InvalidOperation, ValueError):
                     continue
-                prices.append(dict(indicator=parts[0], value_minor=value, observed_on=day, sources=sources(line)))
+                prices.append(dict(indicator=target if isinstance(target, str) else None, item=target if isinstance(target, int) else None,
+                                   value_minor=value, observed_on=day, sources=sources(line)))
     return dict(findings=findings[:8], competitors=competitors[:8], prices=prices,
                 sources=[c for c in chunks if c['url']][:12], searches=meta.get('webSearchQueries', [])[:6])
 
@@ -297,10 +335,18 @@ def run_research(identity, business):
         with sec.transaction(db):
             now = sec.now()
             if result:
+                items = tracked(items)[:10]
                 for price in result['prices']:
+                    if price.get('item'):
+                        if not 1 <= price['item'] <= len(items):
+                            continue
+                        product = items[price['item'] - 1]
+                        price['indicator'], unit = product_indicator(product['id']), 'per ' + (product.get('unit') or 'unit')
+                    else:
+                        unit = 'per ' + weight_unit(currency)
                     if price['sources'] and price['value_minor'] > 0:  # only cited prices become observations
                         cite = price['sources'][0]
-                        record(db, business, price['indicator'], currency, 'per ' + weight_unit(currency), price['value_minor'],
+                        record(db, business, price['indicator'], currency, unit, price['value_minor'],
                                'Web research: ' + (cite['title'] or 'cited page'), cite['url'], price['observed_on'] + 'T00:00:00+00:00',
                                'research', 'medium')
                 key = customer_key(db, business, create=True)
@@ -326,7 +372,7 @@ def research_view(db, business):
 
 # ---------- routes ----------
 class Quote(Contract):
-    indicator: str
+    indicator: str = Field(min_length=2, max_length=80)
     value_minor: int = Field(gt=0, le=10**15)
     observed_on: date
     source: str = Field(min_length=2, max_length=120)
@@ -338,7 +384,7 @@ def watched(db, business):
 
 
 def overview(db, business, reasons=None):
-    from api.app.business import load_profile
+    from api.app.business import load_profile, products
     profile, step, completed, updated = load_profile(db, business)
     currency = sec.original_dataset(db, business).currency
     keys = watched(db, business)
@@ -349,8 +395,9 @@ def overview(db, business, reasons=None):
     no_feed = bool(industry) and industry not in INDUSTRY_INDICATORS
     return dict(currency=currency, profile_ready=bool(profile.get('identity')), industry=industry,
                 indicators=[indicator_view(db, business, k, currency, now, reasons[k]) for k in keys],
-                coverage_note=(f'No free live price feed covers {cat.INDUSTRIES.get(industry, ("this industry",))[0].lower()} yet. '
-                               'Add prices you see in the market, or run research for cited figures.') if no_feed else '',
+                products=[product_view(db, business, p, currency, now) for p in tracked(products(db, business))],
+                coverage_note=(f'No free live price feed covers {cat.INDUSTRIES.get(industry, ("this industry",))[0].lower()}, so your '
+                               'products are priced from what you see in the market and from cited web research.') if no_feed else '',
                 research=research_view(db, business), research_allowed=bool(consent.get('external_research')),
                 research_configured=bool(gemini_key()), owner_competitors=(profile.get('operations') or {}).get('competitors', []),
                 simulation_only=True)
@@ -383,10 +430,17 @@ def add_quote(body: Quote, actor=Depends(principal), db=Depends(db_connection)):
     if body.url and not re.match(r'^https?://[^\s]+$', body.url):
         sec.fail(422, 'INVALID_URL')
     with owner_transaction(db, actor) as owner:
-        if not db.execute('SELECT 1 FROM market_watch WHERE business_id=? AND indicator=?', (owner.business_id, body.indicator)).fetchone():
-            sec.fail(404, 'INDICATOR_NOT_WATCHED')
         currency = sec.original_dataset(db, owner.business_id).currency
-        unit = INDICATORS[body.indicator][1].format(weight=weight_unit(currency))
+        if body.indicator.startswith('p:'):
+            from api.app.business import products
+            product = next((p for p in products(db, owner.business_id) if product_indicator(p['id']) == body.indicator), None)
+            if not product:
+                sec.fail(404, 'PRODUCT_NOT_FOUND')
+            unit = 'per ' + (product.get('unit') or 'unit')
+        else:
+            if not db.execute('SELECT 1 FROM market_watch WHERE business_id=? AND indicator=?', (owner.business_id, body.indicator)).fetchone():
+                sec.fail(404, 'INDICATOR_NOT_WATCHED')
+            unit = INDICATORS[body.indicator][1].format(weight=weight_unit(currency))
         record(db, owner.business_id, body.indicator, currency, unit, body.value_minor, body.source, body.url,
                body.observed_on.isoformat() + 'T00:00:00+00:00', 'owner', 'owner')
         sec.audit(db, owner, owner.business_id, 'MARKET_QUOTE_ADDED', {'indicator': body.indicator})
