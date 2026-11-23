@@ -151,9 +151,13 @@ def main():
     step('Install training libraries', sys.executable, '-m', 'pip', '-q', 'install', 'unsloth', 'httpx')
     # Short everyday chat plus whole-business answers (any industry), so the model knows the owner's business.
     n = lambda count: str(int(count * SCALE))
+    # The base model answers open business questions in the production format, so the tuned model keeps its general
+    # ability; templates alone taught the first model to repeat stock replies to anything new.
+    step('Write open answers with the base model', sys.executable, '-m', 'ml.hisab_chat.self_teach', '--out', 'data/selfteach.jsonl',
+         '--count', n(1500), '--base', BASE)
     step('Build conversations', sys.executable, '-m', 'ml.hisab_chat.build_dataset', '--out', 'data/hisab_chat',
-         '--size', n(3000), '--teacher', n(800) if teachers else '0',
-         '--business', n(2200), '--business-teacher', n(900) if teachers else '0')
+         '--size', n(1200), '--teacher', n(400) if teachers else '0',
+         '--business', n(1000), '--business-teacher', n(400) if teachers else '0', '--extra', 'data/selfteach.jsonl')
     step('Train, export and upload', sys.executable, '-m', 'ml.hisab_chat.train', '--data', 'data/hisab_chat',
          '--output', 'runs/hisab-chat', '--epochs', EPOCHS, '--base', BASE, *([] if SMALL or BIG_GPU else ['--qlora']),
          *(['--gguf', '--push', MODEL_REPO] if CPU_COPY else []))
