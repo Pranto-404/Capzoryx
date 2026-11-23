@@ -44,7 +44,7 @@ def test_translation_is_batched_cached_and_only_for_listed_strings(world, transl
     assert all(k in i18n._STRINGS and v == '«' + k + '»' for k, v in first['strings'].items())
     assert 'Japanese' in translator['calls'][0][0] and len(translator['calls']) == 1
     total = len(i18n._STRINGS)
-    for _ in range(20):
+    for _ in range(-(-len(i18n._STRINGS) // i18n.BATCH) + 1):
         body = c.get('/api/i18n?lang=ja').json()
         if body['missing'] == 0:break
     assert body['missing'] == 0 and len(body['strings']) == total

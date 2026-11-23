@@ -2,7 +2,7 @@ import {useEffect,useMemo,useRef,useState,type KeyboardEvent} from 'react';
 import {Icon} from './Icon';
 import {t,T} from './i18n';
 
-export type SearchPage='Overview'|'Data'|'Invoices'|'Cash flow'|'Financing'|'Assistant'|'Approvals'|'Audit'|'Settings';
+export type SearchPage='Overview'|'Data'|'Invoices'|'Cash flow'|'Financing'|'Assistant'|'Approvals'|'Payroll'|'Audit'|'Settings';
 type Entry={id:string;label:string;where:string;page?:SearchPage;settings?:string;target?:string;action?:string;icon:string;words:string};
 
 // Every page and the features inside them, like a phone's settings search. `words` adds Banglish and Bangla terms.
@@ -14,6 +14,7 @@ const ENTRIES:Entry[]=[
   {id:'loans',label:T('Loans'),where:'',page:'Financing',icon:'Financing',words:'loan rin murabaha interest ঋণ লোন'},
   {id:'assistant',label:T('Assistant'),where:'',page:'Assistant',icon:'Assistant',words:'ai chat ask proshno প্রশ্ন'},
   {id:'approvals',label:T('Approvals'),where:'',page:'Approvals',icon:'Approvals',words:'approve payment onumodon অনুমোদন'},
+  {id:'payroll',label:T('Payroll'),where:'',page:'Payroll',icon:'Payroll',words:'salary salaries bonus employee staff payslip beton bonas karmochari বেতন বোনাস কর্মচারী স্টাফ'},
   {id:'activity',label:T('Activity'),where:'',page:'Audit',icon:'Audit',words:'history audit log itihash ইতিহাস'},
   {id:'settings',label:T('Settings'),where:'',page:'Settings',icon:'Settings',words:'setting options সেটিংস'},
   {id:'scan',label:T('Scan a bill'),where:T('Add records'),page:'Data',icon:'camera',words:'photo chobi receipt camera ছবি'},
@@ -52,7 +53,7 @@ function score(entry:Entry,query:string){
 }
 
 /** Sidebar search: suggestions appear as you type, and choosing one opens the exact page or setting. */
-export function SidebarSearch({go,actions}:{go:(page:SearchPage)=>void;actions:Record<string,()=>void>}){
+export function SidebarSearch({go,actions,hidden=[]}:{go:(page:SearchPage)=>void;actions:Record<string,()=>void>;hidden?:string[]}){
   const [query,setQuery]=useState('');
   const [active,setActive]=useState(0);
   const input=useRef<HTMLInputElement>(null);
@@ -63,8 +64,8 @@ export function SidebarSearch({go,actions}:{go:(page:SearchPage)=>void;actions:R
   const results=useMemo(()=>{
     const q=query.trim().toLowerCase();
     if(!q)return [];
-    return ENTRIES.map(e=>({e,s:score(e,q)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,8).map(x=>x.e);
-  },[query]);
+    return ENTRIES.filter(e=>!hidden.includes(e.id)).map(e=>({e,s:score(e,q)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,8).map(x=>x.e);
+  },[query,hidden]);
   function open(entry?:Entry){
     if(!entry)return;
     setQuery('');input.current?.blur();

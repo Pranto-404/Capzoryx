@@ -157,5 +157,7 @@ def test_web_guide_answers_with_an_open_page_button(world):
     reply = c.post('/api/chat/message', json={'text': 'telegram kivabe connect korbo'}).json()
     assert reply['understood'] and 'Settings → Telegram' in reply['text']
     assert reply['buttons'] == [{'label': 'Open Settings', 'payload': '__open:Settings__'}]
+    pay = c.post('/api/chat/message', json={'text': 'staff der beton kivabe dibo'}).json()
+    assert 'Invite link' in pay['text'] and pay['buttons'] == [{'label': 'Open Payroll', 'payload': '__open:Payroll__'}]
     warning = c.post('/api/chat/message', json={'text': 'amar bkash pin 1234'}).json()
     assert warning['understood'] and warning['text'].startswith('⚠️')

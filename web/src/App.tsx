@@ -6,6 +6,7 @@ import {lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {accountRequest} from './api';
 import type {Session} from './types';
 import {Auth} from './Auth';
+import {EmployeeJoin,EmployeePortal} from './EmployeePortal';
 const Workspace=lazy(()=>import('./Workspace'));
 const JOIN_KEY='safeledger-join-code';
 
@@ -15,6 +16,10 @@ function takeJoinCode():string{
     if(fromUrl&&/^[A-Za-z0-9_-]{20,100}$/.test(fromUrl)){sessionStorage.setItem(JOIN_KEY,fromUrl);url.searchParams.delete('join');window.history.replaceState(null,'',url.pathname+(url.search||'')+url.hash);}
     return sessionStorage.getItem(JOIN_KEY)||'';
   }catch{return '';}
+}
+
+function employeeCode():string{
+  try{const code=new URL(window.location.href).searchParams.get('employee');return code&&/^[A-Za-z0-9_-]{20,100}$/.test(code)?code:'';}catch{return '';}
 }
 
 export default function App() {
@@ -30,6 +35,17 @@ export default function App() {
   const [recoveryCode,setRecoveryCode]=useState('');
   const [error,setError]=useState('');const [notice,setNotice]=useState('');
   const [joinCode,setJoinCode]=useState(takeJoinCode);
+  const [inviteCode,setInviteCode]=useState(employeeCode);
+  // People who signed up through an employer's payroll invite see only their payslips.
+  const [portal,setPortal]=useState<{user:string;employee:boolean}|null>(null);
+  const userId=auth?.session.user_id;
+  useEffect(()=>{
+    if(!userId)return;
+    let live=true;
+    void accountRequest<{employee_only:boolean}>('/payroll/me').then(r=>{if(live)setPortal({user:userId,employee:r.employee_only});}).catch(()=>{if(live)setPortal({user:userId,employee:false});});
+    return ()=>{live=false;};
+  },[userId]);
+  const portalReady=!!auth&&portal?.user===auth.session.user_id;
   const restoreRequest=useRef<AbortController|null>(null);
   // Use the browser's connectivity event, with a foreground retry for networks that leave navigator.onLine true.
   useEffect(()=>{
@@ -104,7 +120,10 @@ export default function App() {
     {auth&&error&&<p className="error banner" role="alert">{error} <button className="link" onClick={()=>setError('')}>Dismiss</button></p>}
     {auth&&notice&&<p className="success banner" role="status">{notice} <button className="link" onClick={()=>setNotice('')}>Dismiss</button></p>}
     {auth&&recoveryCode&&<RecoveryNotice code={recoveryCode} done={()=>setRecoveryCode('')}/>}
-    {auth?<LazyBoundary><Suspense fallback={<main className="workspace-loading" role="status"><span className="loading-ring"/>Opening your workspace…</main>}><Workspace key={auth.session.business_id+auth.session.user_id} token="" session={auth.session} logout={()=>void signout()} expired={expired} changeSession={session=>setAuth({session})}/></Suspense></LazyBoundary>
+    {!auth&&inviteCode?<EmployeeJoin code={inviteCode} onSession={session=>{setInviteCode('');enter(session);}}/>
+    :auth&&!portalReady?<main className="workspace-loading" role="status"><span className="loading-ring"/>Opening your workspace…</main>
+    :auth&&portal?.employee?<EmployeePortal logout={()=>void signout()}/>
+    :auth?<LazyBoundary><Suspense fallback={<main className="workspace-loading" role="status"><span className="loading-ring"/>Opening your workspace…</main>}><Workspace key={auth.session.business_id+auth.session.user_id} token="" session={auth.session} logout={()=>void signout()} expired={expired} changeSession={session=>setAuth({session})}/></Suspense></LazyBoundary>
       :<><Auth onAuthStart={()=>restoreRequest.current?.abort()} onSession={enter} joinCode={joinCode} notice={error||''}/>{!nativeBuild && <InstallControl/>}</>}
   </>;
 }

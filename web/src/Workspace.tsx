@@ -38,11 +38,12 @@ const CashCorrections=lazy(()=>import('./CashCorrections'));
 const KhataPage=lazy(()=>import('./KhataPage'));
 const Settings=lazy(()=>import('./Settings'));
 const Assistant=lazy(()=>import('./Assistant'));
-const tabs=['Overview','Data','Invoices','Cash flow','Financing','Assistant','Approvals','Audit','Settings'] as const;
+const Payroll=lazy(()=>import('./Payroll'));
+const tabs=['Overview','Data','Invoices','Cash flow','Financing','Assistant','Approvals','Payroll','Audit','Settings'] as const;
 type Tab=typeof tabs[number];
 const primaryTabs:readonly Tab[]=['Overview','Data','Cash flow','Assistant'];
-const tabLabel:Record<Tab,string>={Overview:T('Overview'),Data:T('Add records'),Invoices:T('Invoices'),'Cash flow':T('Cash flow'),Financing:T('Loans'),Assistant:T('Assistant'),Approvals:T('Approvals'),Audit:T('Activity'),Settings:T('Settings')};
-const pageTitle:Record<Tab,string>={Overview:T('Financial overview'),Data:T('Add your records'),Invoices:T('Invoices'),'Cash flow':T('Cash flow'),Financing:T('Loan offers'),Assistant:T('Assistant'),Approvals:T('Payment approvals'),Audit:T('Activity'),Settings:T('Settings')};
+const tabLabel:Record<Tab,string>={Overview:T('Overview'),Data:T('Add records'),Invoices:T('Invoices'),'Cash flow':T('Cash flow'),Financing:T('Loans'),Assistant:T('Assistant'),Approvals:T('Approvals'),Payroll:T('Payroll'),Audit:T('Activity'),Settings:T('Settings')};
+const pageTitle:Record<Tab,string>={Overview:T('Financial overview'),Data:T('Add your records'),Invoices:T('Invoices'),'Cash flow':T('Cash flow'),Financing:T('Loan offers'),Assistant:T('Assistant'),Approvals:T('Payment approvals'),Payroll:T('Payroll'),Audit:T('Activity'),Settings:T('Settings')};
 
 function CorrectionSummary({payload}:{payload:Record<string,unknown>}){
   const {nativeMoney}=useCurrency();
@@ -195,8 +196,8 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   };
   return <div className="shell"><aside>
     <Brand/>
-    <SidebarSearch go={(page:SearchPage)=>{setTab(page);setSelected(null);if(page==='Assistant'){setChatLoaded(true);setChatOpen(false);}}} actions={searchActions}/>
-    <nav aria-label={t('Workspace')} className={moreOpen?'open':undefined}>{tabs.map(tb=><button key={tb} data-tour={tb} className={primaryTabs.includes(tb)?undefined:'more-item'} aria-current={tab===tb?'page':undefined} onClick={()=>{setTab(tb);setSelected(null);setMoreOpen(false);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}}}><Icon name={tb}/>{t(tabLabel[tb])}</button>)}
+    <SidebarSearch go={(page:SearchPage)=>{setTab(page);setSelected(null);if(page==='Assistant'){setChatLoaded(true);setChatOpen(false);}}} actions={searchActions} hidden={session.role==='owner'?undefined:['payroll']}/>
+    <nav aria-label={t('Workspace')} className={moreOpen?'open':undefined}>{tabs.filter(tb=>tb!=='Payroll'||session.role==='owner').map(tb=><button key={tb} data-tour={tb} className={primaryTabs.includes(tb)?undefined:'more-item'} aria-current={tab===tb?'page':undefined} onClick={()=>{setTab(tb);setSelected(null);setMoreOpen(false);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}}}><Icon name={tb}/>{t(tabLabel[tb])}</button>)}
       <button className="more-toggle" aria-expanded={moreOpen} onClick={()=>setMoreOpen(!moreOpen)}><Icon name={moreOpen?'close':'more'}/>{t('More')}</button></nav>
     <div className="identity">
       <button className="identity-user" onClick={()=>setTab('Settings')} title={t('Open your profile and settings')}><Avatar profile={profile} name={name}/><span><strong>{name}</strong><small>{roleLabel(session.role)}</small></span></button>
@@ -245,6 +246,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
         <div className="proposal-list">{proposals.map(p=><article id={'payment-'+p.proposal_id} tabIndex={-1} key={p.proposal_id} className="proposal"><div><span className="badge">{p.state==='AWAITING_APPROVAL'?t('Waiting'):p.state==='EXECUTED'?'Paid':p.state==='REJECTED'?t('Rejected'):p.state==='EXPIRED'?t('Expired'):p.state}</span><h3>{prettyVendor(p.details.vendor_id)} · {nativeMoney(p.details.amount_minor)}</h3><p>{number(p.details.invoice_id)&&`Invoice ${number(p.details.invoice_id)} · `}{t('Prepared by')} {p.details.proposer_id===session.user_id?t('you'):'a teammate'}</p>{p.state==='AWAITING_APPROVAL'&&<small>{t('Expires {time}',{time:formatTime(p.details.expires_at)})}</small>}</div>
           <button className="secondary" onClick={()=>setSelected(p)}>{t('Details')}</button>{p.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<button disabled={busy} onClick={()=>setSelected(p)}>{t('Review and decide')}</button>}</article>)}</div>
         {selected&&selected.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<ApprovalDialog proposal={selected} number={number(selected.details.invoice_id)} error={error} balance={snapshot?.balance_minor} busy={busy} onClose={()=>setSelected(null)} onDecision={d=>void run(()=>decide(selected,d))}/>}</Panel>}
+      {tab==='Payroll'&&session.role==='owner'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Loading payroll…')}</section>}><Payroll request={request} onChanged={()=>void refresh()}/></Suspense></LazyBoundary>}
       {tab==='Audit'&&<NotificationInbox request={request} scope={session.business_id+':'+session.user_id} navigate={(page,kind)=>{
         if(kind==='collections_review')showDashboardDestination('Overview','agent-mode');
         else if(kind==='cash_breach')showDashboardDestination('Cash flow','collection-planner');
