@@ -231,6 +231,7 @@ def tick(db, at):
             if not isinstance(got, str):
                 value, unit, source, url, observed, kind, confidence = got
                 market.record(db, '', key, currency, unit, value, source, url, observed, kind, confidence)
+    research_due(db)
     sent = 0
     for business in monitored:
         with sec.transaction(db):
@@ -241,6 +242,27 @@ def tick(db, at):
             push.deliver(db, business, at)
         deliver_email(db, business, at)  # also retries earlier emails that were not accepted
     return dict(businesses=len(monitored), fetched=sum(1 for v in fetched.values() if not isinstance(v, str)), alerts=sent)
+
+
+def research_due(db, limit=1):
+    """Keep research fresh without the owner pressing anything: one business per pass, weekly or after changes."""
+    from api.app.business import load_profile
+    from api.app.market import queue_research, run_research
+    started = []
+    with sec.transaction(db):
+        for (business,) in db.execute("""SELECT p.business_id FROM biz_profile p JOIN workspace_meta w ON w.business_id=p.business_id
+                                         WHERE p.completed_at IS NOT NULL AND w.archived_at IS NULL AND w.kind='personal'
+                                         ORDER BY p.updated_at DESC""").fetchall():
+            profile = load_profile(db, business)[0]
+            if (profile.get('consent') or {}).get('external_research'):
+                identity = queue_research(db, business)
+                if identity:
+                    started.append((identity, business))
+                    if len(started) >= limit:
+                        break
+    for identity, business in started:
+        run_research(identity, business)
+    return len(started)
 
 
 def run_once():

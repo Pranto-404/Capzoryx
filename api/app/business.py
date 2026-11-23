@@ -14,7 +14,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Literal
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from pydantic import Field, field_validator
@@ -303,14 +303,21 @@ def save_step(name: str, body: dict, actor=Depends(principal), db=Depends(db_con
 
 
 @router.post('/complete')
-def complete(actor=Depends(principal), db=Depends(db_connection)):
+def complete(background: BackgroundTasks, actor=Depends(principal), db=Depends(db_connection)):
+    from api.app.market import queue_research, run_research
+    research = None
     with owner_transaction(db, actor) as owner:
-        data, step, _, _ = load_profile(db, owner.business_id)
+        data, step, _, updated = load_profile(db, owner.business_id)
         if not data.get('identity'):
             sec.fail(409, 'IDENTITY_REQUIRED_FIRST')
         save_profile(db, owner.business_id, data, len(STEPS), sec.now())
         sec.audit(db, owner, owner.business_id, 'BUSINESS_PROFILE_COMPLETED', {'products': len(products(db, owner.business_id))})
-        return view(db, owner.business_id)
+        if (data.get('consent') or {}).get('external_research'):
+            research = queue_research(db, owner.business_id)  # the AI starts studying the market right away
+        result = view(db, owner.business_id)
+    if research:
+        background.add_task(run_research, research, owner.business_id)
+    return dict(result, research_started=bool(research))
 
 
 @router.post('/products', status_code=201)

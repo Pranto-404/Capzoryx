@@ -103,6 +103,10 @@ def schema(db):
         created_at INTEGER NOT NULL, finished_at INTEGER);
       CREATE INDEX IF NOT EXISTS research_by_business ON research_runs(business_id, created_at);
     """)
+    try:  # older databases: remember what each run researched, so it is repeated only when that changes
+        db.execute("ALTER TABLE research_runs ADD COLUMN inputs TEXT NOT NULL DEFAULT ''")
+    except Exception:  # noqa: BLE001 - the column already exists
+        pass
 
 
 # ---------- what each business watches ----------
@@ -358,7 +362,7 @@ def run_research(identity, business):
 
 
 def research_view(db, business):
-    row = db.execute('SELECT id,status,result_enc,key_tag,reason,created_at,finished_at FROM research_runs WHERE business_id=? '
+    row = db.execute('SELECT id,status,result_enc,key_tag,reason,created_at,finished_at,inputs FROM research_runs WHERE business_id=? '
                      'ORDER BY created_at DESC, rowid DESC LIMIT 1', (business,)).fetchone()
     if not row:
         return None
@@ -367,7 +371,7 @@ def research_view(db, business):
         key = customer_key(db, business)
         if key and key_tag(key) == row[3]:
             result = json.loads(unseal(key, row[2], row[0] + '/research'))
-    return dict(id=row[0], status=row[1], reason=row[4], started_at=row[5], finished_at=row[6], result=result)
+    return dict(id=row[0], status=row[1], reason=row[4], started_at=row[5], finished_at=row[6], result=result, inputs=row[7])
 
 
 # ---------- routes ----------
@@ -447,6 +451,43 @@ def add_quote(body: Quote, actor=Depends(principal), db=Depends(db_connection)):
         return overview(db, owner.business_id)
 
 
+REFRESH_EVERY = 7 * 86400  # background research: weekly, or sooner when the profile or products change
+
+
+def research_inputs(db, business):
+    """A fingerprint of what research sends (industry, area, product and competitor names), never costs or sales."""
+    from api.app.business import load_profile, products
+    profile = load_profile(db, business)[0]
+    ident, ops = profile.get('identity') or {}, profile.get('operations') or {}
+    public = dict(industry=ident.get('industry'), niche=ident.get('niche'), city=ident.get('city'), country=ident.get('country'),
+                  types=ident.get('business_types'), competitors=ops.get('competitors'), products=sorted(p['name'] for p in products(db, business)))
+    return sec.signature('research-inputs', sec.canonical(public))
+
+
+def queue_research(db, business, manual=False):
+    """Record a new research run and return its id, or None when one is running, still fresh, or impossible right now."""
+    last = research_view(db, business)
+    now = sec.now()
+    inputs = research_inputs(db, business)
+    if last and last['status'] == 'running' and now - last['started_at'] < 300:
+        return None
+    fresh = last and last['status'] == 'done' and last.get('inputs') == inputs
+    if fresh and now - last['started_at'] < (RESEARCH_EVERY if manual else REFRESH_EVERY):
+        if manual:
+            sec.fail(429, 'RESEARCH_RECENT')
+        return None
+    if not manual and last and last['status'] in ('failed', 'unavailable') and last.get('inputs') == inputs and now - last['started_at'] < 6 * 3600:
+        return None  # do not retry a failing service every pass
+    identity = uuid.uuid4().hex
+    if not gemini_key():
+        if manual or not last:
+            db.execute("INSERT INTO research_runs(id,business_id,status,reason,created_at,finished_at,inputs) VALUES (?,?,'unavailable',?,?,?,?)",
+                       (identity, business, 'No web research service is configured on this server, so no research was done.', now, now, inputs))
+        return None
+    db.execute("INSERT INTO research_runs(id,business_id,status,created_at,inputs) VALUES (?,?,'running',?,?)", (identity, business, now, inputs))
+    return identity
+
+
 @router.post('/research', status_code=202)
 def start_research(background: BackgroundTasks, actor=Depends(principal), db=Depends(db_connection)):
     from api.app.business import load_profile
@@ -457,19 +498,10 @@ def start_research(background: BackgroundTasks, actor=Depends(principal), db=Dep
             sec.fail(409, 'PROFILE_REQUIRED')
         if not (profile.get('consent') or {}).get('external_research'):
             sec.fail(409, 'RESEARCH_CONSENT_REQUIRED')
-        last = research_view(db, business)
-        now = sec.now()
-        if last and last['status'] == 'running' and now - last['started_at'] < 300:
-            return overview(db, business)
-        if last and last['status'] == 'done' and now - last['started_at'] < RESEARCH_EVERY and (updated or 0) <= last['started_at']:
-            sec.fail(429, 'RESEARCH_RECENT')
-        identity = uuid.uuid4().hex
-        if not gemini_key():
-            db.execute("INSERT INTO research_runs(id,business_id,status,reason,created_at,finished_at) VALUES (?,?,'unavailable',?,?,?)",
-                       (identity, business, 'No web research service is configured on this server, so no research was done.', now, now))
-            return overview(db, business)
-        db.execute("INSERT INTO research_runs(id,business_id,status,created_at) VALUES (?,?,'running',?)", (identity, business, now))
-        sec.audit(db, owner, identity, 'MARKET_RESEARCH_STARTED', {})
-    background.add_task(run_research, identity, business)
+        identity = queue_research(db, business, manual=True)
+        if identity:
+            sec.audit(db, owner, identity, 'MARKET_RESEARCH_STARTED', {})
+    if identity:
+        background.add_task(run_research, identity, business)
     with sec.transaction(db):
         return overview(db, business)

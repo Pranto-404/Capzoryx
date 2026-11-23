@@ -10,6 +10,8 @@ type Profile={identity?:Record<string,unknown>;operations?:Record<string,unknown
 export type BusinessView={profile:Profile;step:number;completed:boolean;products:Product[];gaps:{field:string;why:string}[];currency:string;niche_category:string|null};
 
 const STEPS=[T('Business'),T('Products'),T('Operations'),T('Goals'),T('Permissions')];
+const SETUP_STEPS=[0,1,4];  // new owners answer three short steps; operations and goals details live in Settings → Business
+const FINISH=T('Finish');
 const KEYS=['identity','products','operations','goals','consent'];
 const TYPE_LABEL:Record<string,string>={retail:T('Retail'),wholesale:T('Wholesale'),manufacturing:T('Manufacturing'),service:T('Service'),distribution:T('Distribution'),online:T('Online')};
 const CHANNEL_LABEL:Record<string,string>={shop:T('Shop or showroom'),facebook:T('Facebook page'),website:T('Website'),marketplace:T('Marketplace (Daraz etc.)'),whatsapp:T('WhatsApp'),phone:T('Phone orders'),wholesale:T('Wholesale buyers'),field_sales:T('Field sales')};
@@ -44,7 +46,7 @@ export function BusinessSetup({request,mode,onDone,onLater}:{request:Request;mod
   const [saved,setSaved]=useState('');
   const heading=useRef<HTMLHeadingElement>(null);
   useEffect(()=>{void Promise.all([request<BusinessView>('/business'),request<Catalog>('/business/catalog')]).then(([v,c])=>{
-    setView(v);setCatalog(c);setStep(mode==='edit'?0:v.step===0?-1:Math.min(v.step,4));}).catch(e=>setError(errorText(e)));},[]);// eslint-disable-line react-hooks/exhaustive-deps
+    setView(v);setCatalog(c);setStep(mode==='edit'?0:v.step===0?-1:v.step>=2?4:v.step);}).catch(e=>setError(errorText(e)));},[]);// eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{heading.current?.focus();},[step]);
   async function save(name:string,body:unknown,next=true){
     setBusy(true);setError('');setSaved('');
@@ -52,25 +54,26 @@ export function BusinessSetup({request,mode,onDone,onLater}:{request:Request;mod
       const v=await request<BusinessView>('/business/step/'+name,body);setView(v);
       if(mode==='edit'){setSaved(t('Saved.'));return;}
       if(!next)return;
-      if(step===4){const done=await request<BusinessView>('/business/complete',{});onDone(done);}else setStep(step+1);
+      if(step===4){const done=await request<BusinessView>('/business/complete',{});onDone(done);}else setStep(SETUP_STEPS[SETUP_STEPS.indexOf(step)+1]??4);
     }catch(e){setError(errorText(e));}finally{setBusy(false);}
   }
   if(!view||!catalog)return <div className={mode==='setup'?'biz-setup-overlay':undefined}><section className="panel biz-setup" role="status">{error||t('Loading…')}</section></div>;
   const body=step===-1?<Welcome start={()=>setStep(0)} later={onLater}/>:<>
-    <div className="biz-progress" aria-label={t('Step {n} of {total}',{n:step+1,total:5})}>
-      {STEPS.map((s,i)=><button key={s} type="button" className={i===step?'active':i<view.step?'done':''} disabled={mode==='setup'&&i>view.step}
-        aria-current={i===step?'step':undefined} onClick={()=>setStep(i)}><span>{i+1}</span>{t(s)}</button>)}
+    <div className="biz-progress" aria-label={t('Step {n} of {total}',{n:(mode==='setup'?SETUP_STEPS.indexOf(step):step)+1,total:mode==='setup'?3:5})}>
+      {(mode==='setup'?SETUP_STEPS:[0,1,2,3,4]).map((i,n)=>{const s=mode==='setup'&&i===4?FINISH:STEPS[i];return <button key={s} type="button" className={i===step?'active':i<view.step?'done':''} disabled={mode==='setup'&&i>view.step&&!(i===4&&view.step>=1)}
+        aria-current={i===step?'step':undefined} onClick={()=>setStep(i)}><span>{n+1}</span>{t(s)}</button>;})}
     </div>
-    <h2 tabIndex={-1} ref={heading}>{t(STEPS[step])}</h2>
+    <h2 tabIndex={-1} ref={heading}>{t(mode==='setup'&&step===4?FINISH:STEPS[step])}</h2>
     {step===0&&<IdentityStep key={'i'+view.step} catalog={catalog} value={view.profile.identity||{}} busy={busy} mode={mode} submit={b=>void save('identity',b)}/>}
     {step===1&&<ProductsStep view={view} catalog={catalog} request={request} setView={setView} busy={busy} mode={mode} next={()=>void save('products',{})}/>}
     {step===2&&<OperationsStep catalog={catalog} value={view.profile.operations||{}} currency={view.currency} busy={busy} mode={mode} submit={b=>void save('operations',b)}/>}
     {step===3&&<GoalsStep catalog={catalog} value={view.profile.goals||{}} currency={view.currency} busy={busy} mode={mode} submit={b=>void save('goals',b)}/>}
-    {step===4&&<ConsentStep value={view.profile.consent||{}} busy={busy} mode={mode} submit={b=>void save('consent',b)}/>}
+    {step===4&&<ConsentStep value={view.profile.consent||{}} goals={mode==='setup'?catalog.goals:null} busy={busy} mode={mode}
+      submit={(b,goals)=>void (async()=>{if(goals?.length){try{await request('/business/step/goals',{goals});}catch{/* goals can be added later */}}await save('consent',b);})()}/>}
     {error&&<p className="error" role="alert">{error}</p>}
     {saved&&<p className="success" role="status">{saved}</p>}
     {mode==='setup'&&<div className="biz-nav">
-      {step>0&&<button type="button" className="ghost" disabled={busy} onClick={()=>setStep(step-1)}>{t('Back')}</button>}
+      {step>0&&<button type="button" className="ghost" disabled={busy} onClick={()=>setStep(mode==='setup'?SETUP_STEPS[Math.max(0,SETUP_STEPS.indexOf(step)-1)]:step-1)}>{t('Back')}</button>}
       {onLater&&<button type="button" className="link" onClick={onLater}>{t('Finish later')}</button>}
     </div>}
     {mode==='edit'&&!view.completed&&!!view.profile.identity&&<button type="button" className="secondary" disabled={busy} onClick={()=>void (async()=>{setBusy(true);setError('');
@@ -112,23 +115,25 @@ function IdentityStep({catalog,value,busy,mode,submit}:{catalog:Catalog;value:Re
   const set=(k:keyof typeof f)=>(e:{target:{value:string}})=>setF({...f,[k]:e.target.value});
   const guess=useMemo(()=>f.niche.length>2?suggestIndustry(f.niche,catalog.industries):null,[f.niche,catalog]);
   const niches=useMemo(()=>{const chosen=catalog.industries.find(i=>i.key===f.industry);return chosen?.niches.length?chosen.niches:catalog.industries.flatMap(i=>i.niches);},[f.industry,catalog]);
-  return <form onSubmit={e=>{e.preventDefault();submit({name:f.name,industry:f.industry,niche:f.niche,business_types:types,country:f.country,city:f.city,website:f.website,
+  const [more,setMore]=useState(mode==='edit');
+  const industry=f.industry||guess?.key||'other';
+  const industryLabel=catalog.industries.find(i=>i.key===industry)?.label||'Other';
+  // Only three things are asked: name, what you do and where. The industry is worked out from what you do.
+  return <form onSubmit={e=>{e.preventDefault();submit({name:f.name,industry,niche:f.niche,business_types:types.length?types:['retail'],country:f.country||'Bangladesh',city:f.city,website:f.website,
     facebook:f.facebook,instagram:f.instagram,store:f.store,year_established:f.year?Number(f.year):null,description:f.description});}}>
     <div className="form-row">
       <label>{t('Business name')}<input required minLength={2} maxLength={80} value={f.name} onChange={set('name')} placeholder={t('e.g. Rahman Traders')}/></label>
-      <label>{t('What exactly do you do?')}<input required minLength={2} maxLength={80} list="biz-niches" value={f.niche} onChange={set('niche')} placeholder={t('e.g. Women\'s clothing shop')}/></label>
+      <label>{t('What do you sell or do?')}<input required minLength={2} maxLength={80} list="biz-niches" value={f.niche} onChange={set('niche')} placeholder={t('e.g. Women\'s clothing shop')}/></label>
+      <label>{t('City or area')}<input required minLength={2} maxLength={80} value={f.city} onChange={set('city')} placeholder={t('e.g. Mirpur, Dhaka')}/></label>
     </div>
     <datalist id="biz-niches">{niches.map(n=><option key={n} value={n}/>)}</datalist>
-    <label>{t('Industry')}<select required value={f.industry} onChange={set('industry')}><option value="">{t('Choose…')}</option>
-      {catalog.industries.map(i=><option key={i.key} value={i.key}>{t(i.label)}</option>)}</select></label>
-    {guess&&guess.key!==f.industry&&<p className="biz-hint">{t('Sounds like {industry}.',{industry:t(guess.label)})} <button type="button" className="link" onClick={()=>setF({...f,industry:guess.key})}>{t('Use this')}</button></p>}
-    <fieldset className="biz-field"><legend>{t('How do you sell?')}</legend><Chips options={catalog.business_types} labels={TYPE_LABEL} value={types} onChange={setTypes}/></fieldset>
-    <div className="form-row">
-      <label>{t('Country')}<input required minLength={2} maxLength={60} value={f.country} onChange={set('country')}/></label>
-      <label>{t('City or area')}<input required minLength={2} maxLength={80} value={f.city} onChange={set('city')} placeholder={t('e.g. Dhaka')}/></label>
-    </div>
-    <details className="biz-more" open={!!(f.website||f.facebook||f.description)}><summary>{t('Website, pages and description (optional)')}</summary>
+    {f.niche.length>2&&<p className="biz-hint">{t('Industry: {industry}',{industry:t(industryLabel)})} <button type="button" className="link" onClick={()=>setMore(true)}>{t('Change')}</button></p>}
+    <details className="biz-more" open={more} onToggle={e=>setMore((e.target as HTMLDetailsElement).open)}><summary>{t('More details (optional)')}</summary>
+      <label>{t('Industry')}<select value={f.industry||industry} onChange={set('industry')}>
+        {catalog.industries.map(i=><option key={i.key} value={i.key}>{t(i.label)}</option>)}</select></label>
+      <fieldset className="biz-field"><legend>{t('How do you sell?')}</legend><Chips options={catalog.business_types} labels={TYPE_LABEL} value={types} onChange={setTypes}/></fieldset>
       <div className="form-row">
+        <label>{t('Country')}<input minLength={2} maxLength={60} value={f.country} onChange={set('country')}/></label>
         <label>{t('Website')}<input inputMode="url" maxLength={200} value={f.website} onChange={set('website')} placeholder="example.com"/></label>
         <label>{t('Facebook page')}<input inputMode="url" maxLength={200} value={f.facebook} onChange={set('facebook')} placeholder="facebook.com/yourpage"/></label>
       </div>
@@ -139,8 +144,7 @@ function IdentityStep({catalog,value,busy,mode,submit}:{catalog:Catalog;value:Re
       </div>
       <label>{t('Short description')}<textarea maxLength={600} rows={3} value={f.description} onChange={set('description')}/></label>
     </details>
-    <Submit busy={busy||!types.length} mode={mode}/>
-    {!types.length&&<p className="muted">{t('Choose at least one way you sell.')}</p>}
+    <Submit busy={busy} mode={mode}/>
   </form>;
 }
 
@@ -233,8 +237,11 @@ function GoalsStep({catalog,value,currency,busy,mode,submit}:{catalog:Catalog;va
   </form>;
 }
 
-function ConsentStep({value,busy,mode,submit}:{value:Record<string,unknown>;busy:boolean;mode:'setup'|'edit';submit:(b:unknown)=>void}){
-  const [f,setF]=useState({personalized_ai:value.personalized_ai!==false,external_research:!!value.external_research,monitoring:!!value.monitoring,alerts:!!value.alerts});
+function ConsentStep({value,goals,busy,mode,submit}:{value:Record<string,unknown>;goals:string[]|null;busy:boolean;mode:'setup'|'edit';submit:(b:unknown,goals?:string[])=>void}){
+  // On by default so the assistant starts working straight away; every switch can be turned off here or later.
+  const on=(k:string)=>value[k]===undefined?true:!!value[k];
+  const [f,setF]=useState({personalized_ai:on('personalized_ai'),external_research:on('external_research'),monitoring:on('monitoring'),alerts:on('alerts')});
+  const [chosen,setChosen]=useState<string[]>([]);
   const [limits,setLimits]=useState({warn_cushion_pct:String(value.warn_cushion_pct??5),move_pct:String(value.move_pct??3)});
   const rows:[keyof typeof f,string,string][]=[
     ['personalized_ai',T('Use my business details for personal advice'),T('The assistant reads your profile and products to tailor answers. Nothing is shared with other users.')],
@@ -242,7 +249,8 @@ function ConsentStep({value,busy,mode,submit}:{value:Record<string,unknown>;busy
     ['monitoring',T('Keep watching market prices for me'),T('Prices linked to your products are checked in the background, even when you are signed out.')],
     ['alerts',T('Send me important alerts automatically'),T('Warnings go to the channels you turn on (Telegram, phone, email) without asking each time. Nothing is ever bought, sold or paid automatically.')],
   ];
-  return <form onSubmit={e=>{e.preventDefault();submit({...f,warn_cushion_pct:Number(limits.warn_cushion_pct)||5,move_pct:Number(limits.move_pct)||3});}}>
+  return <form onSubmit={e=>{e.preventDefault();submit({...f,warn_cushion_pct:Number(limits.warn_cushion_pct)||5,move_pct:Number(limits.move_pct)||3},chosen);}}>
+    {goals&&<fieldset className="biz-field"><legend>{t('What matters most right now? (optional)')}</legend><Chips options={goals} labels={GOAL_LABEL} value={chosen} onChange={setChosen}/></fieldset>}
     <p className="muted">{t('Your details are stored encrypted in this workspace. You can change these choices any time in Settings → Business.')}</p>
     {rows.map(([k,title,help])=><label key={k} className="switch-row"><input type="checkbox" checked={f[k]} onChange={e=>setF({...f,[k]:e.target.checked})}/>
       <span><b>{t(title)}</b><small>{t(help)}</small></span></label>)}
