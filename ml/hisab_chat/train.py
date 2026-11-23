@@ -75,6 +75,24 @@ def compatible(cls, settings):
     return {k: v for k, v in settings.items() if k in known}
 
 
+def sample(model, tokenizer):
+    """Print one answer to a question the training data never contains, so a broken model is caught before upload."""
+    try:
+        import random
+        from ml.hisab_chat import business_data
+        ctx, _ = business_data.invent(random.Random(777))
+        messages = [{'role': 'system', 'content': business_data.system(ctx)},
+                    {'role': 'user', 'content': 'Eid er age amar bikri barate ki ki korte pari? Amar product dekhe bolo.'}]
+        from unsloth import FastLanguageModel
+        FastLanguageModel.for_inference(model)
+        ids = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors='pt').to('cuda')
+        out = model.generate(input_ids=ids, max_new_tokens=220, do_sample=False)
+        print('\n=== Sample answer (check it reads well before using the model) ===', flush=True)
+        print(tokenizer.decode(out[0][ids.shape[1]:], skip_special_tokens=True), flush=True)
+    except Exception as error:  # noqa: BLE001 - the sample is a check, never a reason to lose the trained adapter
+        print('Sample answer skipped:', error, flush=True)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--data', type=Path, required=True)
@@ -124,7 +142,7 @@ def main():
     args = TrainingArguments(**compatible(TrainingArguments, dict(
         output_dir=str(a.output / 'checkpoints'), num_train_epochs=a.epochs, seed=SEED, report_to='none',
         per_device_train_batch_size=plan['batch'], gradient_accumulation_steps=plan['accumulate'],
-        per_device_eval_batch_size=plan['batch'], learning_rate=2e-4, lr_scheduler_type='cosine', warmup_ratio=0.03,
+        per_device_eval_batch_size=plan['batch'], learning_rate=float(os.getenv('HISAB_LR', '1e-4')), lr_scheduler_type='cosine', warmup_ratio=0.03,
         weight_decay=0.01, bf16=torch.cuda.is_bf16_supported(), fp16=not torch.cuda.is_bf16_supported(),
         optim='adamw_8bit', logging_steps=10, eval_strategy='epoch', save_strategy='epoch', save_total_limit=2,
         load_best_model_at_end=True, metric_for_best_model='eval_loss', greater_is_better=False,
@@ -135,6 +153,7 @@ def main():
     adapter = a.output / 'adapter'
     model.save_pretrained(str(adapter))
     tokenizer.save_pretrained(str(adapter))
+    sample(model, tokenizer)
     if a.gguf:
         model.save_pretrained_gguf(str(a.output / 'gguf'), tokenizer, quantization_method='q4_k_m')
     evidence = dict(base=a.base, dataset=manifest['splits'], epochs=a.epochs, seed=SEED, full_precision=full_precision,
