@@ -18,7 +18,7 @@ from api.app.routes import db_connection, principal
 from api.app.services.receivables import customer_key, key_tag, seal, unseal
 
 router=APIRouter(prefix='/api/notifications')
-PUSH_KINDS={'new_device','approval_needed','cash_breach','bill_due','customer_overdue','morning_briefing'}
+PUSH_KINDS={'new_device','approval_needed','cash_breach','bill_due','customer_overdue','morning_briefing','market_risk'}
 
 
 def schema(db):

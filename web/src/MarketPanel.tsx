@@ -9,6 +9,7 @@ type Observation={value_minor:number;source:string;url:string;observed_at:string
 type Indicator={key:string;label:string;unit:string;currency:string;source_kind:string;latest:Observation|null;status:'ok'|'stale'|'unavailable'|'needs_quote';reason:string};
 type Research={status:'running'|'done'|'unavailable'|'failed';reason:string;started_at:number;finished_at:number|null;
   result:{findings:{text:string;sources:Source[]}[];competitors:{name:string;kind:string;area:string;why:string;sources:Source[]}[];sources:Source[];searches:string[]}|null};
+type Alert={id:string;level:number;created_at:number;title:string;lines:string[];advice:string;delivery:{channel:string;status:string}[]};
 type Market={currency:string;profile_ready:boolean;indicators:Indicator[];coverage_note:string;research:Research|null;research_allowed:boolean;research_configured:boolean;owner_competitors:string[]};
 
 const KIND:Record<string,string>={delayed:T('Daily reference rate'),derived:T('Estimate'),owner:T('Your price'),research:T('Web research')};
@@ -27,8 +28,9 @@ export function MarketPanel({request,openSettings}:{request:Request;openSettings
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
   const [quote,setQuote]=useState<string|null>(null);
+  const [alerts,setAlerts]=useState<Alert[]>([]);
   const load=()=>request<Market>('/market').then(setData).catch(e=>setError(errorText(e)));
-  useEffect(()=>{void load();},[]);// eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{void load();void request<{alerts:Alert[]}>('/alerts').then(r=>setAlerts(r.alerts)).catch(()=>undefined);},[]);// eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{
     if(data?.research?.status!=='running')return;
     const id=window.setInterval(()=>void load(),4000);return()=>window.clearInterval(id);
@@ -54,6 +56,11 @@ export function MarketPanel({request,openSettings}:{request:Request;openSettings
         submit={b=>void act(async()=>{const next=await request<Market>('/market/quotes',{indicator:i.key,...b});setQuote(null);return next;})}/>}
     </li>)}</ul>
     {data.coverage_note&&<p className="muted small-print">{data.coverage_note}</p>}
+
+    {!!alerts.length&&<><h3>{t('Recent alerts')}</h3><ul className="market-alerts">{alerts.slice(0,6).map(a=><li key={a.id} className={'alert-'+a.level}>
+      <details><summary><span className={'pill level-'+a.level}>{a.level===3?t('Critical'):a.level===2?t('Warning'):t('Update')}</span> <b>{a.title}</b>
+        <small>{formatDate(new Date(a.created_at*1000).toISOString().slice(0,10))}{!!a.delivery.length&&' · '+a.delivery.map(d=>`${d.channel==='inapp'?t('App'):d.channel==='telegram'?'Telegram':t('Phone')}: ${d.status==='sent'?t('sent'):d.status==='failed'?t('failed'):t('waiting')}`).join(', ')}</small></summary>
+        <ul>{a.lines.map((l,i)=><li key={i}>{l}</li>)}</ul><p className="muted">{a.advice}</p></details></li>)}</ul></>}
 
     <h3>{t('Market research')}</h3>
     {!data.research_allowed?<p className="muted">{t('Online research is off. Turn on “Research my market and competitors online” in Settings → Business → Permissions.')} <button className="link" onClick={openSettings}>{t('Open settings')}</button></p>

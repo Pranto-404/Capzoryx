@@ -148,6 +148,8 @@ class Consent(Contract):
     external_research: bool = False
     monitoring: bool = False
     alerts: bool = False
+    warn_cushion_pct: float = Field(default=5, ge=0.5, le=50)  # warn when the price is this close to break-even
+    move_pct: float = Field(default=3, ge=0.5, le=50)  # warn when the price falls this much between checks
 
 
 STEP_MODEL = {'identity': Identity, 'operations': Operations, 'goals': Goals, 'consent': Consent}
