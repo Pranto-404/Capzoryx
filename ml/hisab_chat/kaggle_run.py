@@ -24,6 +24,9 @@ OWNER = os.getenv('HISAB_OWNER', 'Pranto-404')
 MODEL_REPO, SPACE_REPO = f'{OWNER}/hisab-chat-gguf', f'{OWNER}/hisab-chat'
 MERGED_REPO, ZERO_SPACE = f'{OWNER}/hisab-chat-merged', f'{OWNER}/hisab-chat-zero'
 ZEROGPU = os.getenv('HISAB_TARGET', '').lower() == 'zerogpu'
+# Free plan default: Qwen3-1.7B answers in 1-3 GPU seconds (many replies per free ZeroGPU quota) and still runs on a
+# free 2-core CPU Space. HISAB_BASE=Qwen/Qwen3-4B-Instruct-2507 gives better Bangla at about twice the cost.
+BASE = os.getenv('HISAB_BASE', 'Qwen/Qwen3-1.7B' if ZEROGPU else 'Qwen/Qwen3-4B-Instruct-2507')
 TEACHER_SECRETS = {'GROQ_KEY': 'CAPZORYX_CHAT_GROQ_KEY', 'GEMINI_KEY': 'CAPZORYX_CHAT_GEMINI_KEY',
                    'CEREBRAS_KEY': 'CAPZORYX_CHAT_CEREBRAS_KEY', 'OPENROUTER_KEY': 'CAPZORYX_CHAT_OPENROUTER_KEY'}
 
@@ -111,18 +114,20 @@ def main():
          '--size', '3000', '--teacher', '800' if teachers else '0',
          '--business', '2200', '--business-teacher', '900' if teachers else '0')
     step('Train, export and upload', sys.executable, '-m', 'ml.hisab_chat.train', '--data', 'data/hisab_chat',
-         '--output', 'runs/hisab-chat', '--epochs', '1', '--qlora', '--gguf', '--push', MODEL_REPO,
-         *(['--merged', MERGED_REPO] if ZEROGPU else []))
+         '--output', 'runs/hisab-chat', '--epochs', '1', '--base', BASE, *(['--qlora'] if '4B' in BASE else []),
+         '--gguf', '--push', MODEL_REPO, *(['--merged', MERGED_REPO] if ZEROGPU else []))
+    key = start_space()  # the free CPU copy always runs, so the model answers even when GPU quota is used up
+    cpu = f"https://{SPACE_REPO.replace('/', '-').lower()}.hf.space/v1"
     if ZEROGPU and start_zerogpu_space():
-        print('\n=== Done (ZeroGPU) ===')
-        print('Space (takes ~5 minutes to build):', f'https://huggingface.co/spaces/{ZERO_SPACE}')
+        print('\n=== Done: ZeroGPU first, free CPU copy second, free APIs last ===')
+        print('Spaces (take ~5 minutes to build):', f'https://huggingface.co/spaces/{ZERO_SPACE}', f'https://huggingface.co/spaces/{SPACE_REPO}')
         print('\nAdd these Environment variables on Render (capzoryx-staging-api):')
-        print(f"  CAPZORYX_CHAT_HISAB_URL  = https://{ZERO_SPACE.replace('/', '-').lower()}.hf.space")
-        print('  CAPZORYX_CHAT_HISAB_MODE = zerogpu')
-        print('  CAPZORYX_CHAT_HISAB_KEY  = a Hugging Face READ token from your PRO account (Settings -> Access Tokens).')
-        print('  The GPU minutes are counted on that account, so it must be the PRO one.')
+        print(f"  CAPZORYX_CHAT_HISAB_URL      = https://{ZERO_SPACE.replace('/', '-').lower()}.hf.space")
+        print('  CAPZORYX_CHAT_HISAB_MODE     = zerogpu')
+        print('  CAPZORYX_CHAT_HISAB_KEY      = a Hugging Face READ token (Settings -> Access Tokens); its account pays the GPU minutes')
+        print(f'  CAPZORYX_CHAT_HISAB_CPU_URL  = {cpu}')
+        print(f'  CAPZORYX_CHAT_HISAB_CPU_KEY  = {key}')
         return
-    key = start_space()
     print('\n=== Done ===')
     print('Model:', f'https://huggingface.co/{MODEL_REPO}')
     print('Space (takes ~5 minutes to start):', f'https://huggingface.co/spaces/{SPACE_REPO}')

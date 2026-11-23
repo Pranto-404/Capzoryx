@@ -103,4 +103,4 @@ def test_retired_model_names_are_replaced_from_the_live_model_list(monkeypatch):
     monkeypatch.setattr(llm, '_models', {})
     monkeypatch.setenv('CAPZORYX_CHAT_GEMINI_KEY', '')
     assert llm.reply('kemon acho') == ('Bhalo achi!', 'groq')
-    assert llm.PROVIDERS[1].model_name == 'openai/gpt-oss-120b' and ('GET', '/openai/v1/models') in calls
+    assert next(p for p in llm.PROVIDERS if p.name == 'groq').model_name == 'openai/gpt-oss-120b' and ('GET', '/openai/v1/models') in calls

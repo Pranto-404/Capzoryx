@@ -14,7 +14,7 @@ from pathlib import Path
 BASES = {
     'Qwen/Qwen3-4B-Instruct-2507': dict(batch=2, accumulate=8),  # fits a 16 GB T4 with the longer business context
     'google/gemma-3-12b-it': dict(batch=1, accumulate=16),       # heavier, needs 16 GB
-    'Qwen/Qwen3-1.7B': dict(batch=8, accumulate=2),              # quick smoke run
+    'Qwen/Qwen3-1.7B': dict(batch=4, accumulate=4),              # the free plan: fast on ZeroGPU and usable on a free CPU
 }
 MAX_LEN = 2560  # business-context examples carry the whole business (profile, products, market, advice)
 SEED = 20261121
