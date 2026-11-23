@@ -9,6 +9,7 @@ Research only sends public facts (industry, niche, area, product names, competit
 and only after the owner allowed it in setup.
 """
 import json
+import logging
 import os
 import re
 import threading
@@ -17,6 +18,7 @@ import uuid
 from contextlib import closing
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends
@@ -30,13 +32,15 @@ from api.app.routes import db_connection, principal
 from api.app.services.receivables import customer_key, key_tag, seal, unseal
 
 router = APIRouter(prefix='/api/market')
+log = logging.getLogger('capzoryx.market')
 TRANSPORT = None  # tests inject an httpx.MockTransport
 OUNCE_GRAMS = Decimal('31.1034768')
 BHORI_GRAMS = Decimal('11.664')
 RESEARCH_EVERY = 6 * 3600
 METALS_SOURCES = ('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json',
                   'https://latest.currency-api.pages.dev/v1/currencies/usd.json')
-GEMINI_MODELS = ('gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash')
+GEMINI_MODELS = ('gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest')
+GROQ_SEARCH_MODELS = ('groq/compound-mini', 'groq/compound')  # Groq models with built-in web search
 _failures = {}  # indicator -> (time, reason) of the last failed fetch, so a dead source is not hammered
 _lock = threading.Lock()
 
@@ -262,20 +266,118 @@ def call_gemini(prompt):
     key = gemini_key()
     last = None
     for model in GEMINI_MODELS:
+        for attempt in range(2):  # "high demand" (503) usually clears within seconds
+            try:
+                with httpx.Client(transport=TRANSPORT, timeout=60, trust_env=False, follow_redirects=False) as client:
+                    r = client.post(f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
+                                    headers={'x-goog-api-key': key, 'Content-Type': 'application/json'},
+                                    json={'contents': [{'role': 'user', 'parts': [{'text': prompt}]}], 'tools': [{'google_search': {}}],
+                                          'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 2048}})
+                if r.status_code == 503 and attempt == 0:
+                    time.sleep(0 if TRANSPORT else 3)
+                    continue
+                if r.status_code in (400, 403, 404, 429, 500, 503):
+                    last = f'{model} returned {r.status_code}'
+                    break
+                r.raise_for_status()
+                return r.json()
+            except (httpx.HTTPError, ValueError) as error:
+                last = type(error).__name__
+                break
+    raise RuntimeError(last or 'no model answered')
+
+
+def groq_key():
+    from api.app.chat import llm
+    return next((p.key for p in llm.PROVIDERS if p.name == 'groq'), '')
+
+
+def _results(node, out):
+    """Every {url, title, content} search result anywhere in Groq's executed_tools, whatever its exact nesting."""
+    if isinstance(node, dict):
+        if isinstance(node.get('url'), str):
+            out.append(dict(url=node['url'], title=str(node.get('title') or ''), content=str(node.get('content') or '')))
+        for value in node.values():
+            _results(value, out)
+    elif isinstance(node, list):
+        for value in node:
+            _results(value, out)
+    return out
+
+
+def call_groq(prompt):
+    """Web research through Groq's search-enabled models, reshaped like a grounded Gemini answer.
+
+    Groq returns the search results it used but not which sentence came from which page, so a line is linked to a
+    page only when the page supports it: a price line when that exact number appears on the page, a competitor when
+    its name does, a finding when it shares several distinctive words with the page. Anything else stays unverified.
+    """
+    key = groq_key()
+    last = None
+    for model in GROQ_SEARCH_MODELS:
         try:
-            with httpx.Client(transport=TRANSPORT, timeout=60, trust_env=False, follow_redirects=False) as client:
-                r = client.post(f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
-                                headers={'x-goog-api-key': key, 'Content-Type': 'application/json'},
-                                json={'contents': [{'role': 'user', 'parts': [{'text': prompt}]}], 'tools': [{'google_search': {}}],
-                                      'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 2048}})
-            if r.status_code in (404, 429, 500, 503):
+            with httpx.Client(transport=TRANSPORT, timeout=90, trust_env=False, follow_redirects=False) as client:
+                r = client.post('https://api.groq.com/openai/v1/chat/completions', headers={'Authorization': 'Bearer ' + key},
+                                json={'model': model, 'messages': [{'role': 'user', 'content': prompt}], 'temperature': 0.2, 'max_tokens': 2048})
+            if r.status_code != 200:
                 last = f'{model} returned {r.status_code}'
                 continue
-            r.raise_for_status()
-            return r.json()
-        except (httpx.HTTPError, ValueError) as error:
+            message = r.json()['choices'][0]['message']
+        except (httpx.HTTPError, ValueError, KeyError, IndexError) as error:
             last = type(error).__name__
+            continue
+        text = message.get('content') or ''
+        pages = [p for p in _results(message.get('executed_tools') or [], []) if re.match(r'^https?://', p['url'])][:15]
+        chunks, supports = [], []
+        for page in pages:
+            chunks.append({'web': {'uri': page['url'], 'title': page['title'] or urlsplit(page['url']).hostname or ''}})
+        digits = lambda value: re.sub(r'[^\d]', '', value)
+        for raw in text.splitlines():
+            head, _, rest = raw.strip(' *-•\t').partition(':')
+            head, rest = head.strip().upper(), rest.strip()
+            if not rest:
+                continue
+            found = []
+            for index, page in enumerate(pages):
+                body = (page['title'] + ' ' + page['content']).lower()
+                if head == 'PRICE':
+                    parts = [x.strip() for x in rest.split('|')]
+                    number = digits(parts[1]) if len(parts) > 1 else ''
+                    if number and number in digits(body.replace(',', '')):
+                        found.append(index)
+                elif head == 'COMPETITOR':
+                    name = rest.split('|')[0].strip().lower()
+                    if len(name) > 2 and name in body:
+                        found.append(index)
+                elif head == 'FINDING':
+                    words = {w for w in re.findall(r'[a-z]{5,}', rest.lower())}
+                    if len(words & set(re.findall(r'[a-z]{5,}', body))) >= 3:
+                        found.append(index)
+            if found:
+                supports.append({'segment': {'text': rest}, 'groundingChunkIndices': found[:3]})
+        return {'candidates': [{'content': {'parts': [{'text': text}]},
+                                'groundingMetadata': {'groundingChunks': chunks, 'groundingSupports': supports, 'webSearchQueries': []}}]}
     raise RuntimeError(last or 'no model answered')
+
+
+def research_service():
+    return bool(gemini_key() or groq_key())
+
+
+def call_research(prompt):
+    """Gemini with Google Search first; Groq's web search when Gemini is busy, out of quota or not configured."""
+    errors = []
+    for available, call in ((gemini_key, call_gemini), (groq_key, call_groq)):
+        if not available():
+            continue
+        try:
+            body = call(prompt)
+            if parse_research(body)['findings'] or parse_research(body)['competitors']:
+                return body
+            errors.append('empty answer')
+        except RuntimeError as error:
+            errors.append(str(error))
+    raise RuntimeError('; '.join(errors) or 'no research service configured')
 
 
 def parse_research(body):
@@ -333,11 +435,12 @@ def run_research(identity, business):
             currency = sec.original_dataset(db, business).currency
         status, reason, result = 'done', '', None
         try:
-            result = parse_research(call_gemini(research_prompt(profile, items, currency)))
+            result = parse_research(call_research(research_prompt(profile, items, currency)))
             if not result['findings'] and not result['competitors']:
                 status, reason = 'failed', 'The search returned nothing usable. Try again later.'
         except RuntimeError as error:
-            status, reason = 'failed', f'Research service did not answer ({error}).'
+            log.warning('market research failed: %s', error)  # details for the operator; the owner gets a plain message
+            status, reason = 'failed', 'The research services are busy right now. Research will try again automatically within a few hours.'
         with sec.transaction(db):
             now = sec.now()
             if result:
@@ -405,7 +508,7 @@ def overview(db, business, reasons=None):
                 coverage_note=(f'No free live price feed covers {cat.INDUSTRIES.get(industry, ("this industry",))[0].lower()}, so your '
                                'products are priced from what you see in the market and from cited web research.') if no_feed else '',
                 research=research_view(db, business), research_allowed=bool(consent.get('external_research')),
-                research_configured=bool(gemini_key()), owner_competitors=(profile.get('operations') or {}).get('competitors', []),
+                research_configured=research_service(), owner_competitors=(profile.get('operations') or {}).get('competitors', []),
                 simulation_only=True)
 
 
@@ -481,7 +584,7 @@ def queue_research(db, business, manual=False):
     if not manual and last and last['status'] in ('failed', 'unavailable') and last.get('inputs') == inputs and now - last['started_at'] < 6 * 3600:
         return None  # do not retry a failing service every pass
     identity = uuid.uuid4().hex
-    if not gemini_key():
+    if not research_service():
         if manual or not last:
             db.execute("INSERT INTO research_runs(id,business_id,status,reason,created_at,finished_at,inputs) VALUES (?,?,'unavailable',?,?,?,?)",
                        (identity, business, 'No web research service is configured on this server, so no research was done.', now, now, inputs))
