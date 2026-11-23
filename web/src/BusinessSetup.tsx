@@ -10,7 +10,8 @@ type Profile={identity?:Record<string,unknown>;operations?:Record<string,unknown
 export type BusinessView={profile:Profile;step:number;completed:boolean;products:Product[];gaps:{field:string;why:string}[];currency:string;niche_category:string|null};
 
 const STEPS=[T('Business'),T('Products'),T('Operations'),T('Goals'),T('Permissions')];
-const SETUP_STEPS=[0,1,4];  // new owners answer three short steps; operations and goals details live in Settings → Business
+const SETUP_STEPS=[0,1,4];
+const CITIES=['Dhaka','Mirpur, Dhaka','Uttara, Dhaka','Dhanmondi, Dhaka','Gulshan, Dhaka','Mohammadpur, Dhaka','Old Dhaka','Savar','Gazipur','Narayanganj','Chattogram','Cumilla','Sylhet','Khulna','Rajshahi','Barishal','Rangpur','Mymensingh','Bogura','Jashore','Cox\'s Bazar','Feni','Noakhali','Tangail','Dinajpur'];  // new owners answer three short steps; operations and goals details live in Settings → Business
 const FINISH=T('What Capzoryx may do');
 const KEYS=['identity','products','operations','goals','consent'];
 const TYPE_LABEL:Record<string,string>={retail:T('Retail'),wholesale:T('Wholesale'),manufacturing:T('Manufacturing'),service:T('Service'),distribution:T('Distribution'),online:T('Online')};
@@ -118,36 +119,49 @@ function Submit({busy,mode,last}:{busy:boolean;mode:'setup'|'edit';last?:boolean
 function IdentityStep({catalog,value,busy,mode,submit}:{catalog:Catalog;value:Record<string,unknown>;busy:boolean;mode:'setup'|'edit';submit:(b:unknown)=>void}){
   const [f,setF]=useState({name:str(value.name),industry:str(value.industry),niche:str(value.niche),country:str(value.country)||'Bangladesh',city:str(value.city),
     website:str(value.website),facebook:str(value.facebook),instagram:str(value.instagram),store:str(value.store),year:value.year_established?String(value.year_established):'',description:str(value.description)});
-  const [types,setTypes]=useState<string[]>(Array.isArray(value.business_types)?value.business_types as string[]:[]);
+  const [types,setTypes]=useState<string[]>(Array.isArray(value.business_types)?value.business_types as string[]:['retail']);
   const set=(k:keyof typeof f)=>(e:{target:{value:string}})=>setF({...f,[k]:e.target.value});
   const guess=useMemo(()=>f.niche.length>2?suggestIndustry(f.niche,catalog.industries):null,[f.niche,catalog]);
   const niches=useMemo(()=>{const chosen=catalog.industries.find(i=>i.key===f.industry);return chosen?.niches.length?chosen.niches:catalog.industries.flatMap(i=>i.niches);},[f.industry,catalog]);
-  const [more,setMore]=useState(mode==='edit');
-  const industry=f.industry||guess?.key||'other';
-  const industryLabel=catalog.industries.find(i=>i.key===industry)?.label||'Other';
-  // Only three things are asked: name, what you do and where. The industry is worked out from what you do.
-  return <form onSubmit={e=>{e.preventDefault();submit({name:f.name,industry,niche:f.niche,business_types:types.length?types:['retail'],country:f.country||'Bangladesh',city:f.city,website:f.website,
+  const [more,setMore]=useState(mode==='edit'&&!!(f.website||f.facebook||f.description));
+  const industry=f.industry||guess?.key||'';
+  const options=catalog.industries.find(i=>i.key===industry)?.niches||[];
+  const [ownNiche,setOwnNiche]=useState(!!f.niche&&!options.includes(f.niche));
+  const [ownCity,setOwnCity]=useState(!!f.city&&!CITIES.includes(f.city));
+  // Choices instead of typing: pick the industry, then what you do and where from short lists ("Other" lets you type).
+  return <form onSubmit={e=>{e.preventDefault();submit({name:f.name,industry:industry||'other',niche:f.niche,business_types:types.length?types:['retail'],country:f.country||'Bangladesh',city:f.city,website:f.website,
     facebook:f.facebook,instagram:f.instagram,store:f.store,year_established:f.year?Number(f.year):null,description:f.description});}}>
+    <label>{t('Business name')}<input required minLength={2} maxLength={80} value={f.name} onChange={set('name')} placeholder={t('e.g. Rahman Traders')}/></label>
     <div className="form-row">
-      <label>{t('Business name')}<input required minLength={2} maxLength={80} value={f.name} onChange={set('name')} placeholder={t('e.g. Rahman Traders')}/></label>
-      <label>{t('What do you sell or do?')}<input required minLength={2} maxLength={80} list="biz-niches" value={f.niche} onChange={set('niche')} placeholder={t('e.g. Women\'s clothing shop')}/></label>
-      <label>{t('City or area')}<input required minLength={2} maxLength={80} value={f.city} onChange={set('city')} placeholder={t('e.g. Mirpur, Dhaka')}/></label>
-    </div>
-    <datalist id="biz-niches">{niches.map(n=><option key={n} value={n}/>)}</datalist>
-    {f.niche.length>2&&<p className="biz-hint">{t('Industry: {industry}',{industry:t(industryLabel)})} <button type="button" className="link" onClick={()=>setMore(true)}>{t('Change')}</button></p>}
-    <details className="biz-more" open={more} onToggle={e=>setMore((e.target as HTMLDetailsElement).open)}><summary>{t('More details (optional)')}</summary>
-      <label>{t('Industry')}<select value={f.industry||industry} onChange={set('industry')}>
+      <label>{t('Industry')}<select required value={industry} onChange={e=>{setF({...f,industry:e.target.value,niche:''});setOwnNiche(false);}}>
+        <option value="" disabled>{t('Choose…')}</option>
         {catalog.industries.map(i=><option key={i.key} value={i.key}>{t(i.label)}</option>)}</select></label>
+      <label>{t('What do you sell or do?')}{ownNiche||!options.length
+        ?<input required minLength={2} maxLength={80} value={f.niche} onChange={set('niche')} placeholder={t('e.g. Women\'s clothing shop')}/>
+        :<select required value={f.niche} onChange={e=>{if(e.target.value==='__own'){setOwnNiche(true);setF({...f,niche:''});}else setF({...f,niche:e.target.value});}}>
+          <option value="" disabled>{t('Choose…')}</option>
+          {options.map(n=><option key={n} value={n}>{t(n)}</option>)}
+          <option value="__own">{t('Something else (type it)')}</option></select>}</label>
+    </div>
+    <div className="form-row">
+      <label>{t('City or area')}{ownCity
+        ?<input required minLength={2} maxLength={80} value={f.city} onChange={set('city')} placeholder={t('e.g. Mirpur, Dhaka')}/>
+        :<select required value={f.city} onChange={e=>{if(e.target.value==='__own'){setOwnCity(true);setF({...f,city:''});}else setF({...f,city:e.target.value});}}>
+          <option value="" disabled>{t('Choose…')}</option>
+          {CITIES.map(c=><option key={c} value={c}>{t(c)}</option>)}
+          <option value="__own">{t('Another place (type it)')}</option></select>}</label>
       <fieldset className="biz-field"><legend>{t('How do you sell?')}</legend><Chips options={catalog.business_types} labels={TYPE_LABEL} value={types} onChange={setTypes}/></fieldset>
+    </div>
+    <details className="biz-more" open={more} onToggle={e=>setMore((e.target as HTMLDetailsElement).open)}><summary>{t('Website, pages and description (optional)')}</summary>
       <div className="form-row">
-        <label>{t('Country')}<input minLength={2} maxLength={60} value={f.country} onChange={set('country')}/></label>
         <label>{t('Website')}<input inputMode="url" maxLength={200} value={f.website} onChange={set('website')} placeholder="example.com"/></label>
         <label>{t('Facebook page')}<input inputMode="url" maxLength={200} value={f.facebook} onChange={set('facebook')} placeholder="facebook.com/yourpage"/></label>
+        <label>{t('Instagram')}<input inputMode="url" maxLength={200} value={f.instagram} onChange={set('instagram')}/></label>
       </div>
       <div className="form-row">
-        <label>{t('Instagram')}<input inputMode="url" maxLength={200} value={f.instagram} onChange={set('instagram')}/></label>
         <label>{t('Online store')}<input inputMode="url" maxLength={200} value={f.store} onChange={set('store')}/></label>
         <label>{t('Year started')}<input inputMode="numeric" maxLength={4} value={f.year} onChange={set('year')}/></label>
+        <label>{t('Country')}<input minLength={2} maxLength={60} value={f.country} onChange={set('country')}/></label>
       </div>
       <label>{t('Short description')}<textarea maxLength={600} rows={3} value={f.description} onChange={set('description')}/></label>
     </details>

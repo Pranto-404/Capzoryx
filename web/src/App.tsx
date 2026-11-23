@@ -24,9 +24,11 @@ function employeeCode():string{
 
 export default function App() {
   useI18n();
+  // Being offline never blocks the app: sign-in and the workspace still open, with offline recording as an option.
   const [online,setOnline]=useState(navigator.onLine && !document.querySelector('meta[name="capzoryx-offline"]'));
+  const [capture,setCapture]=useState(false);
   useEffect(()=>{
-    const connected=()=>{setAuth(null);setOnline(true);}, disconnected=()=>setOnline(false);
+    const connected=()=>{setAuth(null);setOnline(true);setCapture(false);}, disconnected=()=>setOnline(false);  // back online: return to the app, which syncs queued records
     window.addEventListener('online',connected);window.addEventListener('offline',disconnected);
     return ()=>{window.removeEventListener('online',connected);window.removeEventListener('offline',disconnected);};
   },[]);
@@ -57,7 +59,7 @@ export default function App() {
         try{
           const response=await apiFetch('/api/health',{cache:'no-store',signal:AbortSignal.any([abort.signal,AbortSignal.timeout(8000)])});
           if(response.ok && (await response.json()).status==='ok' && !abort.signal.aborted){
-            setAuth(null);setOnline(true);return;
+            setAuth(null);setOnline(true);setCapture(false);return;
           }
         }catch{/* Offline or a sleeping service. Keep the draft available locally. */}
       }
@@ -115,8 +117,9 @@ export default function App() {
     return ()=>channel.close();
   },[]);
   function expired(){void window.capzoryxStore.setScope(null).catch(()=>{});setAuth(null);setError('Your session ended. Sign in again to continue.');}
-  if(!online)return <OfflineCapture/>;
+  if(capture)return <OfflineCapture onClose={()=>setCapture(false)}/>;
   return <>
+    {!online&&<p className="notice banner offline-banner" role="status">{t('You are offline or the server is waking up. Sign-in and live data return by themselves when the connection is back.')} <button className="link" onClick={()=>setCapture(true)}>{t('Record a payment offline')}</button></p>}
     {auth&&error&&<p className="error banner" role="alert">{error} <button className="link" onClick={()=>setError('')}>Dismiss</button></p>}
     {auth&&notice&&<p className="success banner" role="status">{notice} <button className="link" onClick={()=>setNotice('')}>Dismiss</button></p>}
     {auth&&recoveryCode&&<RecoveryNotice code={recoveryCode} done={()=>setRecoveryCode('')}/>}
