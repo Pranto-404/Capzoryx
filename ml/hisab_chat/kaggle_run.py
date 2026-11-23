@@ -156,19 +156,19 @@ def main():
          '--business', n(2200), '--business-teacher', n(900) if teachers else '0')
     step('Train, export and upload', sys.executable, '-m', 'ml.hisab_chat.train', '--data', 'data/hisab_chat',
          '--output', 'runs/hisab-chat', '--epochs', EPOCHS, '--base', BASE, *([] if SMALL or BIG_GPU else ['--qlora']),
-         *(['--gguf', '--push', MODEL_REPO] if CPU_COPY else []), *(['--merged', MERGED_REPO] if ZEROGPU else []))
+         *(['--gguf', '--push', MODEL_REPO] if CPU_COPY else []))
+    if ZEROGPU:
+        # Merge and upload with plain Transformers + PEFT (publish.py, which can be re-run alone if this step fails),
+        # start the ZeroGPU Space and print its Render values.
+        from ml.hisab_chat import publish
+        publish.main()
+        if not CPU_COPY:
+            return
     key = start_space() if CPU_COPY else None  # the free CPU copy answers when GPU quota is used up (small model only)
-    cpu = f"https://{SPACE_REPO.replace('/', '-').lower()}.hf.space/v1"
-    if ZEROGPU and start_zerogpu_space():
-        print('\n=== Done: ZeroGPU first, free CPU copy second, free APIs last ===')
-        print('Spaces (take ~5 minutes to build):', f'https://huggingface.co/spaces/{ZERO_SPACE}', f'https://huggingface.co/spaces/{SPACE_REPO}')
-        print('\nAdd these Environment variables on Render (capzoryx-staging-api):')
-        print(f"  CAPZORYX_CHAT_HISAB_URL      = https://{ZERO_SPACE.replace('/', '-').lower()}.hf.space")
-        print('  CAPZORYX_CHAT_HISAB_MODE     = zerogpu')
-        print('  CAPZORYX_CHAT_HISAB_KEY      = a Hugging Face READ token (Settings -> Access Tokens); its account pays the GPU minutes')
-        if key:
-            print(f'  CAPZORYX_CHAT_HISAB_CPU_URL  = {cpu}')
-            print(f'  CAPZORYX_CHAT_HISAB_CPU_KEY  = {key}')
+    if ZEROGPU:
+        print('\nAlso add the free CPU copy (used when the GPU quota runs out):')
+        print(f"  CAPZORYX_CHAT_HISAB_CPU_URL  = https://{SPACE_REPO.replace('/', '-').lower()}.hf.space/v1")
+        print(f'  CAPZORYX_CHAT_HISAB_CPU_KEY  = {key}')
         return
     if not key:
         raise SystemExit('The ZeroGPU Space could not be created and no CPU copy was built. Rerun with HISAB_BASE=Qwen/Qwen3-1.7B.')
