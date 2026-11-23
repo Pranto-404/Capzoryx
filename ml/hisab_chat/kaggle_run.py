@@ -9,8 +9,8 @@ HF_TOKEN (Hugging Face write token) and any of GROQ_KEY, GEMINI_KEY, CEREBRAS_KE
 Use Save Version -> Save & Run All to keep it running with the browser closed.
 
 Google Colab (Pro A100 is fastest): Runtime -> Change runtime type -> A100. Add the same names under Secrets (the key
-icon on the left, turn on notebook access) and run the same two lines. With 30 GB or more of GPU memory the run uses
-full precision, all the data and two epochs. Keep the tab open until it finishes. It ends by printing the values
+icon on the left, turn on notebook access) and run the same two lines. With 20 GB or more of GPU memory (L4, A100) the run uses
+16-bit LoRA and all the data; an A100 also gets a second epoch. Keep the tab open until it finishes. It ends by printing the values
 to add on Render.
 
 ZeroGPU (needs a Hugging Face PRO account): put `%env HISAB_TARGET=zerogpu` above the %run line. The run then also
@@ -44,9 +44,10 @@ ZEROGPU = os.getenv('HISAB_TARGET', '').lower() == 'zerogpu'
 BASE = os.getenv('HISAB_BASE', 'Qwen/Qwen3-4B-Instruct-2507')
 SMALL = '1.7B' in BASE
 # Data size: 1.0 is about 6,900 conversations. The 4B default uses 60% so the whole run fits in about 2 hours on a T4.
-BIG_GPU = gpu_memory_gb() >= 30  # Colab A100 / L4-class cards: full precision, all the data, two epochs
+MEMORY = gpu_memory_gb()
+BIG_GPU = MEMORY >= 20  # Colab L4 (24 GB) or A100: 16-bit LoRA instead of QLoRA, and all the data
 SCALE = float(os.getenv('HISAB_SCALE', '1.0' if SMALL or BIG_GPU else '0.6'))
-EPOCHS = os.getenv('HISAB_EPOCHS', '2' if BIG_GPU else '1')
+EPOCHS = os.getenv('HISAB_EPOCHS', '2' if MEMORY >= 35 else '1')  # A100: a second epoch fits in the time
 # A free 2-core CPU Space is only fast enough for the small model; the 4B one is served on ZeroGPU alone.
 CPU_COPY = SMALL or not ZEROGPU or os.getenv('HISAB_CPU') == '1'
 TEACHER_SECRETS = {'GROQ_KEY': 'CAPZORYX_CHAT_GROQ_KEY', 'GEMINI_KEY': 'CAPZORYX_CHAT_GEMINI_KEY',
@@ -137,7 +138,7 @@ def start_zerogpu_space():
 
 def main():
     load_secrets()
-    print(f'GPU memory: {gpu_memory_gb():.0f} GB; base {BASE}; data x{SCALE}; epochs {EPOCHS}', flush=True)
+    print(f'GPU memory: {MEMORY:.0f} GB; base {BASE}; data x{SCALE}; epochs {EPOCHS}', flush=True)
     if not os.getenv('HF_TOKEN'):
         raise SystemExit('Add a Hugging Face write token as the secret HF_TOKEN (Kaggle: Add-ons -> Secrets; Colab: the key icon, with notebook access on).')
     teachers = probe_teachers()
