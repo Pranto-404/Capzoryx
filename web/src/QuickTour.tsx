@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState,type KeyboardEvent} from 'react';
+import {Icon} from './Icon';
 import {t,T} from './i18n';
 
 type Step={page:string;target:string;title:string;body:string};
@@ -64,7 +65,7 @@ export function QuickTour({ready,userId,currentPage,navigate}:{ready:boolean;use
   if(e.key==='ArrowLeft'){e.preventDefault();go(step+(rtl?1:-1));}
  };
  const active=step===null?null:steps[step];
- return <><button ref={launcher} className="secondary" disabled={!ready} onClick={()=>{returnPage.current=currentPage;scrollPosition.current=window.scrollY;setStep(0);}}>{t('Quick tutorial')}</button>
+ return <><button ref={launcher} data-tour-launcher className="secondary icon-button" title={t('Quick tutorial')} aria-label={t('Quick tutorial')} disabled={!ready} onClick={()=>{returnPage.current=currentPage;scrollPosition.current=window.scrollY;setStep(0);}}><Icon name="help"/></button>
   <dialog ref={dialog} className={'quick-tour'+(box?.above?' tour-above':'')} aria-labelledby="tour-title" aria-describedby="tour-body" onKeyDown={onKey} onCancel={e=>{e.preventDefault();finish(false);}}>
    {active&&<>
     <svg className="tour-highlight" aria-hidden="true">{box&&<rect x={box.x} y={box.y} width={box.width} height={box.height} rx="12"/>}</svg>

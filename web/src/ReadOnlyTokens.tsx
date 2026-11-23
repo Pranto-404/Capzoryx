@@ -16,7 +16,7 @@ export function ReadOnlyTokens({request}:{request:Request}){
     try{await action();}catch(e){setMessage(e instanceof Error?e.message:t('Request failed.'));}
     finally{setBusy(false);}
   }
-  return <section className="panel"><h2>{t('Connect a read-only MCP client')}</h2>
+  return <section id="mcp-access" className="panel"><h2>{t('Connect a read-only MCP client')}</h2>
     <p>{t('A token lets its holder read this workspace’s balance, cash forecast and open supplier bills for 90 days.')}</p>
     <p><code>{location.origin}/api/mcp</code></p>
     <div className="actions"><button type="button" disabled={busy} onClick={()=>void run(async()=>{
