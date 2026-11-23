@@ -165,7 +165,7 @@ async def headers(request, call_next):
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])  # uptime monitors often check with HEAD
 def health():
     configured=all(os.environ.get(key) for key in ("SAFELEDGER_LLM_BASE_URL","SAFELEDGER_LLM_MODEL","SAFELEDGER_LLM_API_KEY"))
     return {"status": "ok", "version": "0.7.6", "build_commit": (os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("VERCEL_GIT_COMMIT_SHA") or os.environ.get("SAFELEDGER_BUILD_COMMIT", "development")), "simulation_only": True, "release": "accounts-and-assistant", "ai_status": "configured_not_verified" if (configured or hisab_hosted.configured()) else "not_configured"}

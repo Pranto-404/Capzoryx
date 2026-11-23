@@ -60,3 +60,9 @@ def test_agent_envelope_excludes_privileged_tools(tool):
 
 def test_approval_hash_contract():
     with pytest.raises(ValidationError): ApprovalRequest(proposal_hash="forged", decision="approve")
+
+
+def test_health_answers_head_for_uptime_monitors(client):
+    response = client.head('/api/health')
+    assert response.status_code == 200 and response.content == b''
+    assert client.request('DELETE', '/api/health').status_code == 405
