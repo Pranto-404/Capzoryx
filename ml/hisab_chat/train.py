@@ -119,7 +119,8 @@ def main():
 
     plan = dict(BASES[a.base])
     if full_precision:
-        plan = dict(batch=8, accumulate=2)  # same effective batch of 16, fewer, fuller GPU steps
+        # Same effective batch of 16. A 24 GB card (L4) needs smaller steps with the long business context.
+        plan = dict(batch=8, accumulate=2) if vram >= 35 else dict(batch=4, accumulate=4)
     args = TrainingArguments(**compatible(TrainingArguments, dict(
         output_dir=str(a.output / 'checkpoints'), num_train_epochs=a.epochs, seed=SEED, report_to='none',
         per_device_train_batch_size=plan['batch'], gradient_accumulation_steps=plan['accumulate'],
