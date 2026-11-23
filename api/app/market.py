@@ -104,10 +104,10 @@ def schema(db):
         created_at INTEGER NOT NULL, finished_at INTEGER);
       CREATE INDEX IF NOT EXISTS research_by_business ON research_runs(business_id, created_at);
     """)
-    try:  # older databases: remember what each run researched, so it is repeated only when that changes
+    # Older databases: remember what each run researched, so it is repeated only when that changes. Check first:
+    # on the remote database any failed statement closes the whole stream, so "try and ignore" breaks startup.
+    if 'inputs' not in {row[1] for row in db.execute('PRAGMA table_info(research_runs)').fetchall()}:
         db.execute("ALTER TABLE research_runs ADD COLUMN inputs TEXT NOT NULL DEFAULT ''")
-    except Exception:  # noqa: BLE001 - the column already exists
-        pass
 
 
 # ---------- what each business watches ----------
