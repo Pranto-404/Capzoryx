@@ -3,6 +3,13 @@
   "outputDirectory": "dist",
   "installCommand": "npm ci",
   "framework": null,
+  "git": {
+    "deploymentEnabled": {
+      "claude/**": false,
+      "codex/**": false,
+      "claude/funny-rubin-8b3bbd": false
+    }
+  },
   "rewrites": [
     {
       "source": "/api/:path*",
