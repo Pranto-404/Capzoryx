@@ -39,6 +39,7 @@ const KhataPage=lazy(()=>import('./KhataPage'));
 const Settings=lazy(()=>import('./Settings'));
 const Assistant=lazy(()=>import('./Assistant'));
 const Payroll=lazy(()=>import('./Payroll'));
+const MarketPanel=lazy(()=>import('./MarketPanel').then(m=>({default:m.MarketPanel})));
 const BusinessSetup=lazy(()=>import('./BusinessSetup').then(m=>({default:m.BusinessSetup})));
 const tabs=['Overview','Data','Invoices','Cash flow','Financing','Assistant','Approvals','Payroll','Audit','Settings'] as const;
 type Tab=typeof tabs[number];
@@ -226,6 +227,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {setup?.open&&!holdSetup&&<LazyBoundary><Suspense fallback={null}><BusinessSetup request={request} mode="setup" onLater={setupLater} onDone={v=>{setSetup({step:v.step,completed:true,open:false});setTab('Overview');setMessage(t('Your business profile is saved.'));}}/></Suspense></LazyBoundary>}
       {tab==='Overview'&&<Dashboard role={session.role} nextCollection={nextCollection} snapshot={snapshot} week={week} month={baselineMonth} invoices={invoices} events={events} proposals={proposals} audit={audit} navigate={showDashboardDestination} openAssistant={()=>{setChatLoaded(true);setChatOpen(true);}} onSample={session.role==='owner'&&!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0?()=>void importRaw(sampleBusiness(snapshot.currency)).catch(e=>report(e)):undefined}/>}
       {tab==='Overview'&&snapshot&&session.role==='owner'&&<AgentReview initiallyOpen={focusTarget.current==='agent-mode'} key={'agent-'+revision} request={request} invoices={invoices} forecast={baselineMonth} navigate={showDashboardDestination}/>}
+      {tab==='Overview'&&setup&&setup.step>0&&<LazyBoundary><Suspense fallback={null}><MarketPanel key={'market-'+setup.step+'-'+String(setup.completed)} request={request} openSettings={()=>{try{sessionStorage.setItem('capzoryx-settings-tab','Business');}catch{/* optional */}setTab('Settings');}}/></Suspense></LazyBoundary>}
       {tab==='Overview'&&snapshot&&<CashBriefing key={revision} request={request} initiallyOpen={focusTarget.current==='cash-briefing'}/>}
       {tab==='Invoices'&&session.role==='owner'&&<Receivables key={revision} request={request} onSaved={refresh}/>}
       {tab==='Invoices'&&session.role==='owner'&&snapshot?.currency==='BDT'&&<div id="wallet-review" tabIndex={-1}><LazyBoundary><Suspense fallback={null}><WalletPayments request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary></div>}

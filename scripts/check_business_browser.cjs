@@ -97,6 +97,23 @@ async function openPage(page,name){
     assert.ok(saved.profile.consent.alerts);
     assert.deepEqual(saved.products.map(p=>[p.name,p.unit,p.market_key,p.cost_minor]),[['22K Gold','bhori','gold_22k',19400000],['Silver ring','piece','silver',120000]]);
 
+    // D/H: Overview shows this business's market; every figure carries its source, or says it is unavailable.
+    const panel=owner.locator('.market-panel');
+    await panel.getByRole('heading',{name:'Your market'}).waitFor();
+    await panel.locator('.market-list li').first().waitFor();
+    const rows=await panel.locator('.market-list > li').allInnerTexts();
+    assert.ok(rows.some(r=>r.includes('Local 22K gold dealer price')),rows.join('\n'));
+    for(const row of rows)assert.match(row,/BDT\s[\d,]+\.\d\d[\s\S]*(Daily reference rate|Estimate|Your price|Web research)|Unavailable|No price yet/);
+    const local=panel.locator('.market-list > li').filter({hasText:'Local 22K gold dealer price'});
+    await local.getByRole('button',{name:"Add today's price"}).click();
+    await local.getByLabel(/Price \(BDT/).fill('200000');
+    await local.getByLabel('Where you saw it').fill('BAJUS');
+    await local.getByRole('button',{name:'Save price'}).click();
+    await local.getByText('Your price').waitFor();
+    assert.match(await local.innerText(),/BDT\s200,000\.00/);
+    await panel.getByText(/Web research is not set up|Online research is off|Research my market/).first().waitFor();
+    await shot(owner,'market-panel');
+
     // E: signing out and back in keeps the profile and does not show setup again.
     await owner.getByRole('button',{name:'Sign out'}).click();
     await owner.locator('.auth-tabs').getByRole('button',{name:'Sign in'}).click();
@@ -114,7 +131,7 @@ async function openPage(page,name){
     await owner.locator('.biz-edit').getByLabel('Business name').waitFor().catch(async e=>{console.log('DEBUG',await owner.locator('.settings-tabs [aria-selected=true]').innerText().catch(()=>'none'),'|',await owner.evaluate(()=>sessionStorage.getItem('capzoryx-settings-tab')),'|',await owner.locator('.biz-edit').count(),await owner.locator('.biz-edit').innerText().catch(()=>''));throw e;});
     assert.equal(await owner.locator('.biz-edit').getByLabel('Business name').inputValue(),'Golden Heritage BD');
     await shot(owner,'setup-settings');
-    console.log('PASS business setup: new owner sees setup, profile and products saved, returning owner goes straight in');
+    console.log('PASS business setup and market: new owner sees setup, profile saved, market figures sourced or marked unavailable, returning owner goes straight in');
   }finally{
     await browser?.close();
     server.kill('SIGTERM');
