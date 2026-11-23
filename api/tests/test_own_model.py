@@ -55,3 +55,27 @@ def test_training_rows_use_the_production_format_for_any_industry():
     assert len(industries) >= 8 and len(kinds) >= 6
     ctx, _ = business_data.invent(random.Random(3))
     assert context.render(ctx).startswith('BUSINESS: ')
+
+
+def test_free_cpu_copy_answers_when_gpu_quota_is_out(monkeypatch):
+    seen = []
+
+    def handle(request):
+        if 'hf.space/gradio_api' in str(request.url):
+            return httpx.Response(200, json={'event_id': 'q'}) if request.method == 'POST' else httpx.Response(200, text='event: error\ndata: "quota"\n\n')
+        body = json.loads(request.content)
+        seen.append(body)
+        return httpx.Response(200, json={'choices': [{'message': {'content': 'Ekhon stock kom rakhun.\n- Cash: BDT 1,000.00'}}]})
+    monkeypatch.setattr(llm, 'TRANSPORT', httpx.MockTransport(handle))
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_URL', 'https://owner-hisab-chat-zero.hf.space')
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_MODE', 'zerogpu')
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_CPU_URL', 'https://owner-hisab-chat.hf.space/v1')
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_CPU_KEY', 'cpu-key')
+    llm._cooldown.clear()
+    facts = 'BUSINESS: Test shop.\nCash balance: BDT 1,000.00.\n' + ''.join(f'- Product {n}: cost BDT 1,{n:03d}.00\n' for n in range(200))
+    answer, provider = llm.reply('ekhon ki korbo?', facts=facts)
+    assert provider == 'hisab_cpu' and answer.startswith('Ekhon stock kom rakhun.')
+    system = seen[0]['messages'][0]['content']
+    assert 'BUSINESS: Test shop.' in system and 'More details exist' in system and len(system) < len(llm.SYSTEM) + 2100
+    assert seen[0]['max_tokens'] == llm.CPU_MAX_TOKENS
+    llm._cooldown.clear()

@@ -3,6 +3,24 @@
 Hisab-Chat is the first model the Telegram and in-app chat try (`api/app/chat/llm.py`). Free API tiers
 are only the fallback. Everything below is free: open models, your own GPU and a free Cloudflare tunnel.
 
+## Free plan (recommended): one model, three free layers
+
+1. **Code first.** Exact business questions are answered by code, with no model:
+   - balance and bills
+   - profile, products, market and competitors
+   - risk, break-even and price scenarios
+2. **Hisab-Chat on ZeroGPU.** Open questions go here first. The default base is Qwen3-1.7B, which answers in 1-3 GPU seconds, so even a free account's daily ZeroGPU minutes cover many replies.
+3. **The same model as GGUF on a free CPU Space.** Used when the GPU quota is spent. It gets the most important part of the facts so a 2-core CPU answers in about 20-30 seconds.
+4. **Free APIs.** Used only when both copies fail or answer without grounding.
+
+Run the Kaggle cell below with `%env HISAB_TARGET=zerogpu`. It trains Qwen3-1.7B (about 40 minutes on a T4) and starts both Spaces. It then prints five Render variables:
+- `CAPZORYX_CHAT_HISAB_URL`, `_MODE` and `_KEY`
+- `CAPZORYX_CHAT_HISAB_CPU_URL` and `_CPU_KEY`
+
+For better Bangla at about twice the GPU time, add `%env HISAB_BASE=Qwen/Qwen3-4B-Instruct-2507`.
+
+Keep both Spaces awake: add their URLs to UptimeRobot (HTTP(s) monitor, every 30 minutes). A free Space otherwise sleeps after two days without requests.
+
 ## Fastest path for a demo: train in about 2 hours, serve on ZeroGPU
 
 **What the model learns.** It does not learn the owner's numbers; those arrive in every request as a facts block
@@ -29,7 +47,7 @@ app uses, and to say "not known" instead of inventing. Training data uses the sa
    %run Capzoryx/ml/hisab_chat/kaggle_run.py
    ```
 
-   About 2 hours later, Qwen3-4B-Instruct-2507 has been fine-tuned (QLoRA, one epoch) on about 6,900 conversations. The run uploads:
+   About 1-2 hours later the model has been fine-tuned (one epoch) on about 6,900 conversations. The run uploads:
    - merged weights to `<you>/hisab-chat-merged`
    - a GGUF to `<you>/hisab-chat-gguf`
    - a private Gradio Space `<you>/hisab-chat-zero` on ZeroGPU

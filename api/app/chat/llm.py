@@ -20,7 +20,10 @@ TRANSPORT = None  # tests inject an httpx.MockTransport
 MAX_TOKENS = int(os.getenv('CAPZORYX_CHAT_MAX_TOKENS', '500'))
 PER_CALL_SECONDS = 15
 OWN_CALL_SECONDS = 25  # a GPU Space may queue briefly; it is tried first, so it gets longer
-TOTAL_SECONDS = 28
+TOTAL_SECONDS = 40  # GPU own model, then the free CPU copy, then free APIs
+CPU_CALL_SECONDS = 30
+CPU_FACTS_CHARS = 1800  # a 2-core CPU reads a long prompt slowly; it gets the most important part of the facts
+CPU_MAX_TOKENS = 260
 _cooldown = {}
 _lock = threading.Lock()
 
@@ -82,6 +85,7 @@ class Provider:
 
 PROVIDERS = (
     Provider('hisab', '', 'hisab-chat', own=True),
+    Provider('hisab_cpu', '', 'hisab-chat', own=True),  # the same model as GGUF on a free CPU Space, when GPU quota runs out
     Provider('groq', 'https://api.groq.com/openai/v1', 'llama-3.3-70b-versatile',
              alternatives=('openai/gpt-oss-120b', 'moonshotai/kimi-k2-instruct', 'qwen/qwen3-32b', 'llama-3.1-8b-instant')),
     Provider('gemini', 'https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-flash-latest',
@@ -166,12 +170,14 @@ def call_space(provider, messages, timeout):
 
 
 def call(provider, messages, deadline):
-    timeout = min(OWN_CALL_SECONDS if provider.own else PER_CALL_SECONDS, deadline - time.monotonic())
+    limit = CPU_CALL_SECONDS if provider.name == 'hisab_cpu' else OWN_CALL_SECONDS if provider.own else PER_CALL_SECONDS
+    timeout = min(limit, deadline - time.monotonic())
     if timeout <= 1:
         raise TimeoutError
     if provider.own and provider.env('MODE') == 'zerogpu':
         return call_space(provider, messages, timeout)
-    payload = {'model': provider.model_name, 'messages': messages, 'max_tokens': MAX_TOKENS, 'temperature': 0.6}
+    payload = {'model': provider.model_name, 'messages': messages, 'temperature': 0.6,
+               'max_tokens': CPU_MAX_TOKENS if provider.name == 'hisab_cpu' else MAX_TOKENS}
     headers = {'Authorization': 'Bearer ' + provider.key} if provider.key else {}
     with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=timeout) as client:
         response = client.post(provider.url + '/chat/completions', json=payload, headers=headers)
@@ -192,13 +198,27 @@ def call(provider, messages, deadline):
     return clean(content or '')
 
 
+def compact(facts, limit):
+    """The first whole lines of the facts up to `limit` characters (business, cash and the most valuable products come first)."""
+    if len(facts) <= limit:
+        return facts
+    kept, size = [], 0
+    for line in facts.splitlines():
+        if size + len(line) + 1 > limit:
+            break
+        kept.append(line)
+        size += len(line) + 1
+    return '\n'.join(kept + ['(More details exist but are not shown here.)'])
+
+
 def reply(question, history=(), facts='', share_facts=False):
     """Return (answer, provider name), or (None, None) when no provider gave a grounded answer in time."""
     deadline = time.monotonic() + TOTAL_SECONDS
     turns = [{'role': role, 'content': text[:400]} for role, text in list(history)[-6:]]
     for provider in available():
         sees_facts = bool(facts) and (provider.own or share_facts)
-        system = SYSTEM + (FACTS_HEADER + facts if sees_facts else NO_FACTS)
+        shown = compact(facts, CPU_FACTS_CHARS) if provider.name == 'hisab_cpu' else facts
+        system = SYSTEM + (FACTS_HEADER + shown if sees_facts else NO_FACTS)
         messages = [{'role': 'system', 'content': system}, *turns, {'role': 'user', 'content': question[:400]}]
         try:
             try:
@@ -211,6 +231,6 @@ def reply(question, history=(), facts='', share_facts=False):
             if time.monotonic() >= deadline:
                 break
             continue
-        if answer and grounded(answer, facts if sees_facts else '', question):
+        if answer and grounded(answer, shown if sees_facts else '', question):
             return answer, provider.name
     return None, None
