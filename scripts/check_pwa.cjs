@@ -51,9 +51,12 @@ async function poll(check){
     await poll(async()=>!!(await page.evaluate(()=>window.capzoryxStore.scope())));
     // The quick tour no longer opens by itself; close it only if an older build shows it.
     {const skip=page.locator('dialog[open]').getByRole('button',{name:/skip/i});if(await skip.isVisible({timeout:1500}).catch(()=>false))await skip.click();}
+    // New owners are offered business setup first; this check skips it (it is covered by check_business_browser.cjs).
+    {const later=page.getByRole('dialog',{name:'Set up your business'}).getByRole('button',{name:'Not now'});if(await later.isVisible({timeout:5000}).catch(()=>false))await later.click();}
 
     await context.setOffline(true);
     await page.reload();
+    await page.getByRole('button',{name:'Record a payment offline'}).click();  // offline recording is an option, not a wall
     await page.getByRole('heading',{name:'Offline capture'}).waitFor();
     await page.getByLabel(/Amount/).fill('১২৩.৪৫');
     await page.getByRole('button',{name:'Save and sync on reconnect'}).click();
@@ -110,6 +113,7 @@ async function poll(check){
     await poll(()=>page.evaluate(async()=>!!(await caches.match('/index.html',{ignoreVary:true}))));
     await context.setOffline(true);
     await page.reload();
+    await page.getByRole('button',{name:'Record a payment offline'}).click();  // offline recording is an option, not a wall
     await page.getByRole('heading',{name:'Offline capture'}).waitFor();
     await page.getByLabel(/Amount/).fill('25.50');
     await page.getByRole('button',{name:'Save and sync on reconnect'}).click();

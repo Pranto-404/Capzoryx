@@ -54,11 +54,11 @@ async function openPage(page,name){
     await shot(owner,'setup-welcome');
     await wizard.getByRole('button',{name:'Set up my business'}).click();
 
-    // B: three short steps. Only name, what you sell and where are asked; the industry is worked out from the answer.
+    // B: three short steps; answers are picked from lists (only the business name is typed).
     await wizard.getByLabel('Business name').fill('Golden Heritage BD');
-    await wizard.getByLabel('What do you sell or do?').fill('gold jewelry shop');
-    await wizard.getByLabel('City or area').fill('Dhaka');
-    await wizard.getByText('Industry: Jewelry and precious metals').waitFor();
+    await wizard.getByLabel('Industry').selectOption('jewelry');
+    await wizard.getByLabel('What do you sell or do?').selectOption('Gold trading and jewelry retail');
+    await wizard.getByLabel('City or area').selectOption('Dhaka');
     await shot(owner,'setup-identity');
     await wizard.getByRole('button',{name:'Save and continue'}).click();
 

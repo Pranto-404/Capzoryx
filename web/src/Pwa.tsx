@@ -45,7 +45,7 @@ export function InstallControl(){
 }
 
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Dhaka',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-export function OfflineCapture(){
+export function OfflineCapture({onClose}:{onClose?:()=>void}={}){
   const [owner,setOwner]=useState<Owner|null>(null);
   const [busy,setBusy]=useState(false),[note,setNote]=useState(''),[count,setCount]=useState(0);
   const [kind,setKind]=useState(new URLSearchParams(location.search).get('open')==='bill'?'invoice':'cash');
@@ -98,7 +98,7 @@ export function OfflineCapture(){
     <label>{t('Invoice reference')}<input name="number" maxLength={80} required/></label>
     <label>{t('Due date')}<input name="due" type="date" defaultValue={today()} required/></label></>}
     <button disabled={busy}>{t('Save and sync on reconnect')}</button></form></>:<p>{t('Reconnect and open your workspace first.')}</p>}
-    <p role="status">{note}</p><button type="button" className="secondary" onClick={()=>location.reload()}>{t('Try again')}</button><InstallControl/></main>;
+    <p role="status">{note}</p>{onClose&&<button type="button" className="secondary" onClick={onClose}>{t('Back to the app')}</button>}<button type="button" className="secondary" onClick={()=>location.reload()}>{t('Try again')}</button><InstallControl/></main>;
 }
 
 export function CaptureSync({session,currency,request,onSaved,onInvoices}:{session:Session;currency:string;request:Request;onSaved:()=>Promise<void>;onInvoices:()=>void}){
