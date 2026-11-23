@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from api.app import app_sessions, mcp_read, quality, security
 from api.app.notifications import sms_inbox, telegram
+from api.app import payroll
 from api.app.chat import routes as chat_routes
 from api.app.notifications import email_alerts, push
 from api.app.notifications.routes import router as notification_router
@@ -59,6 +60,7 @@ async def lifespan(app: FastAPI):
         mcp_read.schema(db)
         telegram.schema(db)
         sms_inbox.schema(db)
+        payroll.schema(db)
         profile.schema(db)
         books.schema(db)
         push.schema(db)
@@ -87,6 +89,7 @@ app.include_router(router)
 app.include_router(feature_flags.router)
 app.include_router(telegram.router)
 app.include_router(sms_inbox.router)
+app.include_router(payroll.router)
 app.include_router(chat_routes.router)
 app.include_router(push.router)
 app.include_router(notification_router)

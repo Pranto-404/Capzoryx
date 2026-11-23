@@ -52,6 +52,10 @@ GUIDE = {
         'en': 'Open the customer due and press Draft reminder. Capzoryx writes a polite message in the customer\'s language; you send it yourself by WhatsApp or SMS.',
         'bl': 'Customer-er baki khule Draft reminder chapun. Capzoryx bhodro bhashay message likhe dey; apni nije WhatsApp ba SMS-e pathan.',
         'bn': 'গ্রাহকের বাকি খুলে Draft reminder চাপুন। Capzoryx ভদ্র ভাষায় মেসেজ লিখে দেয়; আপনি নিজে WhatsApp বা SMS-এ পাঠান।'}),
+    'payroll': (('payroll', 'salary', 'salaries', 'beton', 'bonus', 'bonas', 'employee', 'staff', 'payslip', 'karmochari', 'বেতন', 'বোনাস', 'কর্মচারী', 'স্টাফ'), 'Payroll', {
+        'en': 'Open Payroll → Add employee for each person. Pay salaries pays everyone due for the month, and Give a bonus pays selected people. Press Invite link next to an employee and send it; they choose their own username and password and see only their own payslips.',
+        'bl': 'Payroll → Add employee diye protiti karmi jog korun. Pay salaries chaple oi maser sobar beton hoy, Give a bonus diye bachai kora lokder bonus din. Karmir pashe Invite link chepe link-ta pathan; uni nijer username o password diye shudhu nijer payslip dekhben.',
+        'bn': 'Payroll → Add employee দিয়ে প্রত্যেক কর্মী যোগ করুন। Pay salaries চাপলে ওই মাসের সবার বেতন হয়, Give a bonus দিয়ে বাছাই করা কর্মীদের বোনাস দিন। কর্মীর পাশে Invite link চেপে লিংকটি পাঠান; তিনি নিজের ইউজারনেম ও পাসওয়ার্ড দিয়ে শুধু নিজের পে-স্লিপ দেখবেন।'}),
     'telegram': (('telegram', 'bot', 'টেলিগ্রাম'), 'Settings', {
         'en': 'Go to Settings → Telegram → Connect Telegram, then press Start in the bot chat. You can then ask about your books and get bill reminders there.',
         'bl': 'Settings → Telegram → Connect Telegram chepe bot chat-e Start chapun. Tarpor oikhanei hisab jiggesh korte parben ar bill-er reminder paben.',
@@ -98,7 +102,7 @@ GUIDE = {
         'bn': 'Overview-এর উপরে "Show amounts in" থেকে যেকোনো মুদ্রা বাছুন; আজকের রেটে দেখাবে, কিন্তু হিসাব নিজের মুদ্রাতেই থাকবে।'}),
 }
 PAGE_LABEL = {'Data': 'Add records', 'Invoices': 'Invoices', 'Cash flow': 'Cash flow', 'Financing': 'Loans',
-              'Approvals': 'Approvals', 'Audit': 'Activity', 'Settings': 'Settings'}
+              'Approvals': 'Approvals', 'Payroll': 'Payroll', 'Audit': 'Activity', 'Settings': 'Settings'}
 
 
 def match(normalized, tokens, text):
