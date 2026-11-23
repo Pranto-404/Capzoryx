@@ -4,6 +4,7 @@ Order: Capzoryx's own Hisab-Chat model (served from the team's GPU or a free Spa
 provider is used only when its key is set, is skipped for a while after a quota or network error, and every answer
 passes a number check: a reply that states an amount not present in the owner's facts or message is discarded.
 """
+import json
 import os
 import re
 import threading
@@ -16,8 +17,9 @@ import httpx
 from api.app.chat.prompts import CHAT_SYSTEM as SYSTEM, FACTS_HEADER, NO_FACTS  # one voice for every model
 
 TRANSPORT = None  # tests inject an httpx.MockTransport
-MAX_TOKENS = int(os.getenv('CAPZORYX_CHAT_MAX_TOKENS', '300'))
+MAX_TOKENS = int(os.getenv('CAPZORYX_CHAT_MAX_TOKENS', '500'))
 PER_CALL_SECONDS = 15
+OWN_CALL_SECONDS = 25  # a GPU Space may queue briefly; it is tried first, so it gets longer
 TOTAL_SECONDS = 28
 _cooldown = {}
 _lock = threading.Lock()
@@ -136,13 +138,39 @@ def grounded(answer, facts, question):
 def clean(text):
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.S | re.I)
     text = re.sub(r'[*_`#]{1,3}', '', text)
-    return ' '.join(text.split())[:1200]
+    # Keep line breaks so bullet points and steps stay readable in Telegram and the web chat.
+    lines = [' '.join(line.split()) for line in text.splitlines()]
+    return re.sub(r'\n{3,}', '\n\n', '\n'.join(lines)).strip()[:2000]
+
+
+def call_space(provider, messages, timeout):
+    """The own model on a Hugging Face ZeroGPU Space (Gradio API: start a call, then read its result stream)."""
+    headers = {'Authorization': 'Bearer ' + provider.key} if provider.key else {}
+    with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=timeout) as client:
+        start = client.post(provider.url + '/gradio_api/call/chat', headers=headers,
+                            json={'data': [json.dumps(messages, ensure_ascii=False), MAX_TOKENS]})
+        if start.status_code != 200:
+            rest(provider, 600 if start.status_code == 429 else 120)
+            raise RuntimeError('status')
+        result = client.get(f"{provider.url}/gradio_api/call/chat/{start.json()['event_id']}", headers=headers)
+    kind = None
+    for line in result.text.splitlines():
+        if line.startswith('event:'):
+            kind = line[6:].strip()
+        elif line.startswith('data:') and kind == 'complete':
+            return clean(json.loads(line[5:].strip())[0] or '')
+        elif line.startswith('data:') and kind == 'error':
+            rest(provider, 600)  # usually the daily GPU quota; the free API chain answers meanwhile
+            raise RuntimeError('space')
+    raise RuntimeError('space')
 
 
 def call(provider, messages, deadline):
-    timeout = min(PER_CALL_SECONDS, deadline - time.monotonic())
+    timeout = min(OWN_CALL_SECONDS if provider.own else PER_CALL_SECONDS, deadline - time.monotonic())
     if timeout <= 1:
         raise TimeoutError
+    if provider.own and provider.env('MODE') == 'zerogpu':
+        return call_space(provider, messages, timeout)
     payload = {'model': provider.model_name, 'messages': messages, 'max_tokens': MAX_TOKENS, 'temperature': 0.6}
     headers = {'Authorization': 'Bearer ' + provider.key} if provider.key else {}
     with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=timeout) as client:

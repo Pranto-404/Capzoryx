@@ -23,6 +23,7 @@ from api.app.chat import llm
 from api.app.chat.brain import group_lakh
 from api.app.chat.understand import language
 from ml.hisab_chat.augment import variants
+from ml.hisab_chat import business_data
 from ml.hisab_chat.teachers import Teachers, add_arguments
 
 SEED = 20261121
@@ -204,6 +205,8 @@ def main():
     p.add_argument('--out', type=Path, required=True)
     p.add_argument('--size', type=int, default=9000, help='template examples')
     p.add_argument('--teacher', type=int, default=0, help='extra verified examples from the free provider chain')
+    p.add_argument('--business', type=int, default=0, help='exact answers about a whole (fictional) business, any industry')
+    p.add_argument('--business-teacher', type=int, default=0, help='open business questions answered by teachers, kept if grounded')
     p.add_argument('--extra', type=Path, action='append', default=[], help='self-play rows to merge (repeatable)')
     p.add_argument('--workers', type=int, default=8, help='parallel teacher requests (match llama-server -np)')
     add_arguments(p)
@@ -227,6 +230,17 @@ def main():
                 if row and kept < a.teacher:
                     rows.append(row)
                     kept += 1
+    rows += [business_data.template_row(random.Random(SEED * 31 + i)) for i in range(a.business)]
+    business_kept = 0
+    with ThreadPoolExecutor(max_workers=a.workers) as workers:
+        for start in range(0, a.business_teacher * 2, a.workers * 4):
+            if business_kept >= a.business_teacher:
+                break
+            seeds = range(SEED * 7 + start, SEED * 7 + start + a.workers * 4)
+            for row in workers.map(lambda s: business_data.teacher_row(random.Random(s), teachers, deadline), seeds):
+                if row and business_kept < a.business_teacher:
+                    rows.append(row)
+                    business_kept += 1
     for path in a.extra:
         extra = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
         if any(not r.get('source', '').startswith('synthetic') for r in extra):
@@ -235,7 +249,7 @@ def main():
     rng.shuffle(rows)
     cut = max(1, len(rows) // 10)
     a.out.mkdir(parents=True, exist_ok=True)
-    manifest = {'seed': SEED, 'teacher_kept': kept, 'unique_questions': len(seen), 'splits': {}}
+    manifest = {'seed': SEED, 'teacher_kept': kept, 'business': a.business, 'business_teacher_kept': business_kept, 'unique_questions': len(seen), 'splits': {}}
     for name, part in (('validation', rows[:cut]), ('train', rows[cut:])):
         raw = ''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in part).encode()
         (a.out / f'{name}.jsonl').write_bytes(raw)

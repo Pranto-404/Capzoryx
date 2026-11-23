@@ -3,6 +3,47 @@
 Hisab-Chat is the first model the Telegram and in-app chat try (`api/app/chat/llm.py`). Free API tiers
 are only the fallback. Everything below is free: open models, your own GPU and a free Cloudflare tunnel.
 
+## Fastest path for a demo: train in about 2 hours, serve on ZeroGPU
+
+**What the model learns.** It does not learn the owner's numbers; those arrive in every request as a facts block
+built by `api/app/chat/context.py`, covering:
+- the business profile
+- each product's cost, market price and break-even
+- growth
+- market prices and cited research
+- alerts and advisor findings
+
+The model learns three things: to read that block, to answer in Bangla, Banglish or English with the shape the
+app uses, and to say "not known" instead of inventing. Training data uses the same `render` as production:
+- `business_data.py` invents businesses from every industry and computes their figures with the real code.
+- Teacher replies are kept only when every amount appears in the facts.
+- Price-move scenarios stay in code and are never taught.
+
+**Run it (Kaggle, GPU T4 x2, Internet on).** You need a Hugging Face **PRO** account to host ZeroGPU.
+1. Add the secrets: `HF_TOKEN` (write), plus free `GROQ_KEY` / `GEMINI_KEY` / `CEREBRAS_KEY` / `OPENROUTER_KEY`.
+2. Run one cell:
+
+   ```python
+   !rm -rf Capzoryx && git clone -q https://github.com/Pranto-404/Capzoryx
+   %env HISAB_TARGET=zerogpu
+   %run Capzoryx/ml/hisab_chat/kaggle_run.py
+   ```
+
+   About 2 hours later, Qwen3-4B-Instruct-2507 has been fine-tuned (QLoRA, one epoch) on about 6,900 conversations. The run uploads:
+   - merged weights to `<you>/hisab-chat-merged`
+   - a GGUF to `<you>/hisab-chat-gguf`
+   - a private Gradio Space `<you>/hisab-chat-zero` on ZeroGPU
+3. On Render set:
+   - `CAPZORYX_CHAT_HISAB_URL=https://<you>-hisab-chat-zero.hf.space`
+   - `CAPZORYX_CHAT_HISAB_MODE=zerogpu`
+   - `CAPZORYX_CHAT_HISAB_KEY=<a READ token from the PRO account>`
+
+**How it behaves in production.**
+- Business questions with exact answers (profile, products, market, risk, break-even, price scenarios) are answered by code, with no model at all.
+- Open questions go to Hisab-Chat first. The free APIs are used only if the Space is busy, out of GPU quota or gives an ungrounded answer.
+- ZeroGPU minutes are counted on the token's account: [about 25 minutes a day on PRO](https://huggingface.co/docs/hub/spaces-zerogpu), roughly a few hundred replies.
+- Without PRO, leave `HISAB_TARGET` unset. You get the free CPU Space with the GGUF, which is slower but free.
+
 ## No PC needed: one Kaggle cell trains, publishes and starts the model
 
 Nothing is installed on your computer, and it keeps running with the browser closed.

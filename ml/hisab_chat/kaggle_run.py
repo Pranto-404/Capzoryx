@@ -6,8 +6,12 @@ HF_TOKEN (Hugging Face write token) and any of GROQ_KEY, GEMINI_KEY, CEREBRAS_KE
     !rm -rf Capzoryx && git clone -q https://github.com/Pranto-404/Capzoryx
     %run Capzoryx/ml/hisab_chat/kaggle_run.py
 
-Use Save Version -> Save & Run All to keep it running with the browser closed. It ends by printing the two values
+Use Save Version -> Save & Run All to keep it running with the browser closed. It ends by printing the values
 to add on Render.
+
+ZeroGPU (needs a Hugging Face PRO account): put `%env HISAB_TARGET=zerogpu` above the %run line. The run then also
+uploads merged 16-bit weights and starts a private Gradio Space on ZeroGPU, which answers far faster than the free
+CPU Space. Total time on a T4 is about 2 hours (data ~25 min with teachers, training ~60-75 min, upload ~15 min).
 """
 import os
 import secrets
@@ -18,6 +22,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OWNER = os.getenv('HISAB_OWNER', 'Pranto-404')
 MODEL_REPO, SPACE_REPO = f'{OWNER}/hisab-chat-gguf', f'{OWNER}/hisab-chat'
+MERGED_REPO, ZERO_SPACE = f'{OWNER}/hisab-chat-merged', f'{OWNER}/hisab-chat-zero'
+ZEROGPU = os.getenv('HISAB_TARGET', '').lower() == 'zerogpu'
 TEACHER_SECRETS = {'GROQ_KEY': 'CAPZORYX_CHAT_GROQ_KEY', 'GEMINI_KEY': 'CAPZORYX_CHAT_GEMINI_KEY',
                    'CEREBRAS_KEY': 'CAPZORYX_CHAT_CEREBRAS_KEY', 'OPENROUTER_KEY': 'CAPZORYX_CHAT_OPENROUTER_KEY'}
 
@@ -77,16 +83,45 @@ def start_space():
     return key
 
 
+def start_zerogpu_space():
+    """A private Gradio Space on ZeroGPU that serves the merged model. Hosting ZeroGPU needs a PRO account."""
+    from huggingface_hub import HfApi
+    api = HfApi()
+    try:
+        api.create_repo(ZERO_SPACE, repo_type='space', space_sdk='gradio', space_hardware='zero-a10g', private=True, exist_ok=True)
+    except Exception as error:  # noqa: BLE001 - explain the usual cause instead of a stack trace
+        print('Could not create the ZeroGPU Space (ZeroGPU hosting needs Hugging Face PRO):', error)
+        return False
+    for name in ('app.py', 'requirements.txt', 'README.md'):
+        api.upload_file(path_or_fileobj=str(ROOT / 'ml/hisab_chat/zerogpu' / name), path_in_repo=name, repo_id=ZERO_SPACE,
+                        repo_type='space', commit_message='Serve Hisab-Chat on ZeroGPU')
+    api.add_space_secret(ZERO_SPACE, 'HF_TOKEN', os.environ['HF_TOKEN'])
+    api.add_space_variable(ZERO_SPACE, 'MODEL_REPO', MERGED_REPO)
+    return True
+
+
 def main():
     load_secrets()
     if not os.getenv('HF_TOKEN'):
         raise SystemExit('Add a Hugging Face write token as the Kaggle secret HF_TOKEN.')
     teachers = probe_teachers()
     step('Install training libraries', sys.executable, '-m', 'pip', '-q', 'install', 'unsloth', 'httpx')
+    # Short everyday chat plus whole-business answers (any industry), so the model knows the owner's business.
     step('Build conversations', sys.executable, '-m', 'ml.hisab_chat.build_dataset', '--out', 'data/hisab_chat',
-         '--size', '6000', '--teacher', '1500' if teachers else '0')
+         '--size', '3000', '--teacher', '800' if teachers else '0',
+         '--business', '2200', '--business-teacher', '900' if teachers else '0')
     step('Train, export and upload', sys.executable, '-m', 'ml.hisab_chat.train', '--data', 'data/hisab_chat',
-         '--output', 'runs/hisab-chat', '--epochs', '1', '--gguf', '--push', MODEL_REPO)
+         '--output', 'runs/hisab-chat', '--epochs', '1', '--qlora', '--gguf', '--push', MODEL_REPO,
+         *(['--merged', MERGED_REPO] if ZEROGPU else []))
+    if ZEROGPU and start_zerogpu_space():
+        print('\n=== Done (ZeroGPU) ===')
+        print('Space (takes ~5 minutes to build):', f'https://huggingface.co/spaces/{ZERO_SPACE}')
+        print('\nAdd these Environment variables on Render (capzoryx-staging-api):')
+        print(f"  CAPZORYX_CHAT_HISAB_URL  = https://{ZERO_SPACE.replace('/', '-').lower()}.hf.space")
+        print('  CAPZORYX_CHAT_HISAB_MODE = zerogpu')
+        print('  CAPZORYX_CHAT_HISAB_KEY  = a Hugging Face READ token from your PRO account (Settings -> Access Tokens).')
+        print('  The GPU minutes are counted on that account, so it must be the PRO one.')
+        return
     key = start_space()
     print('\n=== Done ===')
     print('Model:', f'https://huggingface.co/{MODEL_REPO}')

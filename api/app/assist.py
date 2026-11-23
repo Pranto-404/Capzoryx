@@ -86,7 +86,8 @@ def ask(body: AskBody, actor=Depends(principal), db=Depends(db_connection)):
     sec.budgets(db, [('assist:' + actor.user_id, 12), ('assist-all', 40)])
     db.execute('BEGIN')
     with db:
-        facts = facts_text(db, actor.business_id)
+        from api.app.chat.context import text as business_context
+        facts = business_context(db, actor.business_id, actor.role)
     messages = [{'role': 'system', 'content': SYSTEM_ASK + facts}]
     messages += [{'role': t.role, 'content': t.text} for t in body.history]
     messages.append({'role': 'user', 'content': body.question})

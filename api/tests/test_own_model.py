@@ -1,0 +1,57 @@
+"""The own model: the ZeroGPU Space transport, and training data that uses production's own context and answers."""
+import json
+import random
+
+import httpx
+
+from api.app.chat import context, llm
+from ml.hisab_chat import business_data
+
+
+def test_zerogpu_space_is_called_first_and_its_reply_used(monkeypatch):
+    calls = []
+
+    def handle(request):
+        calls.append((request.method, request.url.path, request.headers.get('authorization')))
+        if request.method == 'POST':
+            sent = json.loads(json.loads(request.content)['data'][0])
+            assert sent[0]['role'] == 'system' and 'Facts' in sent[0]['content'] and sent[-1]['content'] == 'bajar kemon?'
+            return httpx.Response(200, json={'event_id': 'abc'})
+        return httpx.Response(200, text='event: complete\ndata: ["Ekhon bajar sthir.\\n- Saree: BDT 1,700.00"]\n\n')
+    monkeypatch.setattr(llm, 'TRANSPORT', httpx.MockTransport(handle))
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_URL', 'https://owner-hisab-chat-zero.hf.space')
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_MODE', 'zerogpu')
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_KEY', 'hf_test')
+    answer, provider = llm.reply('bajar kemon?', facts='Saree market price: BDT 1,700.00.', share_facts=False)
+    assert provider == 'hisab' and answer == 'Ekhon bajar sthir.\n- Saree: BDT 1,700.00'
+    assert calls == [('POST', '/gradio_api/call/chat', 'Bearer hf_test'), ('GET', '/gradio_api/call/chat/abc', 'Bearer hf_test')]
+
+
+def test_space_quota_error_falls_back_and_rests(monkeypatch):
+    monkeypatch.setattr(llm, 'TRANSPORT', httpx.MockTransport(lambda r: httpx.Response(200, json={'event_id': 'x'}) if r.method == 'POST'
+                                                              else httpx.Response(200, text='event: error\ndata: "quota"\n\n')))
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_URL', 'https://owner-hisab-chat-zero.hf.space')
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_MODE', 'zerogpu')
+    for name in ('GROQ', 'GEMINI', 'CEREBRAS', 'OPENROUTER', 'MISTRAL', 'GITHUB'):
+        monkeypatch.delenv(f'CAPZORYX_CHAT_{name}_KEY', raising=False)
+    monkeypatch.delenv('SAFELEDGER_LLM_API_KEY', raising=False)
+    llm._cooldown.clear()
+    assert llm.reply('hello') == (None, None)
+    assert 'hisab' in llm._cooldown  # resting, so the next questions go straight to the API chain
+    llm._cooldown.clear()
+
+
+def test_training_rows_use_the_production_format_for_any_industry():
+    industries, kinds = set(), set()
+    for seed in range(120):
+        row = business_data.template_row(random.Random(seed))
+        system, question, answer = (m['content'] for m in row['messages'])
+        assert system.startswith(llm.SYSTEM + llm.FACTS_HEADER) and 'BUSINESS: ' in system and 'CASH AND BOOKS:' in system
+        assert answer and question
+        assert llm.grounded(answer, system, question), (question, answer)  # exact answers never use a figure not in the facts
+        business_line = system.split('BUSINESS: ', 1)[1].split('\n', 1)[0]
+        industries.add(business_line.split('(', 1)[1].split(')', 1)[0])
+        kinds.add(answer.split(':', 1)[0])
+    assert len(industries) >= 8 and len(kinds) >= 6
+    ctx, _ = business_data.invent(random.Random(3))
+    assert context.render(ctx).startswith('BUSINESS: ')
