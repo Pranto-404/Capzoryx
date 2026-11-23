@@ -56,8 +56,14 @@ TEACHER_SECRETS = {'GROQ_KEY': 'CAPZORYX_CHAT_GROQ_KEY', 'GEMINI_KEY': 'CAPZORYX
 
 
 def step(title, *command):
+    """Run a step and pass its output through, so progress bars show in Colab too (it hides child output otherwise)."""
     print(f'\n=== {title} ===', flush=True)
-    subprocess.run(command, cwd=ROOT, check=True)
+    proc = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    for chunk in iter(lambda: proc.stdout.read1(4096), b''):
+        sys.stdout.write(chunk.decode('utf-8', errors='replace'))
+        sys.stdout.flush()
+    if proc.wait():
+        raise subprocess.CalledProcessError(proc.returncode, command)
 
 
 def load_secrets():
