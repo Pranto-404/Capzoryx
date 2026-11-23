@@ -1,3 +1,4 @@
+import {t,T} from './i18n';
 import {apiFetch} from './apiBase';
 import {currencies} from './currencies';
 const messages:Record<string,string> = {
@@ -26,7 +27,7 @@ const messages:Record<string,string> = {
   SNAPSHOT_DATE_CHANGED_REFRESH_REQUIRED:'Your records changed. Refresh data and try again.',
 };
 export class ApiError extends Error {
-  constructor(public code: string, public status: number, message = messages[code] || friendly[code] || code.replaceAll('_', ' ').toLowerCase().replace(/^./, c => c.toUpperCase()) + '.', public providerStatus?:number) { super(message); }
+  constructor(public code: string, public status: number, message = messages[code] || (friendly[code] ? t(friendly[code]) : '') || code.replaceAll('_', ' ').toLowerCase().replace(/^./, c => c.toUpperCase()) + '.', public providerStatus?:number) { super(message); }
 }
 export function client(token: string, signal: AbortSignal, onUnauthorized: () => void) {
   return async function request<T>(path: string, body?: unknown): Promise<T> {
@@ -62,6 +63,16 @@ export function parseMinor(text:string,currency='BDT'):number {
 }
 
 const friendly: Record<string,string> = {
+  PRODUCT_EXISTS:T('You already added this product. Edit it in the list instead.'),
+  PRODUCT_NOT_FOUND:T('That product no longer exists. Refresh the page.'),
+  PRODUCT_LIMIT_REACHED:T('You have reached the product limit for this workspace.'),
+  IDENTITY_REQUIRED_FIRST:T('Fill in the first step (business name, what you sell and where) first.'),
+  RESEARCH_RECENT:T('Your market was researched a moment ago. New research runs automatically when your business details change.'),
+  RESEARCH_CONSENT_REQUIRED:T('Online research is turned off. Turn it on in Settings → Business.'),
+  PROFILE_REQUIRED:T('Set up your business first.'),
+  INDICATOR_NOT_WATCHED:T('That price is not followed for this business.'),
+  NAME_COLUMN_REQUIRED:T('The file needs a column called Product (or Name).'),
+  EMPTY_FILE:T('The file is empty.'),
   INVALID_USERNAME_OR_PASSWORD: 'Check your username and password. Usernames are not case sensitive.',
   USERNAME_UNAVAILABLE: 'That username is already in use. Try another one.',
   REQUEST_BUDGET_EXCEEDED: 'A few too many requests. Please wait a minute and try again.',

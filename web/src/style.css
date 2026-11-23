@@ -686,3 +686,15 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
 .strategies dd{text-align:left;font-weight:500}.strategies dt{font-size:11px;color:var(--muted)}.strategies .success{font-size:12px;padding:8px}
 .gap-list{list-style:none;padding:0;margin:0}.gap-list li{padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}.gap-list li span{display:block;margin-top:3px}
 @media(max-width:900px){.strategies{grid-template-columns:1fr}}
+/* Audit fixes */
+.biz-edit,.settings{min-width:0}.settings{grid-template-columns:minmax(0,1fr)}.biz-edit{margin:0 0 22px;max-width:none}.biz-progress{max-width:100%}
+.capability .no-data{white-space:nowrap}
+@media(max-width:760px){.chat-launcher{display:none}#workspace{padding-bottom:96px}}
+@media(max-width:600px){
+  .insights-table thead{display:none}.insights-table,.insights-table tbody,.insights-table tr,.insights-table td{display:block;width:100%}
+  .insights-table tr{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+  .insights-table td{border:0;padding:4px 0;text-align:left}
+  .insights-table td[data-label]{display:flex;justify-content:space-between;gap:12px}
+  .insights-table td[data-label]::before{content:attr(data-label);color:var(--muted);font-size:12px}
+  .insights-table td small{text-align:right}
+}

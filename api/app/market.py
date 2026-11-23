@@ -51,6 +51,7 @@ INDICATORS = {
     'gold_traditional_local': ('Local traditional gold dealer price', 'per {weight}', 'quote', 0, 3 * 86400, None),
     'silver_local': ('Local silver dealer price', 'per {weight}', 'quote', 0, 7 * 86400, None),
 }
+USD_LINKED = {'jewelry', 'electronics', 'wholesale', 'manufacturing', 'pharmacy', 'automotive', 'construction', 'ecommerce', 'it'}
 INDUSTRY_INDICATORS = {'jewelry': ('gold_intl', 'silver_intl')}
 PRODUCT_INDICATORS = {'gold_22k': ('gold_intl', 'gold_22k_local'), 'gold_21k': ('gold_intl', 'gold_21k_local'),
                       'gold_18k': ('gold_intl', 'gold_18k_local'), 'gold_traditional': ('gold_intl', 'gold_traditional_local'),
@@ -115,7 +116,8 @@ def weight_unit(currency):
 
 
 def wanted(industry, market_keys, currency):
-    keys = [] if currency == 'USD' else ['fx_usd']
+    # The dollar rate matters to businesses that import or price in dollars; for others it is noise.
+    keys = ['fx_usd'] if currency != 'USD' and industry in USD_LINKED else []
     keys += INDUSTRY_INDICATORS.get(industry, ())
     for key in market_keys:
         keys += PRODUCT_INDICATORS.get(key, ())

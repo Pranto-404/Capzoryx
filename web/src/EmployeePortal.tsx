@@ -9,7 +9,7 @@ type Payment={id:string;period:string;kind:'salary'|'bonus';amount_minor:number;
 type Job={employer:string;name:string;designation:string;salary_minor:number;status:string;joined_on:string;currency:string;payments:Payment[];year_to_date_minor:number};
 type Month={period:string;salary:number;bonus:number;notes:string[];paid_on:string};
 
-const monthName=(period:string)=>new Date(period+'-01T00:00:00').toLocaleDateString(undefined,{month:'long',year:'numeric'});
+const monthName=(period:string)=>new Date(period+'-01T00:00:00').toLocaleDateString(document.documentElement.lang||undefined,{month:'long',year:'numeric'});
 function byMonth(payments:Payment[]):Month[]{
   const months=new Map<string,Month>();
   for(const p of payments){

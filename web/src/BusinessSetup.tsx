@@ -11,7 +11,7 @@ export type BusinessView={profile:Profile;step:number;completed:boolean;products
 
 const STEPS=[T('Business'),T('Products'),T('Operations'),T('Goals'),T('Permissions')];
 const SETUP_STEPS=[0,1,4];  // new owners answer three short steps; operations and goals details live in Settings → Business
-const FINISH=T('Finish');
+const FINISH=T('What Capzoryx may do');
 const KEYS=['identity','products','operations','goals','consent'];
 const TYPE_LABEL:Record<string,string>={retail:T('Retail'),wholesale:T('Wholesale'),manufacturing:T('Manufacturing'),service:T('Service'),distribution:T('Distribution'),online:T('Online')};
 const CHANNEL_LABEL:Record<string,string>={shop:T('Shop or showroom'),facebook:T('Facebook page'),website:T('Website'),marketplace:T('Marketplace (Daraz etc.)'),whatsapp:T('WhatsApp'),phone:T('Phone orders'),wholesale:T('Wholesale buyers'),field_sales:T('Field sales')};
@@ -26,7 +26,7 @@ const str=(v:unknown)=>typeof v==='string'?v:'';
 const errorText=(e:unknown)=>e instanceof Error?e.message:t('Request failed.');
 
 function suggestIndustry(niche:string,industries:Industry[]){
-  const words=niche.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w=>w.length>2);
+  const words=niche.toLowerCase().split(/[^\p{L}\p{M}\p{N}]+/u).filter(w=>w.length>2);
   let best:Industry|null=null,score=0;
   for(const ind of industries){
     const vocab=(ind.label+' '+ind.niches.join(' ')+' '+ind.words).toLowerCase();
@@ -45,6 +45,13 @@ export function BusinessSetup({request,mode,onDone,onLater}:{request:Request;mod
   const [error,setError]=useState('');
   const [saved,setSaved]=useState('');
   const heading=useRef<HTMLHeadingElement>(null);
+  const overlay=useRef<HTMLDivElement>(null);
+  useEffect(()=>{  // a modal: Tab and screen readers stay inside it until it closes
+    if(mode!=='setup')return;
+    const others=[...document.querySelectorAll<HTMLElement>('.shell > *, #workspace > *')].filter(el=>!el.contains(overlay.current)&&!el.querySelector('.biz-setup-overlay'));
+    others.forEach(el=>{el.inert=true;});
+    return()=>others.forEach(el=>{el.inert=false;});
+  },[mode,view]);
   useEffect(()=>{void Promise.all([request<BusinessView>('/business'),request<Catalog>('/business/catalog')]).then(([v,c])=>{
     setView(v);setCatalog(c);setStep(mode==='edit'?0:v.step===0?-1:v.step>=2?4:v.step);}).catch(e=>setError(errorText(e)));},[]);// eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{heading.current?.focus();},[step]);
@@ -57,7 +64,7 @@ export function BusinessSetup({request,mode,onDone,onLater}:{request:Request;mod
       if(step===4){const done=await request<BusinessView>('/business/complete',{});onDone(done);}else setStep(SETUP_STEPS[SETUP_STEPS.indexOf(step)+1]??4);
     }catch(e){setError(errorText(e));}finally{setBusy(false);}
   }
-  if(!view||!catalog)return <div className={mode==='setup'?'biz-setup-overlay':undefined}><section className="panel biz-setup" role="status">{error||t('Loading…')}</section></div>;
+  if(!view||!catalog)return <div ref={overlay} className={mode==='setup'?'biz-setup-overlay':undefined}><section className="panel biz-setup" role="status">{error||t('Loading…')}</section></div>;
   const body=step===-1?<Welcome start={()=>setStep(0)} later={onLater}/>:<>
     <div className="biz-progress" aria-label={t('Step {n} of {total}',{n:(mode==='setup'?SETUP_STEPS.indexOf(step):step)+1,total:mode==='setup'?3:5})}>
       {(mode==='setup'?SETUP_STEPS:[0,1,2,3,4]).map((i,n)=>{const s=mode==='setup'&&i===4?FINISH:STEPS[i];return <button key={s} type="button" className={i===step?'active':i<view.step?'done':''} disabled={mode==='setup'&&i>view.step&&!(i===4&&view.step>=1)}
@@ -68,7 +75,7 @@ export function BusinessSetup({request,mode,onDone,onLater}:{request:Request;mod
     {step===1&&<ProductsStep view={view} catalog={catalog} request={request} setView={setView} busy={busy} mode={mode} next={()=>void save('products',{})}/>}
     {step===2&&<OperationsStep catalog={catalog} value={view.profile.operations||{}} currency={view.currency} busy={busy} mode={mode} submit={b=>void save('operations',b)}/>}
     {step===3&&<GoalsStep catalog={catalog} value={view.profile.goals||{}} currency={view.currency} busy={busy} mode={mode} submit={b=>void save('goals',b)}/>}
-    {step===4&&<ConsentStep value={view.profile.consent||{}} goals={mode==='setup'?catalog.goals:null} busy={busy} mode={mode}
+    {step===4&&<ConsentStep value={view.profile.consent||{}} goals={null} busy={busy} mode={mode}
       submit={(b,goals)=>void (async()=>{if(goals?.length){try{await request('/business/step/goals',{goals});}catch{/* goals can be added later */}}await save('consent',b);})()}/>}
     {error&&<p className="error" role="alert">{error}</p>}
     {saved&&<p className="success" role="status">{saved}</p>}
@@ -81,7 +88,7 @@ export function BusinessSetup({request,mode,onDone,onLater}:{request:Request;mod
     {mode==='edit'&&!!view.gaps.length&&<details className="biz-gaps"><summary>{t('{n} things would make the analysis more accurate',{n:view.gaps.length})}</summary>
       <ul>{view.gaps.map(g=><li key={g.field}>{g.why}</li>)}</ul></details>}
   </>;
-  return mode==='setup'?<div className="biz-setup-overlay" role="dialog" aria-modal="true" aria-label={t('Set up your business')}><section className="panel biz-setup">{body}</section></div>
+  return mode==='setup'?<div ref={overlay} className="biz-setup-overlay" role="dialog" aria-modal="true" aria-label={t('Set up your business')}><section className="panel biz-setup">{body}</section></div>
     :<section className="panel biz-setup biz-edit">{body}</section>;
 }
 
@@ -161,6 +168,7 @@ function ProductsStep({view,catalog,request,setView,busy,mode,next}:{view:Busine
     setWorking(true);setError('');setNote('');
     try{setView(await fn());if(done)setNote(done);}catch(e){setError(errorText(e));}finally{setWorking(false);}
   }
+  const bad=(['quantity','cost','price','expense'] as const).filter(k=>f[k].trim()&&!Number.isFinite(Number(f[k].replace(/,/g,''))));
   const payload=()=>({name:f.name,category:f.category,variant:f.variant,unit:f.unit,quantity:f.quantity.trim()?f.quantity.replace(/,/g,''):null,cost_minor:toMinor(f.cost),price_minor:toMinor(f.price),expense_minor:toMinor(f.expense)});
   return <div>
     <p className="muted">{t('Add what you sell. Purchase cost and selling price are optional, but they let Capzoryx work out your real profit and break-even price.')}</p>
@@ -170,7 +178,7 @@ function ProductsStep({view,catalog,request,setView,busy,mode,next}:{view:Busine
         <td className="amount">{p.price_minor==null?<span className="muted">{t('Not set')}</span>:money(p.price_minor,c)}</td>
         <td><button type="button" className="ghost small-button" onClick={()=>{setEditing(p.id);setF({name:p.name,category:p.category,variant:p.variant,unit:p.unit,quantity:p.quantity||'',cost:fromMinor(p.cost_minor),price:fromMinor(p.price_minor),expense:fromMinor(p.expense_minor)});}}>{t('Edit')}</button>
           <button type="button" className="ghost small-button" disabled={working} onClick={()=>void act(()=>request<BusinessView>(`/business/products/${p.id}/delete`,{}))}>{t('Remove')}</button></td></tr>)}</tbody></table></div>}
-    <form className="biz-product-form" onSubmit={e=>{e.preventDefault();void act(()=>request<BusinessView>(editing?`/business/products/${editing}`:'/business/products',payload()),editing?t('Product updated.'):t('{name} added.',{name:f.name})).then(()=>{setF(blank);setEditing(null);});}}>
+    <form className="biz-product-form" onSubmit={e=>{e.preventDefault();if(bad.length){setError(t('Use numbers only for quantity, cost and price (for example 1250 or 1,250.50).'));return;}void act(()=>request<BusinessView>(editing?`/business/products/${editing}`:'/business/products',payload()),editing?t('Product updated.'):t('{name} added.',{name:f.name})).then(()=>{setF(blank);setEditing(null);});}}>
       <div className="form-row">
         <label>{t('Product or service')}<input required maxLength={80} value={f.name} onChange={set('name')} placeholder={t('e.g. Cotton saree')}/></label>
         <label>{t('Category')}<input maxLength={80} value={f.category} onChange={set('category')} placeholder={t('e.g. Sarees')}/></label>

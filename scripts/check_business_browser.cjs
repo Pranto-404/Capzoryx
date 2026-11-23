@@ -77,10 +77,9 @@ async function openPage(page,name){
     await shot(owner,'setup-products');
     await wizard.getByRole('button',{name:'Save and continue'}).click();
 
-    // Finish: goals are optional chips, and the assistant's permissions are already on.
-    await wizard.getByRole('heading',{name:'Finish'}).waitFor();
+    // Last step: only what the assistant may do, already switched on.
+    await wizard.getByRole('heading',{name:'What Capzoryx may do'}).waitFor();
     assert.ok(await wizard.getByRole('checkbox',{name:/Send me important alerts automatically/}).isChecked());
-    await wizard.getByText('Protect capital from price swings').click();
     await wizard.getByRole('button',{name:'Finish setup'}).click();
     await owner.getByText(/Your business profile is saved|researching your market/).waitFor();
     assert.equal(await wizard.count(),0);
@@ -89,7 +88,6 @@ async function openPage(page,name){
     assert.ok(saved.completed);
     assert.equal(saved.profile.identity.industry,'jewelry');
     assert.deepEqual(saved.profile.identity.business_types,['retail']);
-    assert.deepEqual(saved.profile.goals.goals,['protect_capital']);
     assert.ok(saved.profile.consent.alerts && saved.profile.consent.monitoring && saved.profile.consent.external_research);
     assert.deepEqual(saved.products.map(p=>[p.name,p.unit,p.market_key,p.cost_minor]),[['22K Gold','bhori','gold_22k',19400000],['Silver ring','piece','silver',120000]]);
 
@@ -158,6 +156,15 @@ async function openPage(page,name){
     await owner.locator('.biz-edit').getByLabel('Business name').waitFor().catch(async e=>{console.log('DEBUG',await owner.locator('.settings-tabs [aria-selected=true]').innerText().catch(()=>'none'),'|',await owner.evaluate(()=>sessionStorage.getItem('capzoryx-settings-tab')),'|',await owner.locator('.biz-edit').count(),await owner.locator('.biz-edit').innerText().catch(()=>''));throw e;});
     assert.equal(await owner.locator('.biz-edit').getByLabel('Business name').inputValue(),'Golden Heritage BD');
     await shot(owner,'setup-settings');
+    // Phone: Settings → Business must not scroll sideways, and a new owner's analysis comes before empty cash panels.
+    await owner.setViewportSize({width:390,height:844});
+    await owner.waitForTimeout(300);
+    const wide=await owner.evaluate(()=>document.documentElement.scrollWidth);
+    assert.ok(wide<=392,`page is ${wide}px wide on a 390px phone`);
+    await owner.locator('nav [data-tour="Overview"]').click();
+    await owner.locator('.advisor-panel, .market-panel').first().waitFor();
+    const order=await owner.evaluate(()=>{const a=document.querySelector('.market-panel'),b=document.querySelector('.balance-cards, .dashboard-grid');return !!a&&!!b&&!!(a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING);});
+    assert.ok(order,'business panels should come before the empty cash panels');
     console.log('PASS business setup and market: new owner sees setup, profile saved, market figures sourced or marked unavailable, returning owner goes straight in');
   }finally{
     await browser?.close();

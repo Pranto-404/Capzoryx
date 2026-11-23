@@ -57,7 +57,7 @@ def setup_gold(c, research=True):
 def test_market_follows_products_and_labels_every_figure(world, net):  # noqa: F811
     c, _ = world
     signup(c, 'market_gold')
-    assert c.get(BASE).json()['indicators'][0]['key'] == 'fx_usd'  # before setup: currency only
+    assert c.get(BASE).json()['indicators'] == []  # before setup nothing is followed
     setup_gold(c)
     view = c.get(BASE).json()
     keys = [i['key'] for i in view['indicators']]

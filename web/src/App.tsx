@@ -1,6 +1,6 @@
 import {apiFetch,nativeBuild} from './apiBase';
 import {OfflineCapture,InstallControl} from './Pwa';
-import {useI18n} from './i18n';
+import {t,useI18n} from './i18n';
 import {LazyBoundary} from './LazyBoundary';
 import {lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {accountRequest} from './api';
@@ -130,5 +130,5 @@ export default function App() {
 
 function RecoveryNotice({code,done}:{code:string;done:()=>void}) {
  const [copied,setCopied]=useState(false);
- return <section className="recovery-notice panel" role="region" aria-label="Save your backup recovery key"><span className="badge">SHOWN ONCE · KEEP PRIVATE</span><h2>Save your backup recovery key</h2><p>If you ever lose your password and cannot get an email code, this key gets you back in. Keep it somewhere safe, such as a password manager.</p><label htmlFor="new-recovery-code">Recovery key</label><input id="new-recovery-code" value={code} readOnly autoComplete="off"/><div className="actions"><button className="secondary" onClick={()=>void navigator.clipboard.writeText(code).then(()=>setCopied(true)).catch(()=>setCopied(false))}>{copied?'Copied':'Copy key'}</button><button onClick={done}>I saved it</button></div></section>;
+ return <section className="recovery-notice panel" role="region" aria-label={t('Save your backup recovery key')}><span className="badge">{t('SHOWN ONCE · KEEP PRIVATE')}</span><h2>{t('Save your backup recovery key')}</h2><p>{t('If you ever lose your password and cannot get an email code, this key gets you back in. Keep it somewhere safe, such as a password manager.')}</p><label htmlFor="new-recovery-code">{t('Recovery key')}</label><input id="new-recovery-code" value={code} readOnly autoComplete="off"/><div className="actions"><button className="secondary" onClick={()=>void navigator.clipboard.writeText(code).then(()=>setCopied(true)).catch(()=>setCopied(false))}>{copied?t('Copied'):t('Copy key')}</button><button onClick={done}>{t('I saved it')}</button></div></section>;
 }
