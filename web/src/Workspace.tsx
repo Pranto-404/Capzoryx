@@ -39,6 +39,7 @@ const KhataPage=lazy(()=>import('./KhataPage'));
 const Settings=lazy(()=>import('./Settings'));
 const Assistant=lazy(()=>import('./Assistant'));
 const Payroll=lazy(()=>import('./Payroll'));
+const BusinessSetup=lazy(()=>import('./BusinessSetup').then(m=>({default:m.BusinessSetup})));
 const tabs=['Overview','Data','Invoices','Cash flow','Financing','Assistant','Approvals','Payroll','Audit','Settings'] as const;
 type Tab=typeof tabs[number];
 const primaryTabs:readonly Tab[]=['Overview','Data','Cash flow','Assistant'];
@@ -59,7 +60,7 @@ function Notes({values}:{values:string[]}){return <details className="how-it-wor
 function Metric({label,value,hint}:{label:string;value:number;hint?:string}){const {money}=useCurrency();return <article className="metric"><p>{label}</p><strong className={value<0?'negative':''}>{money(value)}</strong>{hint&&<small>{hint}</small>}</article>;}
 function Panel({title,children}:{title:string;children:ReactNode}){return <section className="panel"><h2>{title}</h2>{children}</section>;}
 
-type WorkspaceProps={token:string;session:Session;logout:()=>void;expired:()=>void;changeSession:(session:Session)=>void};
+type WorkspaceProps={holdSetup?:boolean;token:string;session:Session;logout:()=>void;expired:()=>void;changeSession:(session:Session)=>void};
 export default function Workspace(props:WorkspaceProps){
   const [currency,setCurrency]=useState('BDT');
   return <CurrencyProvider currency={currency} fetchRate={(from,to)=>fxRate(from,to)} storageKey={`safeledger-currency-view-v2:${props.session.user_id}:${props.session.business_id}`}><WorkspaceContent {...props} setCurrency={setCurrency}/></CurrencyProvider>;
@@ -67,7 +68,7 @@ export default function Workspace(props:WorkspaceProps){
 
 const AUDIT_TEXT:Record<string,string>={CASH_CORRECTED:T('Cash correction recorded.'),CUSTOMER_ADDED:T('Customer saved.'),CUSTOMER_PHONE_REMOVED:T('Phone number erased.'),RECEIVABLE_ADDED:T('Receivable saved.'),RECEIVABLE_SETTLED:T('Receipt recorded.'),IMPORTED:T('Records imported'),RECORD_ADDED:T('Record added'),PROPOSED:T('Payment prepared for approval'),APPROVED:T('Payment approved'),REJECTED:T('Payment rejected'),EXECUTED:T('Payment recorded'),EXPIRED:T('A payment proposal expired'),DENIED:T('An action was blocked'),IDEMPOTENT_REPLAY:T('A repeated approval was ignored'),FINANCING_ANALYZED:T('Loan offers compared'),INVITATION_CREATED:T('Invitation created'),WORKSPACE_JOINED:T('Someone joined this workspace'),WORKSPACE_CREATED:T('Workspace created'),CURRENCY_CHANGED:T('Currency changed'),PAYEE_PERMISSION_CHANGED:T('Supplier permission changed'),ACCOUNT_RECOVERED:T('Account recovered'),MEMBER_REMOVED:T('Someone was removed'),MEMBER_ROLE_CHANGED:T('A role was changed'),MEMBER_LEFT:T('Someone left this workspace')};
 
-function WorkspaceContent({token,session,logout,expired,changeSession,setCurrency}:WorkspaceProps&{setCurrency:(currency:string)=>void}){
+function WorkspaceContent({token,session,logout,expired,changeSession,setCurrency,holdSetup}:WorkspaceProps&{setCurrency:(currency:string)=>void}){
   const notificationScope=session.business_id+'/'+session.user_id;
   useEffect(()=>{
     if(nativeBuild)void import('./nativePush').then(push=>push.resumeNativePush(notificationScope)).catch(()=>{});
@@ -128,6 +129,15 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const [hisabAvailable,setHisabAvailable]=useState(false);
   const scope=useRef(new AbortController());
   const request=useCallback(<T,>(path:string,body?:unknown)=>client(token,scope.current.signal,expired)<T>(path,body),[token,expired]);
+  // Owners without a finished business profile get the setup wizard once per session; "Finish later" keeps a banner instead.
+  const laterKey='capzoryx-setup-later:'+session.business_id;
+  const [setup,setSetup]=useState<{step:number;completed:boolean;open:boolean}|null>(null);
+  useEffect(()=>{
+    if(session.role!=='owner')return;
+    let later=false;try{later=sessionStorage.getItem(laterKey)==='1';}catch{/* optional */}
+    void request<{step:number;completed:boolean}>('/business').then(v=>setSetup({step:v.step,completed:v.completed,open:!v.completed&&!later})).catch(()=>undefined);
+  },[session.business_id,session.role]);// eslint-disable-line react-hooks/exhaustive-deps
+  const setupLater=()=>{try{sessionStorage.setItem(laterKey,'1');}catch{/* optional */}setSetup(s=>s&&{...s,open:false});};
   const actionLock=useRef(false);
   function report(e:unknown){if(!scope.current.signal.aborted)setError(e instanceof Error?e.message:'Request failed');}
   async function reloadProfile(){try{const p=await request<Profile>('/account/profile');if(!scope.current.signal.aborted)setProfile(p);}catch{/* The profile is optional for viewing records. */}}
@@ -196,7 +206,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   };
   return <div className="shell"><aside>
     <Brand/>
-    <SidebarSearch go={(page:SearchPage)=>{setTab(page);setSelected(null);if(page==='Assistant'){setChatLoaded(true);setChatOpen(false);}}} actions={searchActions} hidden={session.role==='owner'?undefined:['payroll']}/>
+    <SidebarSearch go={(page:SearchPage)=>{setTab(page);setSelected(null);if(page==='Assistant'){setChatLoaded(true);setChatOpen(false);}}} actions={searchActions} hidden={session.role==='owner'?undefined:['payroll','business']}/>
     <nav aria-label={t('Workspace')} className={moreOpen?'open':undefined}>{tabs.filter(tb=>tb!=='Payroll'||session.role==='owner').map(tb=><button key={tb} data-tour={tb} className={primaryTabs.includes(tb)?undefined:'more-item'} aria-current={tab===tb?'page':undefined} onClick={()=>{setTab(tb);setSelected(null);setMoreOpen(false);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}}}><Icon name={tb}/>{t(tabLabel[tb])}</button>)}
       <button className="more-toggle" aria-expanded={moreOpen} onClick={()=>setMoreOpen(!moreOpen)}><Icon name={moreOpen?'close':'more'}/>{t('More')}</button></nav>
     <div className="identity">
@@ -212,6 +222,8 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {profile&&profile.email&&!profile.email_verified&&profile.email_service&&tab!=='Settings'&&<p className="notice">{t('Verify your email so you can reset your password with a code.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Verify now')}</button></p>}
       {profile&&!profile.email&&tab==='Overview'&&!dismissed&&<p className="notice dismissible">{t('Add an email address to reset your password with a code if you ever forget it.')} <button className="link" onClick={()=>setTab('Settings')}>{t('Add email')}</button><button className="close-notice" aria-label={t('Dismiss')} onClick={()=>{setDismissed(true);try{localStorage.setItem('capzoryx-email-nudge','hidden');}catch{/* optional */}}}><Icon name="close"/></button></p>}
       {missing&&<p className="notice">Nothing here yet. {canAddRecords?<button className="link" onClick={()=>setTab('Data')}>{t('Add your first record')}</button>:t('Ask the owner to add records.')}</p>}
+      {tab==='Overview'&&setup&&!setup.completed&&!setup.open&&<p className="notice biz-resume">{setup.step?t('Your business profile is {n} of 5 steps done. Finish it to get market research and risk alerts for your business.',{n:setup.step}):t('Tell Capzoryx about your business to get market research and risk alerts made for it.')} <button className="link" onClick={()=>setSetup({...setup,open:true})}>{setup.step?t('Continue setup'):t('Set up my business')}</button></p>}
+      {setup?.open&&!holdSetup&&<LazyBoundary><Suspense fallback={null}><BusinessSetup request={request} mode="setup" onLater={setupLater} onDone={v=>{setSetup({step:v.step,completed:true,open:false});setTab('Overview');setMessage(t('Your business profile is saved.'));}}/></Suspense></LazyBoundary>}
       {tab==='Overview'&&<Dashboard role={session.role} nextCollection={nextCollection} snapshot={snapshot} week={week} month={baselineMonth} invoices={invoices} events={events} proposals={proposals} audit={audit} navigate={showDashboardDestination} openAssistant={()=>{setChatLoaded(true);setChatOpen(true);}} onSample={session.role==='owner'&&!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0?()=>void importRaw(sampleBusiness(snapshot.currency)).catch(e=>report(e)):undefined}/>}
       {tab==='Overview'&&snapshot&&session.role==='owner'&&<AgentReview initiallyOpen={focusTarget.current==='agent-mode'} key={'agent-'+revision} request={request} invoices={invoices} forecast={baselineMonth} navigate={showDashboardDestination}/>}
       {tab==='Overview'&&snapshot&&<CashBriefing key={revision} request={request} initiallyOpen={focusTarget.current==='cash-briefing'}/>}
@@ -269,7 +281,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {tab==='Settings'&&session.role==='owner'&&<ReadOnlyTokens request={request}/>}
       {tab==='Settings'&&session.role==='owner'&&<TelegramLink request={request}/>}
       {tab==='Settings'&&session.role==='owner'&&<SmsInbox request={request}/>}
-      {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
+      {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings onBusinessSaved={v=>setSetup(x=>x&&{...x,step:v.step,completed:v.completed})} session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
       {chatLoaded&&<div id="workspace-assistant" hidden={tab!=='Assistant'&&!chatOpen} className={tab==='Assistant'?'assistant-page':'chat-float'} onKeyDown={(e:KeyboardEvent)=>{if(e.key==='Escape'&&tab!=='Assistant')closeChat();}}><LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening assistant…')}</section>}><Assistant visible={tab==='Assistant'||chatOpen} snapshot={snapshot} forecast={baselineMonth} week={week} events={events} invoices={invoices} session={session} profile={profile} cloudAvailable={cloudAvailable} hisabAvailable={hisabAvailable} revision={revision} request={request} onSaved={refresh} onNavigate={action=>{setTab(action);closeChat();}} onProposal={async()=>{await refresh();setTab('Approvals');closeChat();}} onClose={tab==='Assistant'?undefined:closeChat}/></Suspense></LazyBoundary></div>}
       {tab!=='Assistant'&&<button ref={chatButton} className="chat-launcher" aria-label={chatOpen?t('Close assistant'):t('Open assistant')} aria-expanded={chatOpen} aria-controls="workspace-assistant" onClick={()=>{setChatLoaded(true);setChatOpen(!chatOpen);}}><Icon name="spark"/> <span>{chatOpen?t('Close'):t('Assistant')}</span></button>}
       {tab==='Audit'&&nativeBuild&&<LazyBoundary><Suspense fallback={null}><AndroidReminders scope={notificationScope}/></Suspense></LazyBoundary>}

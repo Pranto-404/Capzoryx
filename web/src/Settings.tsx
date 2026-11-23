@@ -8,31 +8,37 @@ import {formatTime,initials,prepareAvatar,roleLabel,workspaceLabel} from './form
 import {Avatar} from './Avatar';
 import type {Invitation,Member,Profile,Session,WorkspaceItem} from './types';
 import {t,T,LanguagePicker} from './i18n';
+import {BusinessSetup,type BusinessView} from './BusinessSetup';
 
 type Request=<T>(path:string,body?:unknown)=>Promise<T>;
 type Lists={workspaces:WorkspaceItem[];cleared:WorkspaceItem[]};
-export type SettingsProps={session:Session;profile:Profile|null;request:Request;reloadProfile:()=>Promise<void>;changeSession:(s:Session)=>void;lists:Lists;reloadLists:()=>Promise<void>;onExportPdf:()=>Promise<void>;onExportJson:()=>Promise<void>;exporting:boolean;cloudAvailable:boolean};
-const tabs=['Profile','Security','Sharing','Data'] as const;
+export type SettingsProps={onBusinessSaved?:(view:BusinessView)=>void;session:Session;profile:Profile|null;request:Request;reloadProfile:()=>Promise<void>;changeSession:(s:Session)=>void;lists:Lists;reloadLists:()=>Promise<void>;onExportPdf:()=>Promise<void>;onExportJson:()=>Promise<void>;exporting:boolean;cloudAvailable:boolean};
+const tabs=['Profile','Business','Security','Sharing','Data'] as const;
 type Tab=typeof tabs[number];
-const tabNames:Record<Tab,string>={Profile:T('Profile'),Security:T('Password & 2-step'),Sharing:T('Sharing'),Data:T('Data & workspaces')};
+const tabNames:Record<Tab,string>={Profile:T('Profile'),Business:T('Business'),Security:T('Password & 2-step'),Sharing:T('Sharing'),Data:T('Data & workspaces')};
 
 function Section({title,hint,children}:{title:string;hint?:string;children:ReactNode}){return <section className="panel settings-section"><h2>{title}</h2>{hint&&<p className="muted">{hint}</p>}{children}</section>;}
 function useMessage(){const [m,setM]=useState<{kind:'ok'|'error';text:string}|null>(null);return {message:m,ok:(text:string)=>setM({kind:'ok',text}),fail:(e:unknown)=>setM({kind:'error',text:e instanceof Error?e.message:t('Something went wrong. Please try again.')}),clear:()=>setM(null)};}
 function Notice({m}:{m:{kind:'ok'|'error';text:string}|null}){return m?<p className={m.kind==='ok'?'success':'error'} role={m.kind==='ok'?'status':'alert'}>{m.text}</p>:null;}
 
 export default function Settings(props:SettingsProps){
-  const [tab,setTab]=useState<Tab>('Profile');
+  const [tab,setTab]=useState<Tab>(()=>{
+    try{const asked=sessionStorage.getItem('capzoryx-settings-tab');if(asked&&(tabs as readonly string[]).includes(asked))return asked as Tab;}catch{/* optional */}
+    return 'Profile';
+  });
   // The sidebar search can open a specific Settings section.
   useEffect(()=>{
-    const open=(e:Event)=>{const next=(e as CustomEvent<string>).detail;if((tabs as readonly string[]).includes(next))setTab(next as Tab);};
+    try{sessionStorage.removeItem('capzoryx-settings-tab');}catch{/* optional */}
+    const open=(e:Event)=>{const next=(e as CustomEvent<string>).detail;try{sessionStorage.removeItem('capzoryx-settings-tab');}catch{/* optional */}if((tabs as readonly string[]).includes(next))setTab(next as Tab);};
     window.addEventListener('capzoryx:settings-tab',open);return()=>window.removeEventListener('capzoryx:settings-tab',open);
   },[]);
   const {session,profile}=props;
   const name=profile?.display_name||session.display_name||session.username||'You';
   return <div className="settings">
     <div className="settings-head"><Avatar profile={profile} name={name} size={56}/><div><h2>{name}</h2><p className="muted">{profile?.email||session.username}</p></div></div>
-    <div className="settings-tabs" role="tablist" aria-label={t('Settings sections')}>{tabs.map(tb=><button key={tb} role="tab" aria-selected={tab===tb} className={tab===tb?'active':'secondary'} onClick={()=>setTab(tb)}>{t(tabNames[tb])}</button>)}</div>
+    <div className="settings-tabs" role="tablist" aria-label={t('Settings sections')}>{tabs.filter(tb=>tb!=='Business'||props.session.role==='owner').map(tb=><button key={tb} role="tab" aria-selected={tab===tb} className={tab===tb?'active':'secondary'} onClick={()=>setTab(tb)}>{t(tabNames[tb])}</button>)}</div>
     {tab==='Profile'&&<ProfileTab {...props}/>}
+    {tab==='Business'&&session.role==='owner'&&<BusinessSetup request={props.request} mode="edit" onDone={v=>props.onBusinessSaved?.(v)}/>}
     {tab==='Security'&&<><SecurityTab {...props}/><AppDevices request={props.request}/></>}
     {tab==='Sharing'&&<SharingTab {...props}/>}
     {tab==='Data'&&<DataTab {...props}/>}

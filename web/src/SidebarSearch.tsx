@@ -26,6 +26,7 @@ const ENTRIES:Entry[]=[
   {id:'telegram',label:'Telegram',where:T('Settings'),page:'Settings',target:'telegram',icon:'send',words:'telegram bot chat টেলিগ্রাম'},
   {id:'sms',label:T('Payment SMS'),where:T('Settings'),page:'Settings',target:'payment-sms',icon:'send',words:'sms bkash nagad rocket bank forward বিকাশ নগদ এসএমএস'},
   {id:'mcp',label:T('Read-only MCP access'),where:T('Settings'),page:'Settings',target:'mcp-access',icon:'Settings',words:'mcp token api ai tool'},
+  {id:'business',label:T('Business profile'),where:T('Settings'),page:'Settings',settings:'Business',icon:'Overview',words:'business profile setup products industry niche competitors goals byabsa bebsa ব্যবসা পণ্য প্রতিযোগী'},
   {id:'profile',label:T('Profile and photo'),where:T('Settings'),page:'Settings',settings:'Profile',icon:'Settings',words:'profile name photo picture nam নাম ছবি'},
   {id:'language',label:T('Language'),where:T('Settings'),page:'Settings',settings:'Profile',icon:'globe',words:'language bhasha bangla english ভাষা বাংলা'},
   {id:'email',label:T('Email'),where:T('Settings'),page:'Settings',settings:'Profile',icon:'send',words:'email mail ইমেইল'},
@@ -70,6 +71,8 @@ export function SidebarSearch({go,actions,hidden=[]}:{go:(page:SearchPage)=>void
     if(!entry)return;
     setQuery('');input.current?.blur();
     if(entry.action){actions[entry.action]?.();return;}
+    // Settings loads lazily, so the chosen tab is left for it to pick up when it first renders.
+    if(entry.settings){try{sessionStorage.setItem('capzoryx-settings-tab',entry.settings);}catch{/* optional */}}
     if(entry.page)go(entry.page);
     window.setTimeout(()=>{
       if(entry.settings)window.dispatchEvent(new CustomEvent('capzoryx:settings-tab',{detail:entry.settings}));
