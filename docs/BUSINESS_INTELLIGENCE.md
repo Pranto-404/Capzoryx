@@ -71,20 +71,30 @@ All tables are new and keyed by `business_id`. Free text is sealed with the work
 - The assistant answers scenario questions ("price drops 10%?", "minimum selling price?") with deterministic math, best/base/worst cases and the confidence.
 - Proactive insights card and a recommendation feedback log (accepted or dismissed, measured outcome).
 
-### Phase 6 — Hardening ☐
+### Phase 6 — Hardening ☑ (done)
 - Acceptance tests A–J in one browser script, data export and deletion including new tables, a security scan, and performance checks with thousands of products.
 
 ## Acceptance tests
 
+All ten pass. Where each one is checked:
+
 | Test | Phase | Check |
 |---|---|---|
-| A | 1 | A new owner sees the wizard after signup. |
-| B | 1 | Niche, products, location and description are validated and saved. |
-| C | 2 | Research tasks start and show a real status. |
-| D | 2 | The dashboard uses this business's profile and market data. |
-| E | 1 | Logging out and back in loads the profile; the wizard does not return. |
-| F | 2 | A new product updates the watch list. |
-| G | 4 | A threshold crossing gives the right level, numbers and delivery. |
-| H | 2 | A provider failure shows the limitation, never invented data. |
-| I | 1 | One business cannot read another's profile, products or alerts. |
-| J | 4 | An event while the owner is offline is evaluated and delivered. |
+| A | 1 | A new owner sees the wizard after signup. Covered by `scripts/check_business_browser.cjs`. |
+| B | 1 | Niche, products, location and description are validated and saved. Covered by `api/tests/test_business.py`, browser check. |
+| C | 2 | Research tasks start and show a real status. Covered by `api/tests/test_market.py`. |
+| D | 2 | The dashboard uses this business's profile and market data. Covered by browser check (market panel). |
+| E | 1 | Logging out and back in loads the profile; the wizard does not return. Covered by `test_business.py`, browser check. |
+| F | 2 | A new product updates the watch list. Covered by `test_market.py`. |
+| G | 4 | A threshold crossing gives the right level, numbers and delivery. Covered by `api/tests/test_monitor.py`. |
+| H | 2 | A provider failure shows the limitation, never invented data. Covered by `test_market.py`, browser check. |
+| I | 1 | One business cannot read another's profile, products or alerts. Covered by `test_business.py`, `test_market.py`, `test_monitor.py`. |
+| J | 4 | An event while the owner is offline is evaluated and delivered. Covered by `test_monitor.py`. |
+
+## Operations
+
+- **Background jobs** run in the web process on Render (`CAPZORYX_BACKGROUND_JOBS`, on by default when `RENDER` is set). UptimeRobot keeps the free instance awake. One worker holds the `job_lease`.
+- **Research** needs a Gemini key (`CAPZORYX_CHAT_GEMINI_KEY` or `SAFELEDGER_LLM_API_KEY`). Without one, runs are recorded as unavailable.
+- **Email** for critical alerts uses the existing mailer and only reaches owners with a verified address. The email carries no amounts.
+- **Erasing** a workspace's private data also removes its business profile, products, quotes, research, alerts and advisor feedback. The workspace export includes all of them.
+- **Scale:** tested with 1,500 products. Profile, insights, advisor and market each answer well under a second.

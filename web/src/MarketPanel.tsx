@@ -59,7 +59,7 @@ export function MarketPanel({request,openSettings}:{request:Request;openSettings
 
     {!!alerts.length&&<><h3>{t('Recent alerts')}</h3><ul className="market-alerts">{alerts.slice(0,6).map(a=><li key={a.id} className={'alert-'+a.level}>
       <details><summary><span className={'pill level-'+a.level}>{a.level===3?t('Critical'):a.level===2?t('Warning'):t('Update')}</span> <b>{a.title}</b>
-        <small>{formatDate(new Date(a.created_at*1000).toISOString().slice(0,10))}{!!a.delivery.length&&' · '+a.delivery.map(d=>`${d.channel==='inapp'?t('App'):d.channel==='telegram'?'Telegram':t('Phone')}: ${d.status==='sent'?t('sent'):d.status==='failed'?t('failed'):t('waiting')}`).join(', ')}</small></summary>
+        <small>{formatDate(new Date(a.created_at*1000).toISOString().slice(0,10))}{!!a.delivery.length&&' · '+a.delivery.map(d=>`${d.channel==='inapp'?t('App'):d.channel==='telegram'?'Telegram':d.channel==='market_email'?t('Email'):t('Phone')}: ${d.status==='sent'?t('sent'):d.status==='failed'?t('failed'):t('waiting')}`).join(', ')}</small></summary>
         <ul>{a.lines.map((l,i)=><li key={i}>{l}</li>)}</ul><p className="muted">{a.advice}</p></details></li>)}</ul></>}
 
     <h3>{t('Market research')}</h3>

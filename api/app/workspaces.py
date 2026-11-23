@@ -207,6 +207,8 @@ def clear(body: ClearRequest, request: Request, response: Response, actor=Depend
                     sec.fail(409, 'CUSTOMER_ERASURE_CONFIRMATION_REQUIRED')
                 db.execute('DELETE FROM customer_contacts WHERE business_id=?', (business,))
                 db.execute('DELETE FROM customer_keys WHERE business_id=?', (business,))
+                from api.app.business import erase
+                erase(db, business)  # sealed with the key just deleted, so it could never be read again anyway
             db.execute('UPDATE api_tokens SET revoked_at=? WHERE business_id=? AND revoked_at IS NULL',(sec.now(),business))
             db.execute('DELETE FROM telegram_links WHERE business_id=?',(business,))
             db.execute('UPDATE passports SET revoked_at=? WHERE business_id=? AND revoked_at IS NULL', (sec.now(), business))

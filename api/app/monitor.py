@@ -117,6 +117,40 @@ def queue_channels(db, business, identity, level, at):
                    (uuid.uuid4().hex, business, sec.signature('notification-key', [business, 'market_risk', identity, user, 'telegram']), user,
                     sec.canonical({'kind': 'market_risk', 'page': 'Overview', 'alert': identity}),
                     at if level == 3 else deliver_after(at, start, end)))
+    if level == 3:  # critical alerts also go by email to owners with a verified address; the email has no amounts
+        from api.app.notifications import email_alerts
+        if email_alerts.configured():
+            for (user,) in db.execute("SELECT user_id FROM effective_security_users WHERE business_id=? AND role='owner' AND active=1", (business,)).fetchall():
+                if email_alerts.verified_address(db, business, user):
+                    db.execute("""INSERT INTO notification_jobs(id,business_id,dedupe_key,recipient_user_id,channel,payload_json,run_after)
+                                  VALUES (?,?,?,?,'market_email',?,?) ON CONFLICT(dedupe_key) DO NOTHING""",
+                               (uuid.uuid4().hex, business, sec.signature('notification-key', [business, 'market_risk', identity, user, 'email']), user,
+                                sec.canonical({'kind': 'market_risk', 'alert': identity}), at))
+
+
+def deliver_email(db, business, at):
+    """Send queued critical-alert emails; a refused email is retried twice, then marked failed."""
+    from api.app import mailer
+    from api.app.notifications import email_alerts
+    if not email_alerts.configured():
+        return
+    for _ in range(3):
+        with sec.transaction(db):
+            row = db.execute("""SELECT id,recipient_user_id,payload_json,attempts FROM notification_jobs WHERE business_id=? AND channel='market_email'
+                                AND status='queued' AND run_after<=? ORDER BY run_after,id LIMIT 1""", (business, at)).fetchone()
+            if not row:
+                return
+            job, user, payload, attempts = row
+            address = email_alerts.verified_address(db, business, user)
+            text = alert_text(db, business, json.loads(payload)['alert'])
+            db.execute("UPDATE notification_jobs SET status='sending',attempts=attempts+1 WHERE id=?", (job,))
+        title = (text or '').split('\n', 1)[0]
+        accepted = bool(address and title) and mailer.send(address, 'Capzoryx: ' + title,
+                                                           f'{title}\n\nSign in to see the numbers and your options:\n{email_alerts.website()}/\n')
+        with sec.transaction(db):
+            status = 'sent' if accepted else ('failed' if attempts >= 2 else 'queued')
+            db.execute('UPDATE notification_jobs SET status=?,sent_at=?,run_after=?,last_error=? WHERE id=?',
+                       (status, at if accepted else None, at + 300 * 2 ** attempts, None if accepted else 'MAIL_NOT_ACCEPTED', job))
 
 
 def evaluate(db, business, at):
@@ -205,6 +239,7 @@ def tick(db, at):
             sent += len(fresh)
             telegram.deliver(db, business, at)
             push.deliver(db, business, at)
+        deliver_email(db, business, at)  # also retries earlier emails that were not accepted
     return dict(businesses=len(monitored), fetched=sum(1 for v in fetched.values() if not isinstance(v, str)), alerts=sent)
 
 
