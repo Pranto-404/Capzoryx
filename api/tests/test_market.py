@@ -129,3 +129,22 @@ def test_research_is_cited_consented_and_honest_when_off(world, net, monkeypatch
     signup(c, 'market_other')
     other = c.get(BASE).json()
     assert other['research'] is None and all(i['key'] != 'gold_22k_local' for i in other['indicators'])
+
+
+def test_research_starts_by_itself_after_setup_and_refreshes_in_the_background(world, net, monkeypatch):  # noqa: F811
+    from contextlib import closing
+    from api.app import monitor
+    from api.app.database import connect
+    c, _ = world
+    monkeypatch.setenv('CAPZORYX_CHAT_GEMINI_KEY', 'test-key')
+    signup(c, 'market_auto')
+    setup_gold(c)
+    done = c.post('/api/business/complete', json={}).json()
+    assert done['research_started'] and len(net['gemini']) == 1  # no button press needed
+    assert c.get(BASE).json()['research']['status'] == 'done'
+    with closing(connect()) as db:
+        assert monitor.research_due(db) == 0  # fresh, nothing changed
+    c.post('/api/business/products', json={'name': 'Silver bangle', 'category': 'Silver', 'unit': 'bhori'}).raise_for_status()
+    with closing(connect()) as db:
+        assert monitor.research_due(db) == 1  # products changed, so the background pass researches again
+    assert len(net['gemini']) == 2

@@ -54,13 +54,11 @@ async function openPage(page,name){
     await shot(owner,'setup-welcome');
     await wizard.getByRole('button',{name:'Set up my business'}).click();
 
-    // B: identity, products (typed and CSV), operations, goals and permissions are validated and saved.
+    // B: three short steps. Only name, what you sell and where are asked; the industry is worked out from the answer.
     await wizard.getByLabel('Business name').fill('Golden Heritage BD');
-    await wizard.getByLabel('What exactly do you do?').fill('gold jewelry shop');
-    await wizard.getByRole('button',{name:'Use this'}).click();
-    assert.equal(await wizard.getByLabel('Industry').inputValue(),'jewelry');
-    await wizard.getByText('Retail',{exact:true}).click();
+    await wizard.getByLabel('What do you sell or do?').fill('gold jewelry shop');
     await wizard.getByLabel('City or area').fill('Dhaka');
+    await wizard.getByText('Industry: Jewelry and precious metals').waitFor();
     await shot(owner,'setup-identity');
     await wizard.getByRole('button',{name:'Save and continue'}).click();
 
@@ -79,22 +77,20 @@ async function openPage(page,name){
     await shot(owner,'setup-products');
     await wizard.getByRole('button',{name:'Save and continue'}).click();
 
-    await wizard.getByText('Both',{exact:true}).click();
-    await wizard.getByText('Facebook page',{exact:true}).click();
-    await wizard.getByLabel('Competitors you know').fill('Diamond World, Apan Jewellers');
-    await wizard.getByRole('button',{name:'Save and continue'}).click();
+    // Finish: goals are optional chips, and the assistant's permissions are already on.
+    await wizard.getByRole('heading',{name:'Finish'}).waitFor();
+    assert.ok(await wizard.getByRole('checkbox',{name:/Send me important alerts automatically/}).isChecked());
     await wizard.getByText('Protect capital from price swings').click();
-    await wizard.getByRole('button',{name:'Save and continue'}).click();
-    await wizard.getByText('Send me important alerts automatically').click();
     await wizard.getByRole('button',{name:'Finish setup'}).click();
-    await owner.getByText('Your business profile is saved.').waitFor();
+    await owner.getByText(/Your business profile is saved|researching your market/).waitFor();
     assert.equal(await wizard.count(),0);
 
     const saved=await (await owner.request.get(origin+'/api/business')).json();
     assert.ok(saved.completed);
     assert.equal(saved.profile.identity.industry,'jewelry');
-    assert.deepEqual(saved.profile.operations.competitors,['Diamond World','Apan Jewellers']);
-    assert.ok(saved.profile.consent.alerts);
+    assert.deepEqual(saved.profile.identity.business_types,['retail']);
+    assert.deepEqual(saved.profile.goals.goals,['protect_capital']);
+    assert.ok(saved.profile.consent.alerts && saved.profile.consent.monitoring && saved.profile.consent.external_research);
     assert.deepEqual(saved.products.map(p=>[p.name,p.unit,p.market_key,p.cost_minor]),[['22K Gold','bhori','gold_22k',19400000],['Silver ring','piece','silver',120000]]);
 
     // D/H: Overview shows this business's market; every figure carries its source, or says it is unavailable.
@@ -123,8 +119,9 @@ async function openPage(page,name){
     // Phase 5: the advisor offers costed options, and choosing one is remembered.
     // With a healthy position and no gaps there is nothing to say, so the panel stays hidden rather than padding advice.
     const advice=await (await owner.request.get(origin+'/api/advisor')).json();
-    assert.deepEqual([advice.insights.length,advice.gaps.length],[0,0]);
-    assert.equal(await owner.locator('.advisor-panel').count(),0);
+    assert.equal(advice.insights.length,0);
+    assert.deepEqual(advice.gaps.map(g=>g.lever),['Digital visibility']);  // setup no longer asks for sales channels
+    await owner.locator('.advisor-panel').getByText('Where you can compete').waitFor();
     // When the price drops close to break-even, the advisor explains it and offers three costed options.
     const again=owner.locator('.market-panel .market-list > li').filter({hasText:'Local 22K gold dealer price'});
     await again.getByRole('button',{name:"Add today's price"}).click();
