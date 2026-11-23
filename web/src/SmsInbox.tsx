@@ -21,7 +21,7 @@ export function SmsInbox({request}:{request:Request}){
   const load=async()=>setStatus(await request<Status>(path));
   useEffect(()=>{void run(load);},[]);// eslint-disable-line react-hooks/exhaustive-deps
   const act=(id:string,action:'save'|'skip')=>run(async()=>{await request(`${path}/drafts/${id}/${action}`,{});await load();});
-  return <section className="panel channel"><h2>{t('Payment SMS')}</h2>
+  return <section id="payment-sms" className="panel channel"><h2>{t('Payment SMS')}</h2>
     <p className="muted">{t('Forward bKash, Nagad, Rocket and bank SMS from your Android phone. Capzoryx reads each payment and asks before saving it. OTP and PIN messages are ignored.')}</p>
     {url?<>
       <ol className="steps">

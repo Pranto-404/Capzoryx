@@ -8,7 +8,7 @@ import {QuickTour} from './QuickTour';
 import {LazyBoundary} from './LazyBoundary';
 import {ThemeButton} from './Theme';
 import {Icon} from './Icon';
-import {CommandPalette} from './CommandPalette';
+import {SidebarSearch,type SearchPage} from './SidebarSearch';
 import {CashBriefing} from './CashBriefing';
 import {AgentReview} from './AgentReview';
 import {Dashboard} from './Dashboard';
@@ -84,7 +84,6 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const [nextCollection,setNextCollection]=useState<NextCollection|null>(null);
   const focusTarget=useRef<string|null>(null);
   const [moreOpen,setMoreOpen]=useState(false);
-  const [paletteOpen,setPaletteOpen]=useState(false);
   const [dismissed,setDismissed]=useState(()=>{try{return localStorage.getItem('capzoryx-email-nudge')==='hidden';}catch{return false;}});
   // A new page starts at the top with a short entrance, unless a deep link is scrolling to a target.
   useEffect(()=>{
@@ -93,11 +92,6 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
     const main=document.getElementById('workspace');
     if(main){main.classList.remove('page-enter');void main.offsetWidth;main.classList.add('page-enter');}
   },[tab]);
-  // Ctrl/⌘+K opens the quick jump palette.
-  useEffect(()=>{
-    const onKey=(e:globalThis.KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setPaletteOpen(open=>!open);}};
-    window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);
-  },[]);
   const [openStatement,setOpenStatement]=useState(false);
   function showDashboardDestination(page:Tab,target='workspace-title'){
     focusTarget.current=target;
@@ -194,14 +188,14 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const name=profile?.display_name||session.display_name||session.username||'You';
   const number=(id:string)=>invoices.find(i=>i.invoice_id===id)?.invoice_number||'';
   const visible=invoices.filter(i=>`${i.vendor_id} ${i.invoice_number}`.toLowerCase().includes(query.toLowerCase()));
-  const paletteItems=[
-    ...tabs.map(tb=>({id:'go-'+tb,label:t(tabLabel[tb]),icon:tb,run:()=>{setTab(tb);setSelected(null);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}}})),
-    {id:'ask',label:t('Ask your assistant'),icon:'spark',run:()=>{setChatLoaded(true);setChatOpen(true);}},
-    {id:'pdf',label:t('Download PDF'),icon:'download',run:()=>void exportPdf()},
-    {id:'refresh',label:t('Refresh'),icon:'refresh',run:()=>void run(refresh)},
-  ];
+  const searchActions:Record<string,()=>void>={
+    ask:()=>{setChatLoaded(true);setChatOpen(true);},pdf:()=>void exportPdf(),refresh:()=>void run(refresh),
+    theme:()=>document.querySelector<HTMLButtonElement>('.theme-toggle')?.click(),
+    tour:()=>document.querySelector<HTMLButtonElement>('[data-tour-launcher]')?.click(),
+  };
   return <div className="shell"><aside>
     <Brand/>
+    <SidebarSearch go={(page:SearchPage)=>{setTab(page);setSelected(null);if(page==='Assistant'){setChatLoaded(true);setChatOpen(false);}}} actions={searchActions}/>
     <nav aria-label={t('Workspace')} className={moreOpen?'open':undefined}>{tabs.map(tb=><button key={tb} data-tour={tb} className={primaryTabs.includes(tb)?undefined:'more-item'} aria-current={tab===tb?'page':undefined} onClick={()=>{setTab(tb);setSelected(null);setMoreOpen(false);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}}}><Icon name={tb}/>{t(tabLabel[tb])}</button>)}
       <button className="more-toggle" aria-expanded={moreOpen} onClick={()=>setMoreOpen(!moreOpen)}><Icon name={moreOpen?'close':'more'}/>{t('More')}</button></nav>
     <div className="identity">
@@ -210,7 +204,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       <LanguagePicker compact id="language-side" onPicked={code=>{void request('/account/profile',{language:code}).catch(()=>{});}}/>
       <button className="secondary" onClick={logout}>{t('Sign out')}</button></div></aside>
     <main id="workspace"><header><div><p className="eyebrow">{workspaceLabel(session.workspace_name||'My workspace')}</p><h1 tabIndex={-1} id="workspace-title">{t(pageTitle[tab])}</h1><p className="muted">{snapshot?t('Up to date as of {date} · {currency}',{date:formatDate(snapshot.as_of),currency}):t('Your business finances in one place')}</p></div>
-      <div className="header-actions"><QuickTour ready={!!snapshot&&!busy} userId={session.user_id} currentPage={tab} navigate={tourNavigate}/><ThemeButton/><button className="secondary icon-button" title={t('Find a page or action (Ctrl+K)')} aria-label={t('Find a page or action')} onClick={()=>setPaletteOpen(true)}><Icon name="search"/></button><button className="secondary icon-button" title={t('Download PDF')} aria-label={exporting?t('Preparing PDF…'):t('Download PDF')} disabled={busy||!snapshot||exporting} onClick={()=>void exportPdf()}><Icon name="download"/></button><button className="secondary icon-button" title={t('Refresh')} aria-label={t('Refresh')} disabled={busy} onClick={()=>void run(refresh)}><span className={busy?'spin':undefined}><Icon name="refresh"/></span></button></div></header>
+      <div className="header-actions"><QuickTour ready={!!snapshot&&!busy} userId={session.user_id} currentPage={tab} navigate={tourNavigate}/><ThemeButton/><button className="secondary icon-button" title={t('Download PDF')} aria-label={exporting?t('Preparing PDF…'):t('Download PDF')} disabled={busy||!snapshot||exporting} onClick={()=>void exportPdf()}><Icon name="download"/></button><button className="secondary icon-button" title={t('Refresh')} aria-label={t('Refresh')} disabled={busy} onClick={()=>void run(refresh)}><span className={busy?'spin':undefined}><Icon name="refresh"/></span></button></div></header>
       <CurrencyControls key={currency} ready={!!snapshot}/>
       <div aria-live="polite" role="status">{busy&&<p className="notice">{t('Loading your latest data…')}</p>}{message&&<p className="success">{message}</p>}</div>
       {error&&<p className="error" role="alert">{error}</p>}
@@ -276,10 +270,9 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
       {chatLoaded&&<div id="workspace-assistant" hidden={tab!=='Assistant'&&!chatOpen} className={tab==='Assistant'?'assistant-page':'chat-float'} onKeyDown={(e:KeyboardEvent)=>{if(e.key==='Escape'&&tab!=='Assistant')closeChat();}}><LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening assistant…')}</section>}><Assistant visible={tab==='Assistant'||chatOpen} snapshot={snapshot} forecast={baselineMonth} week={week} events={events} invoices={invoices} session={session} profile={profile} cloudAvailable={cloudAvailable} hisabAvailable={hisabAvailable} revision={revision} request={request} onSaved={refresh} onNavigate={action=>{setTab(action);closeChat();}} onProposal={async()=>{await refresh();setTab('Approvals');closeChat();}} onClose={tab==='Assistant'?undefined:closeChat}/></Suspense></LazyBoundary></div>}
       {tab!=='Assistant'&&<button ref={chatButton} className="chat-launcher" aria-label={chatOpen?t('Close assistant'):t('Open assistant')} aria-expanded={chatOpen} aria-controls="workspace-assistant" onClick={()=>{setChatLoaded(true);setChatOpen(!chatOpen);}}><Icon name="spark"/> <span>{chatOpen?t('Close'):t('Assistant')}</span></button>}
-      <CommandPalette open={paletteOpen} items={paletteItems} onClose={()=>setPaletteOpen(false)}/>
       {tab==='Audit'&&nativeBuild&&<LazyBoundary><Suspense fallback={null}><AndroidReminders scope={notificationScope}/></Suspense></LazyBoundary>}
       {snapshot&&<CaptureSync session={session} currency={snapshot.currency} request={request} onSaved={refresh} onInvoices={()=>setTab('Invoices')}/>}
-      <footer>{!nativeBuild&&<InstallControl/>}{t('Capzoryx Copilot · Your records · A second person approves every payment · Nothing leaves your control')}</footer></main></div>;
+      <footer>{!nativeBuild&&<InstallControl/>}</footer></main></div>;
 }
 
 function ProposalDetails({proposal:p,number}:{proposal:Proposal;number:string}){

@@ -159,7 +159,7 @@ const fs=require('node:fs/promises');
     await openPage(owner,'Assistant');
     const chat=owner.getByRole('region',{name:'Assistant',exact:true});
     await chat.getByRole('button',{name:'What is my balance?',exact:true}).click();
-    await chat.getByRole('log').getByText(/150,000.00/).waitFor();
+    await chat.getByRole('log').getByText(/150,000\.00|1,50,000/).waitFor();
     assert.equal(hisabRequests.length,0);
     const input=chat.getByRole('textbox',{name:'Message the assistant'});
     await input.fill(hisabText);

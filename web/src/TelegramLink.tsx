@@ -55,5 +55,5 @@ export function TelegramLink({request}:{request:Request}){
       <button className="secondary" disabled={busy} onClick={()=>void run(load)}>{t('Check now')}</button></div></>;
   else body=<><p className="muted">{t('Chat with Capzoryx in Telegram: ask about cash, dues and bills in Bangla, Banglish or English, and get bill reminders.')}</p>
     <button disabled={busy} onClick={()=>void run(start)}>{t('Connect Telegram')}</button></>;
-  return <section className="panel channel"><h2>Telegram</h2>{body}{message&&<p role="status">{message}</p>}</section>;
+  return <section id="telegram" className="panel channel"><h2>Telegram</h2>{body}{message&&<p role="status">{message}</p>}</section>;
 }

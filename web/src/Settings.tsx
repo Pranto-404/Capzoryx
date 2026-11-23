@@ -22,6 +22,11 @@ function Notice({m}:{m:{kind:'ok'|'error';text:string}|null}){return m?<p classN
 
 export default function Settings(props:SettingsProps){
   const [tab,setTab]=useState<Tab>('Profile');
+  // The sidebar search can open a specific Settings section.
+  useEffect(()=>{
+    const open=(e:Event)=>{const next=(e as CustomEvent<string>).detail;if((tabs as readonly string[]).includes(next))setTab(next as Tab);};
+    window.addEventListener('capzoryx:settings-tab',open);return()=>window.removeEventListener('capzoryx:settings-tab',open);
+  },[]);
   const {session,profile}=props;
   const name=profile?.display_name||session.display_name||session.username||'You';
   return <div className="settings">
