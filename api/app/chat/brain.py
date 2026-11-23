@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from api.app import advisor
+from api.app.chat import business_answers, context
 from api.app import security as sec
 from api.app.chat import understand
 from api.app.currencies import CURRENCIES, scale
@@ -554,6 +555,15 @@ def _decide(db, ctx, text):
             return Reply('Only the owner can see product costs and break-even prices.', lang=lang)
         return Reply(advisor.answer(db, ctx.business, ask), lang=lang)
 
+    about = None if p.small_talk or p.record_like else business_answers.detect(text)
+    if about and not (p.topic and about in ('market', 'products')):  # "what is my business?", "give me ideas", "who are my competitors?"
+        if not ctx.chat_enabled:
+            return Reply(say('off', lang, settings=ctx.settings_hint), lang=lang)
+        facts = context.gather(db, ctx.business, ctx.role)  # already inside the caller's transaction
+        # Without a profile only "what is my business?" gets the set-up hint; other questions can still use the model.
+        if facts.get('profile') or about == 'profile' or not facts.get('owner') or not (ctx.allow_llm and llm_available(db, ctx.business)):
+            return Reply(business_answers.answer(about, facts, lang), lang=lang)
+
     if p.small_talk:
         save_state(db, ctx, lang, keep_topic=True)
         if p.small_talk == 'greet':
@@ -709,11 +719,11 @@ def llm_available(db, business):
 
 
 def ask_llm(db, ctx, question, lang):
-    from api.app.assist import facts_text, owner_allows_cloud
+    from api.app.assist import owner_allows_cloud
     from api.app.chat import llm
     try:
         with sec.transaction(db):
-            facts = facts_text(db, ctx.business)
+            facts = context.text(db, ctx.business, ctx.role)  # the whole business, not only the cash books
             history = load_history(db, ctx)
             share = owner_allows_cloud(db, ctx.business)
         answer, _ = llm.reply(question, history, facts, share_facts=share)

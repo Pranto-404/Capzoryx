@@ -250,7 +250,11 @@ def net_at(positions, move):
 
 def answer(db, business, ask):
     from api.app.insights import build
-    data = build(db, business)
+    return answer_from(build(db, business), ask)
+
+
+def answer_from(data, ask):
+    """The scenario or break-even answer from already-built figures (also used to make training data)."""
     c = data['currency']
     usable = [p for p in data['positions'] if p['status'] != 'incomplete']
     if ask[0] == 'break_even':
@@ -268,7 +272,7 @@ def answer(db, business, ask):
             lines.append(f"Not calculated (missing data): {', '.join(missing)}.")
         lines.append('Buyers may pay less than a listed or published price, so compare with a firm offer.')
         return '\n'.join(lines)
-    move = ask[1]
+    move = Decimal(str(ask[1]))  # ints from callers and Decimals from the chat parser both work
     held = [p for p in usable if p.get('quantity') and p['reference']['basis'] == 'market']
     if not held:
         return ('I cannot run this scenario yet: it needs products with a market price, purchase cost and quantity. '

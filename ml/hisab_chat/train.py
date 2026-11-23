@@ -8,14 +8,15 @@ Loss is computed on assistant turns only, so the model learns to answer rather t
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 
 BASES = {
-    'Qwen/Qwen3-4B-Instruct-2507': dict(batch=4, accumulate=4),  # fits 8 GB and 16 GB
+    'Qwen/Qwen3-4B-Instruct-2507': dict(batch=2, accumulate=8),  # fits a 16 GB T4 with the longer business context
     'google/gemma-3-12b-it': dict(batch=1, accumulate=16),       # heavier, needs 16 GB
     'Qwen/Qwen3-1.7B': dict(batch=8, accumulate=2),              # quick smoke run
 }
-MAX_LEN = 1536
+MAX_LEN = 2560  # business-context examples carry the whole business (profile, products, market, advice)
 SEED = 20261121
 
 
@@ -68,6 +69,7 @@ def main():
     p.add_argument('--epochs', type=int, default=2)
     p.add_argument('--gguf', action='store_true', help='also export a q4_k_m GGUF for llama.cpp or Ollama')
     p.add_argument('--qlora', action='store_true', help='force 4-bit loading (use if 16-bit runs out of memory)')
+    p.add_argument('--merged', metavar='OWNER/REPO', help='also upload merged 16-bit weights privately, for a ZeroGPU Space')
     p.add_argument('--push', metavar='OWNER/REPO', help='upload the GGUF and training.json to a private Hugging Face '
                    'model repo (needs HF_TOKEN with write access)')
     a = p.parse_args()
@@ -126,6 +128,13 @@ def main():
     print(json.dumps(evidence))
     if a.push:
         push(a.output, a.push)
+    if a.merged:
+        # Full-precision weights for a GPU Space (ZeroGPU runs transformers, not GGUF).
+        model.push_to_hub_merged(a.merged, tokenizer, save_method='merged_16bit', token=os.environ['HF_TOKEN'], private=True)
+        from huggingface_hub import HfApi
+        HfApi().upload_file(path_or_fileobj=str(a.output / 'training.json'), path_in_repo='training.json', repo_id=a.merged,
+                            commit_message='Training record')
+        print(f'Uploaded merged weights to https://huggingface.co/{a.merged}')
 
 
 def push(output, repo):
