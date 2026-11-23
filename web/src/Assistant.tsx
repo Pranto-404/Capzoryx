@@ -33,6 +33,8 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
   const openBills=invoices.filter(i=>i.status==='open');
 
   async function quick(button:BrainButton){
+    const page=/^__open:(.+)__$/.exec(button.payload);
+    if(page){onNavigate(page[1] as AssistantAction);return;}
     if(pending.current)return;
     pending.current=true;setBusy(true);add({role:'user',text:button.label});
     try{
@@ -59,14 +61,13 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
         if(draft){add({role:'assistant',kind:'device',text:draft.kind==='invoice'?t('I read this as a bill you still have to pay. Check it, then add it to your records.'):draft.direction==='inflow'?t('I read this as money you received. Check it, then add it to your records.'):t('I read this as a payment you made. Check it, then add it to your records.'),draft});return;}
       }
       // 2. Answers that need no cloud: balances, forecasts, invoices, how-to, definitions.
+      // 2. The Capzoryx brain on the server knows the books, every feature and Bangla, Banglish and English.
+      const brain=await request<BrainReply>('/chat/message',{text:q.slice(0,240)}).catch(()=>null);
+      if(brain?.understood&&brain.text){add({role:'assistant',kind:'device',text:brain.text,quick:brain.buttons});return;}
+      // 3. Offline or not understood: the on-device assistant.
       const local=localAnswer(q,{snapshot,forecast,week,events,invoices},lastIntent.current);
       if(local.handled){lastIntent.current=local.intent;add({role:'assistant',kind:'device',text:local.text,actions:local.actions});return;}
       const blocked=['security','approval','limit'].includes(local.intent);
-      // 2b. The shared Capzoryx brain: Bangla, Banglish, summaries and who-owes-whom, computed on the server.
-      if(!blocked){
-        const brain=await request<BrainReply>('/chat/message',{text:q.slice(0,240)}).catch(()=>null);
-        if(brain?.understood&&brain.text){add({role:'assistant',kind:'device',text:brain.text,quick:brain.buttons});return;}
-      }
       if(blocked){add({role:'assistant',kind:'device',text:local.text});return;}
       // 3. Everything else goes to smart assist, if it is on.
       const offTopic=local.intent==='out_of_domain';

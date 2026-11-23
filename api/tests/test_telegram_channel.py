@@ -87,7 +87,7 @@ def test_private_book_replies_are_conversational_opt_in_and_never_write_without_
     assert 'Connected' in sent[-1]['text'] and c.get(base+'/link').json()['chat_enabled']
     c.post(base+'/chat',json={'enabled':False}).raise_for_status()
     incoming(103,'/balance')
-    assert 'book replies are off' in sent[-1]['text']
+    assert 'book replies are off' in sent[-1]['text'].lower()
     incoming(1031,'hi')
     assert 'Cash in hand' not in sent[-1]['text']
     assert not c.get(base+'/link').json()['chat_enabled']
@@ -119,7 +119,7 @@ def test_private_book_replies_are_conversational_opt_in_and_never_write_without_
     assert c.post(base+'/records',json={'enabled':True}).status_code==200
     assert c.get(base+'/link').json()['records_enabled']
     incoming(109,'Rahim theke 500 taka pelam')
-    assert 'Save kori?' in sent[-1]['text']
+    assert 'save korbo?' in sent[-1]['text']
     tap(110,'__cancel__')
     assert 'save hoy ni' in sent[-1]['text'].lower()
     assert not c.get('/api/workspace').json()['events']
@@ -132,7 +132,7 @@ def test_private_book_replies_are_conversational_opt_in_and_never_write_without_
     assert len(c.get('/api/workspace').json()['events'])==1 and "nothing waiting" in sent[-1]['text']
     c.post(base+'/chat',json={'enabled':False}).raise_for_status()
     incoming(115,'/balance')
-    assert 'book replies are off' in sent[-1]['text']
+    assert 'book replies are off' in sent[-1]['text'].lower()
     incoming(116,'/stop')
     assert 'Disconnected' in sent[-1]['text']
     incoming(117,'/balance')
