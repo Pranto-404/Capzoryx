@@ -5,7 +5,7 @@ import {t,T} from './i18n';
 type Request=<R,>(path:string,body?:unknown)=>Promise<R>;
 type Industry={key:string;label:string;niches:string[];words:string};
 type Catalog={industries:Industry[];business_types:string[];channels:string[];goals:string[];units:string[]};
-type Product={id:string;name:string;category:string;variant:string;brand:string;unit:string;quantity:string|null;cost_minor:number|null;price_minor:number|null;market_key:string|null};
+type Product={id:string;name:string;category:string;variant:string;brand:string;unit:string;quantity:string|null;cost_minor:number|null;price_minor:number|null;expense_minor?:number|null;market_key:string|null};
 type Profile={identity?:Record<string,unknown>;operations?:Record<string,unknown>;goals?:Record<string,unknown>;consent?:Record<string,unknown>};
 export type BusinessView={profile:Profile;step:number;completed:boolean;products:Product[];gaps:{field:string;why:string}[];currency:string;niche_category:string|null};
 
@@ -145,7 +145,7 @@ function IdentityStep({catalog,value,busy,mode,submit}:{catalog:Catalog;value:Re
 }
 
 function ProductsStep({view,catalog,request,setView,busy,mode,next}:{view:BusinessView;catalog:Catalog;request:Request;setView:(v:BusinessView)=>void;busy:boolean;mode:'setup'|'edit';next:()=>void}){
-  const blank={name:'',category:'',variant:'',unit:'',quantity:'',cost:'',price:''};
+  const blank={name:'',category:'',variant:'',unit:'',quantity:'',cost:'',price:'',expense:''};
   const [f,setF]=useState(blank);
   const [editing,setEditing]=useState<string|null>(null);
   const [working,setWorking]=useState(false);
@@ -157,14 +157,14 @@ function ProductsStep({view,catalog,request,setView,busy,mode,next}:{view:Busine
     setWorking(true);setError('');setNote('');
     try{setView(await fn());if(done)setNote(done);}catch(e){setError(errorText(e));}finally{setWorking(false);}
   }
-  const payload=()=>({name:f.name,category:f.category,variant:f.variant,unit:f.unit,quantity:f.quantity.trim()?f.quantity.replace(/,/g,''):null,cost_minor:toMinor(f.cost),price_minor:toMinor(f.price)});
+  const payload=()=>({name:f.name,category:f.category,variant:f.variant,unit:f.unit,quantity:f.quantity.trim()?f.quantity.replace(/,/g,''):null,cost_minor:toMinor(f.cost),price_minor:toMinor(f.price),expense_minor:toMinor(f.expense)});
   return <div>
     <p className="muted">{t('Add what you sell. Purchase cost and selling price are optional, but they let Capzoryx work out your real profit and break-even price.')}</p>
     {!!view.products.length&&<div className="table-wrap"><table className="biz-products"><thead><tr><th>{t('Product')}</th><th>{t('Quantity')}</th><th>{t('Cost')}</th><th>{t('Price')}</th><th/></tr></thead>
       <tbody>{view.products.map(p=><tr key={p.id}><td><b>{p.name}</b><small>{[p.category,p.variant].filter(Boolean).join(' · ')}{p.market_key&&<span className="pill">{t('Market price tracked')}</span>}</small></td>
         <td>{p.quantity?`${p.quantity} ${p.unit}`:p.unit||'—'}</td><td className="amount">{p.cost_minor==null?<span className="muted">{t('Not set')}</span>:money(p.cost_minor,c)}</td>
         <td className="amount">{p.price_minor==null?<span className="muted">{t('Not set')}</span>:money(p.price_minor,c)}</td>
-        <td><button type="button" className="ghost small-button" onClick={()=>{setEditing(p.id);setF({name:p.name,category:p.category,variant:p.variant,unit:p.unit,quantity:p.quantity||'',cost:fromMinor(p.cost_minor),price:fromMinor(p.price_minor)});}}>{t('Edit')}</button>
+        <td><button type="button" className="ghost small-button" onClick={()=>{setEditing(p.id);setF({name:p.name,category:p.category,variant:p.variant,unit:p.unit,quantity:p.quantity||'',cost:fromMinor(p.cost_minor),price:fromMinor(p.price_minor),expense:fromMinor(p.expense_minor)});}}>{t('Edit')}</button>
           <button type="button" className="ghost small-button" disabled={working} onClick={()=>void act(()=>request<BusinessView>(`/business/products/${p.id}/delete`,{}))}>{t('Remove')}</button></td></tr>)}</tbody></table></div>}
     <form className="biz-product-form" onSubmit={e=>{e.preventDefault();void act(()=>request<BusinessView>(editing?`/business/products/${editing}`:'/business/products',payload()),editing?t('Product updated.'):t('{name} added.',{name:f.name})).then(()=>{setF(blank);setEditing(null);});}}>
       <div className="form-row">
@@ -178,12 +178,13 @@ function ProductsStep({view,catalog,request,setView,busy,mode,next}:{view:Busine
         <label>{t('Purchase cost per unit ({currency})',{currency:c})}<input inputMode="decimal" value={f.cost} onChange={set('cost')} placeholder={t('optional')}/></label>
         <label>{t('Selling price per unit ({currency})',{currency:c})}<input inputMode="decimal" value={f.price} onChange={set('price')} placeholder={t('optional')}/></label>
       </div>
+      <label>{t('Costs to sell one unit ({currency})',{currency:c})}<input inputMode="decimal" value={f.expense} onChange={set('expense')} placeholder={t('optional: making charge, buyback deduction, transport')}/></label>
       <div className="actions"><button className="secondary" disabled={working||!f.name.trim()}>{editing?t('Update product'):t('Add product')}</button>
         {editing&&<button type="button" className="ghost" onClick={()=>{setEditing(null);setF(blank);}}>{t('Cancel')}</button>}
         <label className="button-like secondary">{t('Import Excel/CSV')}<input type="file" accept=".csv,text/csv" hidden onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;
           void file.text().then(text=>act(async()=>{const r=await request<BusinessView&{added:number;skipped:{row:number;reason:string}[]}>('/business/import',{csv:text});
             setNote(t('{added} added, {skipped} skipped.',{added:r.added,skipped:r.skipped.length}));return r;}));}}/></label></div>
-      <small className="muted">{t('For Excel, save the sheet as CSV first. Columns: Product, Category, Unit, Quantity, Cost, Price.')}</small>
+      <small className="muted">{t('For Excel, save the sheet as CSV first. Columns: Product, Category, Unit, Quantity, Cost, Price, Expense.')}</small>
     </form>
     {note&&<p className="success" role="status">{note}</p>}
     {error&&<p className="error" role="alert">{error}</p>}

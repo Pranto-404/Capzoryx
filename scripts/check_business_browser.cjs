@@ -112,6 +112,16 @@ async function openPage(page,name){
     await local.getByText('Your price').waitFor();
     assert.match(await local.innerText(),/BDT\s200,000\.00/);
     await panel.getByText(/Web research is not set up|Online research is off|Research my market/).first().waitFor();
+    // Phase 3: the owner's own numbers. 22K gold bought at 194,000 is now quoted at 200,000 with no selling costs entered.
+    const numbers=owner.locator('.insights-panel');
+    await owner.reload();
+    await numbers.getByRole('heading',{name:'Your numbers'}).waitFor();
+    const goldRow=numbers.locator('tbody tr').filter({hasText:'22K Gold'});
+    assert.match(await goldRow.innerText(),/In profit[\s\S]*BDT\s194,000\.00[\s\S]*BDT\s200,000\.00[\s\S]*BDT\s6,000\.00/);
+    await numbers.getByRole('heading',{name:'If market prices move'}).waitFor();
+    await numbers.getByText('Business capability').waitFor();
+    await numbers.scrollIntoViewIfNeeded();await owner.screenshot({path:path.join(process.env.SETUP_SHOTS||require('node:os').tmpdir(),'insights.png'),clip:await numbers.boundingBox()}).catch(()=>{});
+
     await shot(owner,'market-panel');
 
     // E: signing out and back in keeps the profile and does not show setup again.

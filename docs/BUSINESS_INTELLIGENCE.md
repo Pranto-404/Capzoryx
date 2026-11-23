@@ -53,7 +53,7 @@ All tables are new and keyed by `business_id`. Free text is sealed with the work
 - Dashboard "Market" and "Competitors" panels with research status, sources and freshness badges.
 - Tests: C (research starts, honest status), H (provider down → limitation shown), F (new product updates the watch list).
 
-### Phase 3 — Financial intelligence ☐
+### Phase 3 — Financial intelligence ☑ (done)
 - Position per product: cost, reference value, gross, expenses, net, break-even resale price, and exposure. Reproduces the gold example: 194,000 → 200,000 with 7,000 costs = −1,000.
 - Price-move scenarios at −20/−10/−5/+5/+10% on inventory.
 - Growth from the ledger: month-over-month and year-over-year, gross and net margin. The baseline is guarded, so a zero or missing month shows "not enough history".

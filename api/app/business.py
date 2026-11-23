@@ -162,6 +162,7 @@ class Product(Contract):
     quantity: Decimal | None = Field(default=None, ge=0, le=10**9, decimal_places=3)
     cost_minor: int | None = Money
     price_minor: int | None = Money
+    expense_minor: int | None = Money  # per-unit selling costs: making charge, buyback deduction, transport
 
 
 class Csv(Contract):
@@ -332,7 +333,8 @@ def delete_product(identity: str, actor=Depends(principal), db=Depends(db_connec
 HEADERS = {'name': ('name', 'product', 'item', 'product name', 'পণ্য', 'নাম'), 'category': ('category', 'type', 'ক্যাটাগরি'),
            'variant': ('variant', 'size', 'model'), 'brand': ('brand', 'ব্র্যান্ড'), 'unit': ('unit', 'একক'),
            'quantity': ('quantity', 'qty', 'stock', 'পরিমাণ'), 'cost': ('cost', 'purchase price', 'buy price', 'cost price', 'ক্রয়মূল্য'),
-           'price': ('price', 'selling price', 'sale price', 'mrp', 'বিক্রয়মূল্য')}
+           'price': ('price', 'selling price', 'sale price', 'mrp', 'বিক্রয়মূল্য'),
+           'expense': ('expense', 'expenses', 'selling cost', 'other cost', 'charges', 'খরচ')}
 
 
 def to_minor(text):
@@ -363,7 +365,8 @@ def import_products(body: Csv, actor=Depends(principal), db=Depends(db_connectio
             try:
                 product = Product(name=cell('name'), category=cell('category')[:80], variant=cell('variant')[:60], brand=cell('brand')[:60],
                                   unit=cell('unit')[:20], quantity=Decimal(cell('quantity').replace(',', '')) if cell('quantity') else None,
-                                  cost_minor=to_minor(cell('cost')), price_minor=to_minor(cell('price')))
+                                  cost_minor=to_minor(cell('cost')), price_minor=to_minor(cell('price')),
+                                  expense_minor=to_minor(cell('expense')))
                 store_product(db, owner.business_id, product)
                 added += 1
             except sec.PolicyError as error:  # duplicate or limit; checked before any write, so nothing partial is left

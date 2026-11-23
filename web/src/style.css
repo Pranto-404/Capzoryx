@@ -660,3 +660,14 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
 .market-competitors{list-style:none;padding:0;margin:0}.market-competitors li{padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
 .small-ring{display:inline-block;width:14px;height:14px;vertical-align:middle}
 @media(max-width:760px){.market-list>li{grid-template-columns:1fr}.market-value{text-align:left}}
+/* Financial intelligence */
+.insights-panel h3{margin-top:24px;font-size:15px}.insights-table td{vertical-align:middle}.insights-table td small{display:block}
+.pill.status-ok{background:#e6f5ee;color:#08613f}.pill.status-thin{background:#fff4dc;color:#7a5512}.pill.status-loss{background:#fde8ec;color:#9b2c3f}
+:root[data-theme=dark] .pill.status-ok{background:#153a32;color:#b7f0d6}:root[data-theme=dark] .pill.status-thin{background:#3a3220;color:#efd7a3}:root[data-theme=dark] .pill.status-loss{background:#3e2230;color:#ffd0d9}
+.insights-totals,.insights-growth{margin-top:14px}.insights-totals .metric strong,.insights-growth .metric strong{font-size:22px}
+.scenario-row{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}.scenario-row div{border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center}
+.scenario-row div.now{border-color:var(--brand)}.scenario-row b{display:block;font-size:13px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.capability{display:grid;grid-template-columns:160px 1fr;gap:20px;align-items:start}.capability-score strong{display:block;font-size:48px;line-height:1;color:var(--brand)}
+.capability ul{list-style:none;padding:0;margin:0}.capability li{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+.capability li small{display:block}.capability meter{width:120px;flex-shrink:0}
+@media(max-width:760px){.scenario-row{grid-template-columns:repeat(3,1fr)}.capability{grid-template-columns:1fr}}
