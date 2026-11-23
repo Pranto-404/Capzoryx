@@ -241,7 +241,8 @@ def parse_research(body):
     candidate = (body.get('candidates') or [{}])[0]
     text = ''.join(p.get('text', '') for p in (candidate.get('content') or {}).get('parts', []))
     meta = candidate.get('groundingMetadata') or {}
-    chunks = [dict(url=(c.get('web') or {}).get('uri', ''), title=(c.get('web') or {}).get('title', '')) for c in meta.get('groundingChunks', [])]
+    safe = lambda u: u if isinstance(u, str) and re.match(r'^https?://[^\s]{1,490}$', u) else ''  # only web links are ever shown
+    chunks = [dict(url=safe((c.get('web') or {}).get('uri', '')), title=str((c.get('web') or {}).get('title', ''))[:120]) for c in meta.get('groundingChunks', [])]
     supports = [((s.get('segment') or {}).get('text', ''), s.get('groundingChunkIndices', [])) for s in meta.get('groundingSupports', [])]
 
     def sources(line):

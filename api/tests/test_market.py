@@ -22,7 +22,8 @@ def grounded(text=ANSWER):
     return {'candidates': [{'content': {'parts': [{'text': text}]}, 'groundingMetadata': {
         'webSearchQueries': ['gold price dhaka'],
         'groundingChunks': [{'web': {'uri': 'https://example.org/gold-news', 'title': 'example.org'}},
-                            {'web': {'uri': 'https://bajus.example/price', 'title': 'bajus.example'}}],
+                            {'web': {'uri': 'https://bajus.example/price', 'title': 'bajus.example'}},
+                            {'web': {'uri': 'javascript:alert(1)', 'title': 'bad'}}],
         'groundingSupports': [{'segment': {'text': first.split(': ', 1)[1]}, 'groundingChunkIndices': [0]},
                               {'segment': {'text': comp.split(': ', 1)[1]}, 'groundingChunkIndices': [0]},
                               {'segment': {'text': price.split(': ', 1)[1]}, 'groundingChunkIndices': [1]}]}}]}
@@ -121,6 +122,7 @@ def test_research_is_cited_consented_and_honest_when_off(world, net, monkeypatch
     # Only the cited 22K price became an observation; the uncited 21K line did not.
     assert local['latest']['kind'] == 'research' and local['latest']['value_minor'] == 23_300_000
     assert local['latest']['url'] == 'https://bajus.example/price'
+    assert all(s['url'].startswith('https://') for s in research['result']['sources'])  # a javascript: link is dropped
     assert c.post(BASE + '/research', json={}).status_code == 429  # just researched and nothing changed
 
     c.post('/api/auth/logout', json={})

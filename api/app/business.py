@@ -376,3 +376,33 @@ def import_products(body: Csv, actor=Depends(principal), db=Depends(db_connectio
             except Exception:  # noqa: BLE001 - any bad cell skips only that row
                 skipped.append(dict(row=number, reason='INVALID_ROW'))
         return dict(view(db, owner.business_id), added=added, skipped=skipped[:50])
+
+
+BI_TABLES = ('biz_profile', 'biz_products', 'market_watch', 'research_runs', 'biz_alerts', 'biz_alert_state', 'advisor_feedback')
+
+
+def erase(db, business):
+    """Remove the business profile and everything derived from it (called when the owner erases a workspace's private data)."""
+    for table in BI_TABLES:
+        db.execute(f'DELETE FROM {table} WHERE business_id=?', (business,))  # noqa: S608 - fixed table names
+    db.execute('DELETE FROM market_observations WHERE business_id=?', (business,))  # the owner's own quotes; public prices stay
+
+
+def export(db, business):
+    """The owner's business-intelligence data in readable form, for the workspace export."""
+    from api.app.market import research_view
+    data, step, completed, _ = load_profile(db, business)
+    quotes = db.execute('SELECT indicator,value_minor,currency,unit,source,url,observed_at,kind FROM market_observations '
+                        'WHERE business_id=? ORDER BY fetched_at', (business,)).fetchall()
+    key = customer_key(db, business)
+    alerts = []
+    for identity, level, box, tag, at in db.execute('SELECT id,level,data_enc,key_tag,created_at FROM biz_alerts WHERE business_id=? ORDER BY created_at',
+                                                    (business,)).fetchall():
+        if key and key_tag(key) == tag:
+            alerts.append(dict(json.loads(unseal(key, box, identity + '/alert')), level=level, created_at=at))
+    feedback = db.execute('SELECT insight,tier,response,baseline_json,created_at FROM advisor_feedback WHERE business_id=? ORDER BY created_at',
+                          (business,)).fetchall()
+    return dict(profile=data, setup_step=step, completed_at=completed, products=products(db, business),
+                market_quotes=[dict(zip(('indicator', 'value_minor', 'currency', 'unit', 'source', 'url', 'observed_at', 'kind'), q)) for q in quotes],
+                research=research_view(db, business), alerts=alerts,
+                advisor_feedback=[dict(insight=f[0], tier=f[1], response=f[2], baseline=json.loads(f[3]), created_at=f[4]) for f in feedback])

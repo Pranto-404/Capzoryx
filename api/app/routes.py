@@ -236,6 +236,8 @@ def export_workspace(actor=Depends(principal),db=Depends(db_connection)):
             collections['settlements'] = [dict(row) for row in db.execute(
                 'SELECT id,receivable_id,amount_minor,cash_record_id,created_at FROM receivable_settlements WHERE business_id=? ORDER BY created_at,id',
                 (actor.business_id,))]
+            from api.app.business import export as business_export
+            collections['business_intelligence'] = business_export(db, actor.business_id)
         return dict(**collections, cash_notes=record_notes.read(db, actor.business_id, events),format_version=1,workspace_id=actor.business_id,original_dataset=original.model_dump(mode='json'),current_dataset=current.model_dump(mode='json'),audit_events=events,recordkeeping_only=True,simulation_only=True)
 
 
