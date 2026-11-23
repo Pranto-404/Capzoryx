@@ -17,6 +17,7 @@ from api.app import business
 from api.app import market
 from api.app import insights
 from api.app import monitor
+from api.app import advisor
 from api.app.chat import routes as chat_routes
 from api.app.notifications import email_alerts, push
 from api.app.notifications.routes import router as notification_router
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI):
         business.schema(db)
         market.schema(db)
         monitor.schema(db)
+        advisor.schema(db)
         profile.schema(db)
         books.schema(db)
         push.schema(db)
@@ -104,6 +106,7 @@ app.include_router(business.router)
 app.include_router(market.router)
 app.include_router(insights.router)
 app.include_router(monitor.router)
+app.include_router(advisor.router)
 app.include_router(chat_routes.router)
 app.include_router(push.router)
 app.include_router(notification_router)
