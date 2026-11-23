@@ -46,7 +46,7 @@ All tables are new and keyed by `business_id`. Free text is sealed with the work
 - Web: `BusinessSetup.tsx` wizard (5 steps, progress bar, autosave, resume), Settings → Business editor, resume banner.
 - Tests: first-time owner sees the wizard (A); profile and products are validated and saved (B); returning owner skips it (E); isolation between businesses (I).
 
-### Phase 2 — Market data and research ☐
+### Phase 2 — Market data and research ☑ (done; BAJUS has no free API, so local dealer prices come from the owner or cited web research)
 - Indicator catalog per industry (`market_catalog.py`): gold/silver (BDT per bhori, BAJUS reference plus international spot through FX), FX pairs, fuel, rice and other staples, with "no free source" marked honestly for other industries.
 - Providers with a common interface `fetch() -> observations | Unavailable`. FX reuses `fx.py`. Owner-entered quotes are always available.
 - Research runs: Gemini grounded search returns market notes and competitor candidates with source URLs. Without a key, or on failure, the run is `unavailable` with the reason; nothing is filled in.

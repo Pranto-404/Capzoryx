@@ -254,6 +254,8 @@ def gaps(data, items):
 
 
 def view(db, business):
+    from api.app.market import refresh_watch
+    refresh_watch(db, business)  # products, industry or location may have changed what the market panel follows
     data, step, completed, updated = load_profile(db, business)
     items = products(db, business)
     return dict(profile=data, step=step, completed=completed is not None, completed_at=completed, updated_at=updated,

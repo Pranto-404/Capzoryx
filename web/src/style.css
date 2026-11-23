@@ -649,3 +649,14 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
 .biz-gaps{margin-top:18px;font-size:13px}.biz-gaps ul{color:var(--muted);padding-left:20px}
 .biz-edit .biz-progress button:disabled{opacity:1}
 @media(max-width:760px){.biz-progress button{font-size:11px}.biz-expense{grid-template-columns:1fr 110px auto}}
+/* Market watch */
+.market-list{list-style:none;padding:0;margin:0}.market-list>li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:6px 16px;padding:14px 0;border-bottom:1px solid var(--line)}
+.market-list>li>div:first-child small{margin-top:2px}.market-value{text-align:right}.market-value strong{display:block;font-size:18px;font-variant-numeric:tabular-nums}
+.market-value small{margin-top:4px}.market-value .link{padding:0;margin-top:4px;font-size:12px;min-height:0}.market-quote{grid-column:1/-1}
+.market-warn{color:#8b6014!important}.pill.kind-owner{background:#eaf0ff;color:#2a4fa8}.pill.kind-research{background:#f3ecff;color:#5a3a9a}.pill.kind-derived{background:#fff4dc;color:#7a5512}
+:root[data-theme=dark] .market-warn{color:#efd7a3!important}
+.market-panel h3{margin-top:22px;font-size:15px}.market-findings{padding-left:18px;font-size:13px;line-height:1.6}.market-findings li{margin-bottom:10px}
+.market-sources{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:3px}.market-sources a{color:var(--brand)}.market-unverified{color:#8b6014;margin-top:3px}
+.market-competitors{list-style:none;padding:0;margin:0}.market-competitors li{padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.small-ring{display:inline-block;width:14px;height:14px;vertical-align:middle}
+@media(max-width:760px){.market-list>li{grid-template-columns:1fr}.market-value{text-align:left}}
