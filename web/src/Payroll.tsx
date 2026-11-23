@@ -11,7 +11,7 @@ type Overview={period:string;currency:string;employees:Employee[];payments:Payme
 type Form='add'|'bonus'|null;
 
 const toMinor=(value:string)=>Math.round(Number(value.replace(/,/g,''))*100);
-const monthName=(period:string)=>new Date(period+'-01T00:00:00').toLocaleDateString(undefined,{month:'long',year:'numeric'});
+const monthName=(period:string)=>new Date(period+'-01T00:00:00').toLocaleDateString(document.documentElement.lang||undefined,{month:'long',year:'numeric'});
 
 /** Payroll for the workspace owner: employees, monthly salaries, bonuses and private invite links. */
 export default function Payroll({request,onChanged}:{request:Request;onChanged:()=>void}){
@@ -41,11 +41,11 @@ export default function Payroll({request,onChanged}:{request:Request;onChanged:(
     <section className="payroll-top">
       <label className="payroll-month">{t('Month')}<input type="month" value={period} onChange={e=>{if(e.target.value)void run(()=>load(e.target.value));}}/></label>
       <div className="payroll-actions">
-        <button disabled={busy||!s.unpaid_count} onClick={()=>void run(async()=>{
+        {!!data.employees.length&&<><button disabled={busy||!s.unpaid_count} onClick={()=>void run(async()=>{
           const r=await request<{paid:number;total_minor:number}>('/payroll/salaries',{period});onChanged();
           return t('Paid {count} salaries for {month}: {total}.',{count:r.paid,month:monthName(period),total:m(r.total_minor)});})}>
           {s.unpaid_count?t('Pay {count} salaries · {total}',{count:s.unpaid_count,total:m(s.due_this_period_minor)}):t('All salaries paid')}</button>
-        <button className="secondary" disabled={busy||!s.active} onClick={()=>setForm(form==='bonus'?null:'bonus')}>{t('Give a bonus')}</button>
+        <button className="secondary" disabled={busy||!s.active} onClick={()=>setForm(form==='bonus'?null:'bonus')}>{t('Give a bonus')}</button></>}
         <button className="secondary" disabled={busy} onClick={()=>setForm(form==='add'?null:'add')}>{t('Add employee')}</button>
       </div>
     </section>

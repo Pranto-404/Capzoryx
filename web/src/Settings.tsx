@@ -12,10 +12,10 @@ import {BusinessSetup,type BusinessView} from './BusinessSetup';
 
 type Request=<T>(path:string,body?:unknown)=>Promise<T>;
 type Lists={workspaces:WorkspaceItem[];cleared:WorkspaceItem[]};
-export type SettingsProps={onBusinessSaved?:(view:BusinessView)=>void;session:Session;profile:Profile|null;request:Request;reloadProfile:()=>Promise<void>;changeSession:(s:Session)=>void;lists:Lists;reloadLists:()=>Promise<void>;onExportPdf:()=>Promise<void>;onExportJson:()=>Promise<void>;exporting:boolean;cloudAvailable:boolean};
-const tabs=['Profile','Business','Security','Sharing','Data'] as const;
+export type SettingsProps={connections?:ReactNode;onBusinessSaved?:(view:BusinessView)=>void;session:Session;profile:Profile|null;request:Request;reloadProfile:()=>Promise<void>;changeSession:(s:Session)=>void;lists:Lists;reloadLists:()=>Promise<void>;onExportPdf:()=>Promise<void>;onExportJson:()=>Promise<void>;exporting:boolean;cloudAvailable:boolean};
+const tabs=['Profile','Business','Connections','Security','Sharing','Data'] as const;
 type Tab=typeof tabs[number];
-const tabNames:Record<Tab,string>={Profile:T('Profile'),Business:T('Business'),Security:T('Password & 2-step'),Sharing:T('Sharing'),Data:T('Data & workspaces')};
+const tabNames:Record<Tab,string>={Profile:T('Profile'),Business:T('Business'),Connections:T('Connections'),Security:T('Password & 2-step'),Sharing:T('Sharing'),Data:T('Data & workspaces')};
 
 function Section({title,hint,children}:{title:string;hint?:string;children:ReactNode}){return <section className="panel settings-section"><h2>{title}</h2>{hint&&<p className="muted">{hint}</p>}{children}</section>;}
 function useMessage(){const [m,setM]=useState<{kind:'ok'|'error';text:string}|null>(null);return {message:m,ok:(text:string)=>setM({kind:'ok',text}),fail:(e:unknown)=>setM({kind:'error',text:e instanceof Error?e.message:t('Something went wrong. Please try again.')}),clear:()=>setM(null)};}
@@ -36,9 +36,10 @@ export default function Settings(props:SettingsProps){
   const name=profile?.display_name||session.display_name||session.username||'You';
   return <div className="settings">
     <div className="settings-head"><Avatar profile={profile} name={name} size={56}/><div><h2>{name}</h2><p className="muted">{profile?.email||session.username}</p></div></div>
-    <div className="settings-tabs" role="tablist" aria-label={t('Settings sections')}>{tabs.filter(tb=>tb!=='Business'||props.session.role==='owner').map(tb=><button key={tb} role="tab" aria-selected={tab===tb} className={tab===tb?'active':'secondary'} onClick={()=>setTab(tb)}>{t(tabNames[tb])}</button>)}</div>
+    <div className="settings-tabs" role="tablist" aria-label={t('Settings sections')}>{tabs.filter(tb=>(tb!=='Business'||props.session.role==='owner')&&(tb!=='Connections'||!!props.connections)).map(tb=><button key={tb} role="tab" aria-selected={tab===tb} className={tab===tb?'active':'secondary'} onClick={()=>setTab(tb)}>{t(tabNames[tb])}</button>)}</div>
     {tab==='Profile'&&<ProfileTab {...props}/>}
     {tab==='Business'&&session.role==='owner'&&<BusinessSetup request={props.request} mode="edit" onDone={v=>props.onBusinessSaved?.(v)}/>}
+    {tab==='Connections'&&props.connections}
     {tab==='Security'&&<><SecurityTab {...props}/><AppDevices request={props.request}/></>}
     {tab==='Sharing'&&<SharingTab {...props}/>}
     {tab==='Data'&&<DataTab {...props}/>}

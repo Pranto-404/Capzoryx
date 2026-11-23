@@ -15,7 +15,7 @@ type Insights={currency:string;positions:Position[];totals:{cost_minor:number;ex
 const MISSING:Record<string,string>={cost:T('purchase cost'),reference:T('a current price'),quantity:T('quantity')};
 const STATUS:Record<string,string>={ok:T('In profit'),thin:T('Near break-even'),loss:T('Below break-even'),incomplete:T('Needs data')};
 const pct=(bp:number|null|undefined)=>bp==null?'—':`${bp>0?'+':''}${(bp/100).toFixed(1)}%`;
-const monthName=(m:string)=>new Date(m+'-01T00:00:00').toLocaleDateString(undefined,{month:'long',year:'numeric'});
+const monthName=(m:string)=>new Date(m+'-01T00:00:00').toLocaleDateString(document.documentElement.lang||undefined,{month:'long',year:'numeric'});
 
 /** Real profit per product after selling costs, how far prices can fall, growth from records, and an explained score. */
 export function InsightsPanel({request,openProducts}:{request:Request;openProducts:()=>void}){
@@ -33,12 +33,12 @@ export function InsightsPanel({request,openProducts}:{request:Request;openProduc
     <div className="table-wrap"><table className="insights-table"><thead><tr><th>{t('Product')}</th><th>{t('Cost')}</th><th>{t('Price today')}</th><th>{t('Costs to sell')}</th><th>{t('Net per unit')}</th><th>{t('Break-even price')}</th></tr></thead>
       <tbody>{data.positions.map(p=><tr key={p.id} className={'pos-'+p.status}>
         <td><b>{p.name}</b><small><span className={'pill status-'+p.status}>{t(STATUS[p.status])}</span>{p.quantity&&` ${p.quantity} ${p.unit}`}</small></td>
-        <td className="amount">{p.cost_minor==null?'—':m(p.cost_minor)}</td>
-        <td className="amount">{p.reference?<>{m(p.reference.value_minor)}<small>{p.reference.basis==='market'?p.reference.source:t('Your selling price')}</small></>:'—'}</td>
+        <td className="amount" data-label={t('Cost')}>{p.cost_minor==null?'—':m(p.cost_minor)}</td>
+        <td className="amount" data-label={t('Price today')}>{p.reference?<>{m(p.reference.value_minor)}<small>{p.reference.basis==='market'?p.reference.source:t('Your selling price')}</small></>:'—'}</td>
         {p.status==='incomplete'?<td colSpan={3} className="muted">{t('Add {what} to calculate.',{what:p.missing.map(x=>t(MISSING[x]||x)).join(', ')})}</td>:<>
-          <td className="amount">{m(p.expense_minor)}</td>
-          <td className="amount"><b>{signed(p.net_minor!)}</b><small>{t('Gross {gross}',{gross:m(p.gross_minor!)})}</small></td>
-          <td className="amount">{m(p.break_even_minor!)}<small>{p.cushion_bp!=null&&(p.cushion_bp<0?t('Price is {pct} below it',{pct:pct(-p.cushion_bp).replace('+','')}):t('Price can fall {pct} before a loss',{pct:pct(p.cushion_bp).replace('+','')}))}</small></td></>}
+          <td className="amount" data-label={t('Costs to sell')}>{m(p.expense_minor)}</td>
+          <td className="amount" data-label={t('Net per unit')}><b>{signed(p.net_minor!)}</b><small>{t('Gross {gross}',{gross:m(p.gross_minor!)})}</small></td>
+          <td className="amount" data-label={t('Break-even price')}>{m(p.break_even_minor!)}<small>{p.cushion_bp!=null&&(p.cushion_bp<0?t('Price is {pct} below it',{pct:pct(-p.cushion_bp).replace('+','')}):t('Price can fall {pct} before a loss',{pct:pct(p.cushion_bp).replace('+','')}))}</small></td></>}
       </tr>)}</tbody></table></div>}
     {data.positions.some(p=>p.reference?.basis==='market')&&<p className="muted small-print">{t('A published market price is not always what a dealer pays back. Put buyback deductions and other selling costs in “Costs to sell one unit” for each product.')}</p>}
     {data.totals.counted>0&&<div className="metrics insights-totals">
@@ -62,10 +62,10 @@ export function InsightsPanel({request,openProducts}:{request:Request;openProduc
 
     <h3>{t('Business capability')}</h3>
     <div className="capability">
-      <div className="capability-score"><strong>{cap.score??'—'}</strong><small>{cap.score==null?t('Not enough data yet'):t('out of 100 · based on {pct}% of areas',{pct:cap.coverage_pct})}</small>
-        {cap.preliminary&&cap.score!=null&&<span className="pill status-thin">{t('Preliminary: add more data')}</span>}</div>
+      <div className="capability-score"><strong>{cap.preliminary?'—':cap.score??'—'}</strong><small>{cap.score==null||cap.preliminary?t('Not enough data for a score yet. Each area below says what is missing.'):t('out of 100 · based on {pct}% of areas',{pct:cap.coverage_pct})}</small>
+        </div>
       <ul>{cap.areas.map(a=><li key={a.key}><div><b>{t(a.label)}</b><small>{a.score==null?t(a.missing):t(a.why)}</small></div>
-        {a.score==null?<span className="muted">{t('No data')}</span>:<meter min={0} max={100} low={40} high={70} optimum={100} value={a.score} aria-label={t(a.label)}>{a.score}</meter>}</li>)}</ul>
+        {a.score==null?<span className="muted no-data">{t('No data')}</span>:<meter min={0} max={100} low={40} high={70} optimum={100} value={a.score} aria-label={t(a.label)}>{a.score}</meter>}</li>)}</ul>
     </div>
   </section>;
 }

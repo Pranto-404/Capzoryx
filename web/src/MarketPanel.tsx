@@ -39,18 +39,18 @@ export function MarketPanel({request,openSettings}:{request:Request;openSettings
   async function act(fn:()=>Promise<Market>){setBusy(true);setError('');try{setData(await fn());}catch(e){setError(errorText(e));}finally{setBusy(false);}}
   if(!data)return <section className="panel market-panel" role="status"><h2>{t('Your market')}</h2><p className="muted">{error||t('Checking market prices…')}</p></section>;
   const r=data.research;
-  return <section className="panel market-panel" aria-labelledby="market-title">
+  return <section id="market" className="panel market-panel" aria-labelledby="market-title">
     <div className="panel-heading"><div><p className="eyebrow">{t('Market watch')}</p><h2 id="market-title">{t('Your market')}</h2></div>
       <button className="secondary small-button" disabled={busy} onClick={()=>void act(()=>request<Market>('/market'))}>{t('Refresh')}</button></div>
     <ul className="market-list">{data.indicators.map(i=><li key={i.key}>
-      <div><b>{i.label}</b><small>{i.unit}</small></div>
+      <div><b>{t(i.label)}</b><small>{t(i.unit)}</small></div>
       <div className="market-value">
         {i.latest?<><strong>{money(i.latest.value_minor,i.currency)}</strong>
           <small><span className={'pill kind-'+i.latest.kind}>{t(KIND[i.latest.kind]||i.latest.kind)}</span> {day(i.latest.observed_at)}
             {i.latest.url?<> · <a href={i.latest.url} target="_blank" rel="noreferrer noopener">{i.latest.source}</a></>:<> · {i.latest.source}</>}</small></>
           :<strong className="muted">{i.status==='needs_quote'?t('No price yet'):t('Unavailable')}</strong>}
-        {i.status==='stale'&&<small className="market-warn">{t('Out of date: the source has not updated recently.')}{i.reason&&' '+i.reason}</small>}
-        {i.status==='unavailable'&&<small className="market-warn">{i.reason||t('The source could not be reached. Nothing is shown rather than a guess.')}</small>}
+        {i.status==='stale'&&<small className="market-warn">{t('Out of date: the source has not updated recently.')}</small>}
+        {i.status==='unavailable'&&<small className="market-warn">{t('The source could not be reached. Nothing is shown rather than a guess.')}</small>}
         {i.source_kind==='quote'&&quote!==i.key&&<button className="link" onClick={()=>setQuote(i.key)}>{t('Add today\'s price')}</button>}
       </div>
       {quote===i.key&&<QuoteForm currency={i.currency} unit={i.unit} busy={busy} cancel={()=>setQuote(null)}
@@ -73,7 +73,7 @@ export function MarketPanel({request,openSettings}:{request:Request;openSettings
         {quote===p.indicator&&<QuoteForm currency={p.currency} unit={p.unit} busy={busy} cancel={()=>setQuote(null)}
           submit={b=>void act(async()=>{const next=await request<Market>('/market/quotes',{indicator:p.indicator,...b});setQuote(null);return next;})}/>}
       </li>)}</ul></>}
-    {data.coverage_note&&<p className="muted small-print">{data.coverage_note}</p>}
+    {data.coverage_note&&<p className="muted small-print">{t('No free live price feed covers this industry, so your products are priced from what you see in the market and from cited web research.')}</p>}
 
     {!!alerts.length&&<><h3>{t('Recent alerts')}</h3><ul className="market-alerts">{alerts.slice(0,6).map(a=><li key={a.id} className={'alert-'+a.level}>
       <details><summary><span className={'pill level-'+a.level}>{a.level===3?t('Critical'):a.level===2?t('Warning'):t('Update')}</span> <b>{a.title}</b>

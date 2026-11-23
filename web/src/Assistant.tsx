@@ -72,7 +72,7 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
       // 3. Everything else goes to smart assist, if it is on.
       const offTopic=local.intent==='out_of_domain';
       if(offTopic&&mode!=='off-topic'){add({role:'assistant',kind:'device',text:local.text,offTopic:q});return;}
-      if(!smart){add({role:'assistant',kind:'device',text:profile&&!profile.smart_assist?t('I can only answer that with smart assist. You can turn it on in Settings.'):t('Smart assist is not available right now. I can still help with your balance, invoices, cash flow, loans and adding records.')});return;}
+      if(!smart){add({role:'assistant',kind:'device',text:profile&&!profile.smart_assist?t('I can answer questions about your business right away, for example “আমার ব্যবসা সম্পর্কে বলো”, “বাজার কেমন?” or “কোন পণ্যে লাভ বেশি?”. For other questions, turn on smart assist in Settings.'):t('Smart assist is not available right now. I can still help with your balance, invoices, cash flow, loans and adding records.')});return;}
       if(owner&&looksLikeTransaction(q)){
         const r=await request<{draft:Draft}>('/assist/extract',{text:q});
         if(!mounted.current)return;
