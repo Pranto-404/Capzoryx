@@ -160,8 +160,12 @@ def test_research_falls_back_to_groq_web_search_when_gemini_is_busy(world, monke
         if 'generativelanguage' in url:
             calls.append('gemini')
             return httpx.Response(503, json={'error': {'message': 'high demand'}})
+        if url.endswith('/openai/v1/models'):
+            return httpx.Response(200, json={'data': [{'id': 'openai/gpt-oss-120b'}, {'id': 'llama-3.3-70b-versatile'}]})
         if 'api.groq.com' in url:
-            calls.append(json.loads(request.content)['model'])
+            body = json.loads(request.content)
+            calls.append(body['model'])
+            assert body.get('tools') == [{'type': 'browser_search'}]  # no compound model on this account
             text = ('FINDING: Biryani demand in Mirpur peaks on Fridays and during Ramadan evenings.\n'
                     'FINDING: Something the pages do not support at all.\n'
                     'COMPETITOR: Kacchi Bhai | leader | Mirpur | Popular biryani chain\n'
@@ -181,7 +185,7 @@ def test_research_falls_back_to_groq_web_search_when_gemini_is_busy(world, monke
     c.post('/api/business/products', json={'name': 'Chicken biryani', 'unit': 'plate', 'cost_minor': 15_000, 'price_minor': 22_000}).raise_for_status()
     c.post('/api/business/step/consent', json={'external_research': True}).raise_for_status()
     c.post(BASE + '/research', json={}).raise_for_status()
-    assert calls[0] == 'gemini' and 'groq/compound-mini' in calls
+    assert calls[0] == 'gemini' and calls[-1] == 'openai/gpt-oss-120b' and not any('compound' in c for c in calls)
     research = c.get(BASE).json()['research']
     assert research['status'] == 'done'
     findings, competitors = research['result']['findings'], {x['name']: x for x in research['result']['competitors']}

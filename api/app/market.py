@@ -40,7 +40,8 @@ RESEARCH_EVERY = 6 * 3600
 METALS_SOURCES = ('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json',
                   'https://latest.currency-api.pages.dev/v1/currencies/usd.json')
 GEMINI_MODELS = ('gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest')
-GROQ_SEARCH_MODELS = ('groq/compound-mini', 'groq/compound')  # Groq models with built-in web search
+GROQ_SEARCH_MODELS = ('groq/compound-mini', 'groq/compound', 'compound-beta-mini', 'compound-beta')  # built-in web search
+GROQ_BROWSER_MODELS = ('openai/gpt-oss-120b', 'openai/gpt-oss-20b')  # web search through the browser_search tool
 _failures = {}  # indicator -> (time, reason) of the last failed fetch, so a dead source is not hammered
 _lock = threading.Lock()
 
@@ -314,13 +315,28 @@ def call_groq(prompt):
     """
     key = groq_key()
     last = None
-    for model in GROQ_SEARCH_MODELS:
+    try:  # model names change: use the search models this account actually has
+        with httpx.Client(transport=TRANSPORT, timeout=15, trust_env=False, follow_redirects=False) as client:
+            listed = {m.get('id', '') for m in client.get('https://api.groq.com/openai/v1/models',
+                                                          headers={'Authorization': 'Bearer ' + key}).json().get('data', [])}
+    except (httpx.HTTPError, ValueError, AttributeError):
+        listed = set()
+    compound = [m for m in GROQ_SEARCH_MODELS if m in listed] + sorted(m for m in listed if 'compound' in m and m not in GROQ_SEARCH_MODELS)
+    plans = [(m, None) for m in (compound or ([] if listed else GROQ_SEARCH_MODELS))]
+    plans += [(m, [{'type': 'browser_search'}]) for m in GROQ_BROWSER_MODELS if not listed or m in listed]
+    for model, tools in plans:
         try:
+            payload = {'model': model, 'messages': [{'role': 'user', 'content': prompt}], 'temperature': 0.2, 'max_tokens': 2048}
+            if tools:
+                payload['tools'] = tools
             with httpx.Client(transport=TRANSPORT, timeout=90, trust_env=False, follow_redirects=False) as client:
-                r = client.post('https://api.groq.com/openai/v1/chat/completions', headers={'Authorization': 'Bearer ' + key},
-                                json={'model': model, 'messages': [{'role': 'user', 'content': prompt}], 'temperature': 0.2, 'max_tokens': 2048})
+                r = client.post('https://api.groq.com/openai/v1/chat/completions', headers={'Authorization': 'Bearer ' + key}, json=payload)
             if r.status_code != 200:
-                last = f'{model} returned {r.status_code}'
+                try:
+                    detail = str(r.json().get('error', {}).get('message', ''))[:120]
+                except ValueError:
+                    detail = ''
+                last = f'{model} returned {r.status_code} {detail}'.strip()
                 continue
             message = r.json()['choices'][0]['message']
         except (httpx.HTTPError, ValueError, KeyError, IndexError) as error:
