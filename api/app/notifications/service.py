@@ -19,6 +19,7 @@ KINDS = {
     'eid_planning': (('owner',), 'Cash flow'),
     'collections_review': (('owner',), 'Overview'),
     'morning_briefing': (('owner',), 'Overview'),
+    'market_risk': (('owner',), 'Overview'),
 }
 BD = ZoneInfo('Asia/Dhaka')
 

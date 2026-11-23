@@ -60,7 +60,7 @@ All tables are new and keyed by `business_id`. Free text is sealed with the work
 - Capability score as a weighted, explained breakdown; missing inputs lower the confidence instead of the score.
 - Tests: fixed numeric cases for every formula.
 
-### Phase 4 — Autonomous monitoring and alerts ☐
+### Phase 4 — Autonomous monitoring and alerts ☑ (done; email for market alerts left for Phase 6)
 - Background loop started in `lifespan`, holding a DB lease so only one worker runs. UptimeRobot keeps the free Render instance awake. It runs the existing `tick` plus `market_tick`.
 - `market_tick`: fetches the watched indicators that are due, stores observations, skips anything stale, evaluates thresholds, and classifies levels 1–3.
 - Delivery uses the existing notification jobs (in-app, Telegram, push, email) with dedupe keys, cooldown per indicator and level, delivery logs, and retries.

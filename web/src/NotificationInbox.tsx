@@ -14,7 +14,8 @@ const labels:Record<string,string>={
   approval_needed:T('A payment needs approval'),new_device:T('Sign-in from a new browser'),
   payment_shared:T('A shared payment is ready for review'),payment_profile_changed:T('Payment details changed'),
   duplicate_bill:T('Review possible duplicate bills'),bill_due:T('A supplier bill is due soon'),
-  customer_overdue:T('A customer payment is overdue'),cash_breach:T('Your cash reserve needs attention'),morning_briefing:T('Your morning cash briefing is ready')
+  customer_overdue:T('A customer payment is overdue'),cash_breach:T('Your cash reserve needs attention'),morning_briefing:T('Your morning cash briefing is ready'),
+  market_risk:T('A market price is putting your profit at risk')
 };
 const timeText=(minutes:number)=>[Math.floor(minutes/60),minutes%60].map(n=>String(n).padStart(2,'0')).join(':');
 const minutes=(time:string)=>Number(time.slice(0,2))*60+Number(time.slice(3));

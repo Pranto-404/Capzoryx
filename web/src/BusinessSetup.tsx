@@ -235,16 +235,22 @@ function GoalsStep({catalog,value,currency,busy,mode,submit}:{catalog:Catalog;va
 
 function ConsentStep({value,busy,mode,submit}:{value:Record<string,unknown>;busy:boolean;mode:'setup'|'edit';submit:(b:unknown)=>void}){
   const [f,setF]=useState({personalized_ai:value.personalized_ai!==false,external_research:!!value.external_research,monitoring:!!value.monitoring,alerts:!!value.alerts});
+  const [limits,setLimits]=useState({warn_cushion_pct:String(value.warn_cushion_pct??5),move_pct:String(value.move_pct??3)});
   const rows:[keyof typeof f,string,string][]=[
     ['personalized_ai',T('Use my business details for personal advice'),T('The assistant reads your profile and products to tailor answers. Nothing is shared with other users.')],
     ['external_research',T('Research my market and competitors online'),T('Only public information is searched: your industry, area and competitor names. Your costs and sales are never sent.')],
     ['monitoring',T('Keep watching market prices for me'),T('Prices linked to your products are checked in the background, even when you are signed out.')],
     ['alerts',T('Send me important alerts automatically'),T('Warnings go to the channels you turn on (Telegram, phone, email) without asking each time. Nothing is ever bought, sold or paid automatically.')],
   ];
-  return <form onSubmit={e=>{e.preventDefault();submit(f);}}>
+  return <form onSubmit={e=>{e.preventDefault();submit({...f,warn_cushion_pct:Number(limits.warn_cushion_pct)||5,move_pct:Number(limits.move_pct)||3});}}>
     <p className="muted">{t('Your details are stored encrypted in this workspace. You can change these choices any time in Settings → Business.')}</p>
     {rows.map(([k,title,help])=><label key={k} className="switch-row"><input type="checkbox" checked={f[k]} onChange={e=>setF({...f,[k]:e.target.checked})}/>
       <span><b>{t(title)}</b><small>{t(help)}</small></span></label>)}
+    {(f.monitoring||f.alerts)&&<div className="form-row biz-limits">
+      <label>{t('Warn me when the price is within this % of break-even')}<input type="number" min={0.5} max={50} step={0.5} value={limits.warn_cushion_pct} onChange={e=>setLimits({...limits,warn_cushion_pct:e.target.value})}/></label>
+      <label>{t('Warn me when the price falls by this % between checks')}<input type="number" min={0.5} max={50} step={0.5} value={limits.move_pct} onChange={e=>setLimits({...limits,move_pct:e.target.value})}/></label>
+    </div>}
+    {(f.monitoring||f.alerts)&&<p className="muted small-print">{t('Critical alerts (at or past break-even) are always sent, even in quiet hours. Connect Telegram in Settings to get them on your phone.')}</p>}
     <Submit busy={busy} mode={mode} last/>
   </form>;
 }

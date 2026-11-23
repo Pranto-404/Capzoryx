@@ -671,3 +671,7 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
 .capability ul{list-style:none;padding:0;margin:0}.capability li{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
 .capability li small{display:block}.capability meter{width:120px;flex-shrink:0}
 @media(max-width:760px){.scenario-row{grid-template-columns:repeat(3,1fr)}.capability{grid-template-columns:1fr}}
+.market-alerts{list-style:none;padding:0;margin:0}.market-alerts>li{border-bottom:1px solid var(--line);padding:8px 0;font-size:13px}
+.market-alerts summary{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;color:var(--text)}.market-alerts summary small{flex-basis:100%;margin:0}
+.market-alerts details ul{padding-left:18px;margin:8px 0;color:var(--text)}.pill.level-3{background:#fde8ec;color:#9b2c3f}.pill.level-2{background:#fff4dc;color:#7a5512}
+:root[data-theme=dark] .pill.level-3{background:#3e2230;color:#ffd0d9}:root[data-theme=dark] .pill.level-2{background:#3a3220;color:#efd7a3}

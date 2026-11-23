@@ -330,6 +330,13 @@ def next_delivery(db,business,at):
                 return None
         address=json.loads(unseal(key,linked[0],business+'/'+user+'/telegram'))['id']
         detail=None
+        if notice['kind']=='market_risk':
+            from api.app.monitor import alert_text
+            text=alert_text(db,business,notice.get('alert',''))
+            if not text:
+                db.execute("UPDATE notification_jobs SET status='cancelled',claimed_until=NULL WHERE id=?",(identity,))
+                return None
+            detail=text+'\n\nOpen Capzoryx: '+'https://'+urlsplit(os.getenv('SAFELEDGER_PUBLIC_URL','')).netloc+'/'
         if linked[2] and notice['kind']=='morning_briefing':
             from api.app.chat import brain
             ctx=brain.Context('telegram','briefing:'+business,business,user)
