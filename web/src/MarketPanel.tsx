@@ -84,7 +84,7 @@ export function MarketPanel({request,openSettings}:{request:Request;openSettings
     {!data.research_allowed?<p className="muted">{t('Online research is off. Turn on “Research my market and competitors online” in Settings → Business → Permissions.')} <button className="link" onClick={openSettings}>{t('Open settings')}</button></p>
     :r?.status==='running'?<p role="status" className="muted"><span className="loading-ring small-ring"/> {t('Researching your market with web search… this takes up to a minute.')}</p>
     :<>
-      {(r?.status==='unavailable'||r?.status==='failed')&&<p className="notice">{r.reason}</p>}
+      {(r?.status==='unavailable'||r?.status==='failed')&&<p className="notice">{t(r.reason)}</p>}
       {r?.result&&<>
         <ul className="market-findings">{r.result.findings.map((f,i)=><li key={i}>{f.text}<Sources list={f.sources}/></li>)}</ul>
         {!!r.result.competitors.length&&<><h3>{t('Competitors found')}</h3><ul className="market-competitors">{r.result.competitors.map(c=><li key={c.name}>

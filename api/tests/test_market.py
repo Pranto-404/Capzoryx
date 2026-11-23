@@ -148,3 +148,56 @@ def test_research_starts_by_itself_after_setup_and_refreshes_in_the_background(w
     with closing(connect()) as db:
         assert monitor.research_due(db) == 1  # products changed, so the background pass researches again
     assert len(net['gemini']) == 2
+
+
+def test_research_falls_back_to_groq_web_search_when_gemini_is_busy(world, monkeypatch):  # noqa: F811
+    calls = []
+
+    def handle(request):
+        url = str(request.url)
+        if 'currency-api' in url:
+            return httpx.Response(200, json=RATES)
+        if 'generativelanguage' in url:
+            calls.append('gemini')
+            return httpx.Response(503, json={'error': {'message': 'high demand'}})
+        if 'api.groq.com' in url:
+            calls.append(json.loads(request.content)['model'])
+            text = ('FINDING: Biryani demand in Mirpur peaks on Fridays and during Ramadan evenings.\n'
+                    'FINDING: Something the pages do not support at all.\n'
+                    'COMPETITOR: Kacchi Bhai | leader | Mirpur | Popular biryani chain\n'
+                    'COMPETITOR: Imaginary Kitchen | direct | Mirpur | Not on any page\n'
+                    'PRICE: 1 | 260 | 2026-11-20\n')
+            pages = [{'title': 'Kacchi Bhai menu', 'url': 'https://example.org/menu',
+                      'content': 'Kacchi Bhai Mirpur: chicken biryani plate Tk 260. Biryani demand peaks Fridays Ramadan evenings Mirpur.'}]
+            return httpx.Response(200, json={'choices': [{'message': {'content': text, 'executed_tools': [
+                {'type': 'search', 'search_results': {'results': pages}}]}}]})
+        return httpx.Response(404)
+    monkeypatch.setattr(market, 'TRANSPORT', httpx.MockTransport(handle))
+    monkeypatch.setenv('CAPZORYX_CHAT_GEMINI_KEY', 'g')
+    monkeypatch.setenv('CAPZORYX_CHAT_GROQ_KEY', 'q')
+    c, _ = world
+    signup(c, 'market_groq')
+    c.post('/api/business/step/identity', json=dict(IDENTITY, industry='restaurant', niche='Restaurant', city='Mirpur')).raise_for_status()
+    c.post('/api/business/products', json={'name': 'Chicken biryani', 'unit': 'plate', 'cost_minor': 15_000, 'price_minor': 22_000}).raise_for_status()
+    c.post('/api/business/step/consent', json={'external_research': True}).raise_for_status()
+    c.post(BASE + '/research', json={}).raise_for_status()
+    assert calls[0] == 'gemini' and 'groq/compound-mini' in calls
+    research = c.get(BASE).json()['research']
+    assert research['status'] == 'done'
+    findings, competitors = research['result']['findings'], {x['name']: x for x in research['result']['competitors']}
+    assert findings[0]['sources'][0]['url'] == 'https://example.org/menu' and findings[1]['sources'] == []
+    assert competitors['Kacchi Bhai']['sources'] and competitors['Imaginary Kitchen']['sources'] == []
+    biryani = next(p for p in c.get(BASE).json()['products'] if p['name'] == 'Chicken biryani')
+    assert biryani['latest']['value_minor'] == 26_000 and biryani['latest']['kind'] == 'research'
+
+
+def test_failed_research_shows_a_plain_message(world, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(market, 'TRANSPORT', httpx.MockTransport(lambda r: httpx.Response(503)))
+    monkeypatch.setenv('CAPZORYX_CHAT_GEMINI_KEY', 'g')
+    monkeypatch.delenv('CAPZORYX_CHAT_GROQ_KEY', raising=False)
+    c, _ = world
+    signup(c, 'market_busy')
+    setup_gold(c)
+    c.post(BASE + '/research', json={}).raise_for_status()
+    research = c.get(BASE).json()['research']
+    assert research['status'] == 'failed' and 'busy' in research['reason'] and '503' not in research['reason']
