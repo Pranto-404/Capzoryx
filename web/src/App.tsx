@@ -123,7 +123,7 @@ export default function App() {
     {!auth&&inviteCode?<EmployeeJoin code={inviteCode} onSession={session=>{setInviteCode('');enter(session);}}/>
     :auth&&!portalReady?<main className="workspace-loading" role="status"><span className="loading-ring"/>Opening your workspace…</main>
     :auth&&portal?.employee?<EmployeePortal logout={()=>void signout()}/>
-    :auth?<LazyBoundary><Suspense fallback={<main className="workspace-loading" role="status"><span className="loading-ring"/>Opening your workspace…</main>}><Workspace key={auth.session.business_id+auth.session.user_id} token="" session={auth.session} logout={()=>void signout()} expired={expired} changeSession={session=>setAuth({session})}/></Suspense></LazyBoundary>
+    :auth?<LazyBoundary><Suspense fallback={<main className="workspace-loading" role="status"><span className="loading-ring"/>Opening your workspace…</main>}><Workspace holdSetup={!!recoveryCode} key={auth.session.business_id+auth.session.user_id} token="" session={auth.session} logout={()=>void signout()} expired={expired} changeSession={session=>setAuth({session})}/></Suspense></LazyBoundary>
       :<><Auth onAuthStart={()=>restoreRequest.current?.abort()} onSession={enter} joinCode={joinCode} notice={error||''}/>{!nativeBuild && <InstallControl/>}</>}
   </>;
 }

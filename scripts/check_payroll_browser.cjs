@@ -48,6 +48,8 @@ async function openPage(page,name){
     await owner.getByRole('button',{name:'Create my workspace'}).click();
     {const skip=owner.locator('dialog[open]').getByRole('button',{name:/skip/i});if(await skip.isVisible({timeout:1500}).catch(()=>false))await skip.click();}
     await owner.getByRole('button',{name:'I saved it'}).click();
+    // New owners are offered business setup first; these checks skip it.
+    await owner.getByRole('dialog',{name:'Set up your business'}).getByRole('button',{name:'Not now'}).click();
 
     // The sidebar search finds Payroll by its Bangla word.
     await owner.getByLabel('Search pages and settings').fill('বেতন');
