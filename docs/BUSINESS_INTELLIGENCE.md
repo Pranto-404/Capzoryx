@@ -66,7 +66,7 @@ All tables are new and keyed by `business_id`. Free text is sealed with the work
 - Delivery uses the existing notification jobs (in-app, Telegram, push, email) with dedupe keys, cooldown per indicator and level, delivery logs, and retries.
 - Tests: G (threshold crossed → right level and message), J (owner offline → alert queued and sent).
 
-### Phase 5 — Advisor ☐
+### Phase 5 — Advisor ☑ (done; strategies are rule-based templates filled with the owner's numbers, so they need no AI service)
 - Competitor gap analysis and A/B/C strategies. The LLM is given the computed numbers and the cited findings only, and its numbers are checked against them.
 - The assistant answers scenario questions ("price drops 10%?", "minimum selling price?") with deterministic math, best/base/worst cases and the confidence.
 - Proactive insights card and a recommendation feedback log (accepted or dismissed, measured outcome).

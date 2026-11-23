@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
 
+from api.app import advisor
 from api.app import security as sec
 from api.app.chat import understand
 from api.app.currencies import CURRENCIES, scale
@@ -544,6 +545,14 @@ def _decide(db, ctx, text):
         _, page, answers = GUIDE[p.guide]
         buttons = [(f'Open {PAGE_LABEL[page]}', f'__open:{page}__')] if page and ctx.channel == 'web' else []
         return Reply(answers[lang], buttons=buttons, lang=lang)
+
+    ask = None if p.small_talk else advisor.question(text)
+    if ask:  # "what if the price drops 10%?", "minimum selling price?": deterministic answers from the owner's own figures
+        if not ctx.chat_enabled:
+            return Reply(say('off', lang, settings=ctx.settings_hint), lang=lang)
+        if ctx.role != 'owner':
+            return Reply('Only the owner can see product costs and break-even prices.', lang=lang)
+        return Reply(advisor.answer(db, ctx.business, ask), lang=lang)
 
     if p.small_talk:
         save_state(db, ctx, lang, keep_topic=True)

@@ -120,6 +120,26 @@ async function openPage(page,name){
     assert.match(await goldRow.innerText(),/In profit[\s\S]*BDT\s194,000\.00[\s\S]*BDT\s200,000\.00[\s\S]*BDT\s6,000\.00/);
     await numbers.getByRole('heading',{name:'If market prices move'}).waitFor();
     await numbers.getByText('Business capability').waitFor();
+    // Phase 5: the advisor offers costed options, and choosing one is remembered.
+    // With a healthy position and no gaps there is nothing to say, so the panel stays hidden rather than padding advice.
+    const advice=await (await owner.request.get(origin+'/api/advisor')).json();
+    assert.deepEqual([advice.insights.length,advice.gaps.length],[0,0]);
+    assert.equal(await owner.locator('.advisor-panel').count(),0);
+    // When the price drops close to break-even, the advisor explains it and offers three costed options.
+    const again=owner.locator('.market-panel .market-list > li').filter({hasText:'Local 22K gold dealer price'});
+    await again.getByRole('button',{name:"Add today's price"}).click();
+    await again.getByLabel(/Price \(BDT/).fill('195000');
+    await again.getByLabel('Where you saw it').fill('BAJUS');
+    await again.getByRole('button',{name:'Save price'}).click();
+    await again.getByText(/BDT\s195,000\.00/).waitFor();
+    await owner.reload();
+    const advisor=owner.locator('.advisor-panel');
+    await advisor.getByText('22K Gold is close to break-even').waitFor();
+    for(const option of ['Protect what you have, no spending','Move stock at a margin with a small offer','Buy more only if cash is strong'])await advisor.getByRole('heading',{name:option}).waitFor();
+    await advisor.getByRole('button',{name:"I'll try this"}).first().click();
+    await advisor.getByText(/You chose this/).waitFor();
+    await advisor.scrollIntoViewIfNeeded();await owner.screenshot({path:path.join(process.env.SETUP_SHOTS||require('node:os').tmpdir(),'advisor.png'),clip:await advisor.boundingBox()}).catch(()=>{});
+
     await numbers.scrollIntoViewIfNeeded();await owner.screenshot({path:path.join(process.env.SETUP_SHOTS||require('node:os').tmpdir(),'insights.png'),clip:await numbers.boundingBox()}).catch(()=>{});
 
     await shot(owner,'market-panel');
