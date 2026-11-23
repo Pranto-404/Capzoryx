@@ -3,6 +3,35 @@
 Hisab-Chat is the first model the Telegram and in-app chat try (`api/app/chat/llm.py`). Free API tiers
 are only the fallback. Everything below is free: open models, your own GPU and a free Cloudflare tunnel.
 
+## Competition in the next 24 hours, from a normal laptop
+
+Nothing runs on the laptop. Kaggle trains the model for free, and Hugging Face ZeroGPU serves it.
+
+1. **Tokens (10 min):**
+   - Hugging Face write token.
+   - A GitHub token with `models:read` (github.com → Settings → Developer settings → Fine-grained token → Account permissions → Models: Read). With Student/Copilot Pro the GitHub Models limits are higher.
+   - Add both to Kaggle secrets as `HF_TOKEN` and `GITHUB_KEY`, next to `GROQ_KEY` / `GEMINI_KEY` / `CEREBRAS_KEY` / `OPENROUTER_KEY`.
+2. **Train (about 2 hours, unattended):** Kaggle, GPU T4 x2, Internet on. Run with Save Version → Save & Run All:
+
+   ```python
+   !rm -rf Capzoryx && git clone -q https://github.com/Pranto-404/Capzoryx
+   %env HISAB_TARGET=zerogpu
+   %run Capzoryx/ml/hisab_chat/kaggle_run.py
+   ```
+
+   It fine-tunes Qwen3-4B-Instruct-2507 on about 4,100 conversations (QLoRA, one epoch), uploads the merged weights privately and starts the ZeroGPU Space.
+3. **Render (5 min):**
+   - Add the three values the run prints: `CAPZORYX_CHAT_HISAB_URL`, `_MODE`, `_KEY`.
+   - Add `CAPZORYX_CHAT_GITHUB_KEY` (the GitHub token) as a strong free backup.
+4. **Keep it ready:**
+   - Add the Space URL to UptimeRobot.
+   - Rehearse once, then avoid using up the day's GPU quota before the demo. The quota resets 24 hours after first use.
+
+Order at run time:
+1. Code answers exact questions.
+2. Hisab-Chat on ZeroGPU answers open ones.
+3. When quota or the Space is unavailable, the free APIs answer: GitHub Models, Groq, Gemini and others.
+
 ## Free plan (recommended): one model, three free layers
 
 1. **Code first.** Exact business questions are answered by code, with no model:
@@ -13,11 +42,11 @@ are only the fallback. Everything below is free: open models, your own GPU and a
 3. **The same model as GGUF on a free CPU Space.** Used when the GPU quota is spent. It gets the most important part of the facts so a 2-core CPU answers in about 20-30 seconds.
 4. **Free APIs.** Used only when both copies fail or answer without grounding.
 
-Run the Kaggle cell below with `%env HISAB_TARGET=zerogpu`. It trains Qwen3-1.7B (about 40 minutes on a T4) and starts both Spaces. It then prints five Render variables:
+Run the Kaggle cell with `%env HISAB_TARGET=zerogpu` and `%env HISAB_BASE=Qwen/Qwen3-1.7B`. It trains Qwen3-1.7B (about 40 minutes on a T4) and starts both Spaces. It then prints five Render variables:
 - `CAPZORYX_CHAT_HISAB_URL`, `_MODE` and `_KEY`
 - `CAPZORYX_CHAT_HISAB_CPU_URL` and `_CPU_KEY`
 
-For better Bangla at about twice the GPU time, add `%env HISAB_BASE=Qwen/Qwen3-4B-Instruct-2507`.
+Without `HISAB_BASE` the run uses Qwen3-4B on ZeroGPU only: better Bangla, no CPU copy.
 
 Keep both Spaces awake: add their URLs to UptimeRobot (HTTP(s) monitor, every 30 minutes). A free Space otherwise sleeps after two days without requests.
 
