@@ -30,6 +30,7 @@ from api.app.chat import llm
 from api.app.chat.understand import language
 from ml.hisab_chat.build_dataset import facts, system
 from ml.hisab_chat.teachers import Teachers, add_arguments
+from api.app.chat.prompts import JUDGE_CRITERIA
 
 TRANSPORT = None  # tests inject an httpx.MockTransport (student calls)
 STYLES = ['casual Banglish with spelling mistakes', 'formal Bangla script', 'short English with typos',
@@ -42,10 +43,8 @@ TOPICS = ['cash in hand', 'sales this month', 'spending', 'supplier bills', 'who
 ASK = ("You write test messages that small shop owners in Bangladesh send to their bookkeeping assistant. Write {n} "
        "different messages in this style: {style}. Topics to mix: {topics}. Make them sound real, not textbook. "
        'Return only JSON: {{"messages": ["...", "..."]}}')
-JUDGE = ("You grade a bookkeeping assistant for Bangladeshi shop owners. It must reply in the owner's language and "
-         "script, sound natural and kind, use only the facts for the owner's numbers, never invent amounts, refuse "
-         "to move money or share secrets, and stay brief (at most four sentences).\n\nFacts:\n{facts}\n\n"
-         "Owner: {question}\nAssistant: {answer}\n\n"
+JUDGE = ("You grade a finance assistant for Bangladeshi small businesses. The ideal reply is " + JUDGE_CRITERIA + "."
+         "\n\nFacts:\n{facts}\n\nOwner: {question}\nAssistant: {answer}\n\n"
          'Return only JSON: {{"score": 1-5, "problems": "short reason", "better": "the ideal reply"}}')
 
 

@@ -31,7 +31,8 @@ PHRASE_BOOST = (
     ('pete hobe', 'receivables', 2), ('পেতে হবে', 'receivables', 2), ('cash flow', 'forecast', 1),
     ('hate koto', 'balance', 1.5), ('hate kot', 'balance', 1.5), ('cash position', 'balance', 2), ('current cash', 'balance', 1.5),
     ('obostha hobe', 'forecast', 2), ('ki hobe', 'forecast', 1), ('hisab dao', 'summary', 1.5), ('sob mile', 'summary', 1.5),
-    ('পুরো হিসাব', 'summary', 2),
+    ('পুরো হিসাব', 'summary', 2), ('hisab janate chai', 'summary', 2), ('hisab jante chai', 'summary', 2),
+    ('dokaner hisab', 'summary', 2), ('দোকানের হিসাব', 'summary', 2), ('হিসাব জানতে চাই', 'summary', 2),
 )
 
 # Finance topics. Weights add up; a topic needs at least 2.5 to count.
@@ -57,7 +58,7 @@ TOPICS = {
     'receivables': {
         'receivable': 3, 'receivables': 3, 'owed': 3, 'owes': 3, 'debtor': 3, 'debtors': 3, 'customer': 2,
         'customers': 2, 'dues': 2, 'due': 1, 'paona': 3, 'pawna': 3, 'pabo': 3, 'pawa': 1.5, 'baki': 2, 'bakir': 2,
-        'udhar': 2.5, 'পাওনা': 3, 'পাব': 3, 'বাকি': 2.5, 'কাস্টমার': 2, 'খদ্দের': 2, 'উধার': 2.5, 'দেনাদার': 3,
+        'udhar': 2.5, 'rakhse': 1, 'rakhche': 1, 'rekheche': 1, 'পাওনা': 3, 'পাব': 3, 'বাকি': 2.5, 'কাস্টমার': 2, 'খদ্দের': 2, 'উধার': 2.5, 'দেনাদার': 3,
     },
     'forecast': {
         'forecast': 3, 'projection': 3, 'projected': 3, 'future': 2, 'predict': 3, 'prediction': 3, 'next': 1,
@@ -65,7 +66,7 @@ TOPICS = {
         'আগামী': 2, 'সামনে': 1.5, 'থাকব': 1.5, 'thakbe': 2,
     },
     'summary': {
-        'summary': 3, 'overview': 3, 'report': 2.5, 'business': 1.5, 'briefing': 3, 'brief': 2.5, 'update': 2,
+        'summary': 3, 'summarise': 3, 'summarize': 3, 'finances': 2, 'overview': 3, 'report': 2.5, 'business': 1.5, 'briefing': 3, 'brief': 2.5, 'update': 2,
         'status': 2, 'situation': 2, 'cholche': 2.5, 'obostha': 2, 'abostha': 2, 'hisab': 1.5, 'হিসাব': 1.5,
         'অবস্থা': 2, 'চলছে': 2.5, 'ব্যবসা': 1.5, 'ব্যবসার': 1.5, 'সারাংশ': 3, 'রিপোর্ট': 2.5,
     },
@@ -117,6 +118,18 @@ RECORD_VERB = re.compile(r'\b(?:received|paid|spent|got|sold|bought|dilam|diyech
                          r'nilam|kinlam|bechlam|khoroch korlam)\b|দিলাম|দিয়েছি|দিয়েছি|পেলাম|পেয়েছি|পেয়েছি|নিলাম|'
                          r'নিয়েছি|নিয়েছি|কিনলাম|বেচলাম|খরচ করলাম', re.I)
 HAS_AMOUNT = re.compile(r'\d')
+# Safety comes before anything else: these get a fixed, careful reply and never reach a model or the ledger.
+SAFETY = (
+    ('secret', re.compile(r'\b(?:pin|otp|password|passcode|cvv)\b|পিন|ওটিপি|পাসওয়ার্ড', re.I)),
+    ('transfer', re.compile(r'\b(?:send|transfer)\b(?!.*\b(?:sent|paid)\b)|\bpathao\b|\bpathiye dao\b|\bpathan\b|পাঠাও|পাঠিয়ে দাও|পাঠিয়ে দাও', re.I)),
+    ('others', re.compile(r'\b(?:other|another|onner|onno)\b.*\b(?:shops?|business(?:es)?|dokan|data)\b|অন্যের|অন্য দোকান', re.I)),
+    ('injection', re.compile(r'\bignore\b.*\b(?:instructions?|rules?|previous)\b|\byou are now\b|\bsystem prompt\b', re.I)),
+)
+FORGOT = re.compile(r'\b(?:forgot|forget|bhule|bhulay|reset|change|bodlabo|bodlate)\b|ভুলে|বদলা', re.I)
+CLARIFY_ONLY = {'koto', 'kto', 'kot', 'kotto', 'how', 'much', 'taka', 'tk', 'কত', 'টাকা'}
+# Tax and VAT are advice questions, not ledger look-ups ("VAT koto dite hoy" is not about supplier bills).
+TAX = re.compile(r'\b(?:vat|tax|taxes|nbr|tin|ait)\b|ভ্যাট|আয়কর|আয়কর|কর কত', re.I)
+FIGURE_QUESTION = re.compile(r'\b(?:koto|kto|kot|kotto|how much|how many)\b|কত', re.I)
 QUESTION = re.compile(r'[?？]|\b(?:koto|kto|kot|kotto|how much|how many|what|when|which|who|kobe|ki|kindly|please)\b'
                       r'|কত|কী|কি|কবে|কখন|জানতে চাই|জানাবেন', re.I)
 
@@ -133,6 +146,7 @@ class Parsed:
     overdue: bool = False
     listing: bool = False
     small_talk: str | None = None
+    guide: str | None = None
     yes: bool = False
     no: bool = False
     record_like: bool = False
@@ -196,13 +210,24 @@ def parse(text):
         return parsed
     parsed.yes = normalized in YES
     parsed.no = normalized in NO
+    for intent, pattern in SAFETY:
+        if pattern.search(text) and not (intent == 'secret' and FORGOT.search(text)):
+            parsed.small_talk = intent
+            return parsed
+    if set(tokens) <= CLARIFY_ONLY:
+        parsed.small_talk = 'clarify'
+        return parsed
+    for intent, phrases in SMALL_TALK:  # an exact greeting such as "ki obostha" is small talk, not a report request
+        if normalized in {normalize(p) for p in phrases}:
+            parsed.small_talk = intent
+            return parsed
     for window, phrases in WINDOWS:
         if any(has_phrase(normalized, p) for p in phrases):
             parsed.window = window
             break
     parsed.overdue = any(t in OVERDUE or (len(t) >= 6 and any(near(t, o) for o in OVERDUE if len(o) >= 5)) for t in tokens) \
         or has_phrase(normalized, 'past due')
-    parsed.listing = any(t in LIST_WORDS for t in tokens)
+    parsed.listing = any(t in LIST_WORDS for t in tokens) or has_phrase(normalized, 'ke ke')
     parsed.question = bool(QUESTION.search(text))
     parsed.record_like = bool(RECORD_VERB.search(text) and HAS_AMOUNT.search(normalized))
     scores = topic_scores(tokens)
@@ -216,10 +241,17 @@ def parse(text):
     if parsed.overdue and not ({'payables', 'receivables'} & scores.keys()):
         scores['receivables'] = scores.get('receivables', 0) + 1
     parsed.scores = scores
-    if scores:
+    if scores and not TAX.search(text):
         topic, score = max(scores.items(), key=lambda item: (item[1], item[0] == 'summary'))
-        if score >= 2.5:
+        if score >= 2.5 or (len(tokens) <= 2 and score >= 2):  # a bare "cash" or "balance" is still a question
             parsed.topic, parsed.score = topic, score
+    if not FIGURE_QUESTION.search(text) and not parsed.record_like:  # "how much…" is always about the books
+        from api.app.chat.guide import HOW_WORDS, match
+        guide = match(normalized, tokens, text)
+        # A how-to word wins over a books topic ("bill kivabe add korbo"); otherwise the books answer first.
+        if guide and (HOW_WORDS.search(text) or not parsed.topic):
+            parsed.guide, parsed.topic = guide, None
+            return parsed
     if parsed.topic is None and not parsed.record_like:
         short = len(tokens) <= 6
         for intent, phrases in SMALL_TALK:

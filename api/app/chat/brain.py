@@ -116,90 +116,117 @@ WINDOW_TEXT = {
 
 T = {
     'greet': {
-        'en': ['{hello}! Good to hear from you.', '{hello}! How can I help with the books today?', '{hello} 👋'],
-        'bl': ['{hello}! Kemon achen?', '{hello}! Ajke ki dekhbo apnar jonno?', '{hello} 👋'],
-        'bn': ['{hello}! কেমন আছেন?', '{hello}! আজ হিসাবের কী দেখব?', '{hello} 👋'],
+        'en': ['{hello}. How may I help you with your accounts today?', '{hello}. What would you like to review today?'],
+        'bl': ['{hello}. Apnar hisab-er kon bishoye shahajjo korte pari?', '{hello}. Aj ki dekhte chan?'],
+        'bn': ['{hello}। আপনার হিসাবের কোন বিষয়ে সাহায্য করতে পারি?', '{hello}। আজ কী দেখতে চান?'],
     },
     'how_are_you': {
-        'en': ["I'm doing well, thanks for asking! Keeping an eye on your numbers. How's business today?",
-               "All good here. Your books are safe with me. What's on your mind?"],
-        'bl': ['Ami bhalo achi, dhonnobad! Apnar hisab dekhe rakhchi. Business kemon cholche?',
-               'Bhalo achi. Apnar ki dekhte hobe bolen?'],
-        'bn': ['আমি ভালো আছি, ধন্যবাদ! আপনার হিসাব খেয়াল রাখছি। ব্যবসা কেমন চলছে?', 'ভালো আছি। কী দেখতে চান বলুন?'],
+        'en': 'I am well, thank you. How may I assist you with your finances today?',
+        'bl': 'Ami bhalo achi, dhonnobad. Apnar hisab-er kon bishoye shahajjo korte pari?',
+        'bn': 'আমি ভালো আছি, ধন্যবাদ। আপনার হিসাবের কোন বিষয়ে সাহায্য করতে পারি?',
     },
     'thanks': {
-        'en': ["You're welcome!", 'Anytime. 🙂', 'Happy to help!'],
-        'bl': ['Welcome!', 'Kono bepar na. 🙂', 'Jokhon dorkar, bolben!'],
-        'bn': ['স্বাগতম!', 'কোনো ব্যাপার না। 🙂', 'যখন দরকার, বলবেন!'],
+        'en': ["You're welcome.", 'It is my pleasure to help.'],
+        'bl': ['Apnake shagotom.', 'Shahajjo korte pere bhalo laglo.'],
+        'bn': ['আপনাকে স্বাগতম।', 'সাহায্য করতে পেরে ভালো লাগল।'],
     },
     'bye': {
-        'en': ['Take care! I’ll ping you if a bill needs attention.', 'Bye for now. 👋'],
-        'bl': ['Allah Hafez! Kono bill er dorkar hole janabo.', 'Bhalo thakben. 👋'],
-        'bn': ['আল্লাহ হাফেজ! কোনো বিলের দরকার হলে জানাব।', 'ভালো থাকবেন। 👋'],
+        'en': 'Thank you. I will let you know if a bill needs your attention.',
+        'bl': 'Allah Hafez. Kono bill-er bishoye apnar mononibesh dorkar hole janabo.',
+        'bn': 'আল্লাহ হাফেজ। কোনো বিলে আপনার মনোযোগ দরকার হলে জানাব।',
     },
     'who': {
-        'en': "I'm Capzoryx, your money assistant. I read your Capzoryx books and answer in plain words: cash, sales, "
-              "spending, who owes you, what you owe, and what's coming next.",
-        'bl': 'Ami Capzoryx, apnar hisab-er assistant. Apnar cash, bikri, khoroch, ke koto paona, apni koto dena '
-              'ar samne ki ache — sob shohoj bhashay bole dei.',
-        'bn': 'আমি Capzoryx, আপনার হিসাবের সহকারী। নগদ, বিক্রি, খরচ, কে কত পাওনা, আপনার কত দেনা আর সামনে কী আছে — '
-              'সব সহজ ভাষায় বলে দিই।',
+        'en': "I am Capzoryx, a financial assistant for your business. I read your Capzoryx books and explain your cash, "
+              "sales, expenses, receivables, payables and outlook in plain language.",
+        'bl': 'Ami Capzoryx, apnar business-er arthik shohokari. Apnar Capzoryx hisab theke cash, bikri, khoroch, paona, '
+              'dena ar shamner obostha shohoj bhashay bujhiye dei.',
+        'bn': 'আমি Capzoryx, আপনার ব্যবসার আর্থিক সহকারী। আপনার Capzoryx হিসাব থেকে নগদ, বিক্রি, খরচ, পাওনা, দেনা আর '
+              'সামনের অবস্থা সহজ ভাষায় বুঝিয়ে দিই।',
     },
     'help': {
-        'en': "Just ask me like you'd ask a person. For example:\n• cash koto?\n• how much did I spend this month?\n"
-              "• who owes me the most?\n• any overdue bills?\n• how's business?\n• Rahim theke 500 taka pelam",
-        'bl': 'Manush-ke jemon jiggesh koren, temni jiggesh korun. Jemon:\n• cash koto ache?\n• ei mashe khoroch koto?\n'
-              '• ke sobcheye beshi paona?\n• bokeya bill ache?\n• business kemon cholche?\n• Rahim theke 500 taka pelam',
-        'bn': 'মানুষকে যেভাবে জিজ্ঞেস করেন, সেভাবেই করুন। যেমন:\n• হাতে কত টাকা আছে?\n• এই মাসে খরচ কত?\n'
-              '• কে সবচেয়ে বেশি পাওনা?\n• বকেয়া বিল আছে?\n• ব্যবসা কেমন চলছে?\n• রহিম থেকে ৫০০ টাকা পেলাম',
+        'en': "You may ask in your own words. For example:\n• How much cash do I have?\n• What did I spend this month?\n"
+              "• Who owes me the most?\n• Are any bills overdue?\n• Please summarise my business.\n• Received 500 from Rahim",
+        'bl': 'Apni nijer bhashay jiggesh korte paren. Jemon:\n• cash koto ache?\n• ei mashe khoroch koto?\n'
+              '• ke sobcheye beshi paona?\n• bokeya bill ache?\n• business-er obostha ki?\n• Rahim theke 500 taka pelam',
+        'bn': 'আপনি নিজের ভাষায় জিজ্ঞেস করতে পারেন। যেমন:\n• হাতে কত টাকা আছে?\n• এই মাসে খরচ কত?\n'
+              '• কার কাছে সবচেয়ে বেশি পাওনা?\n• বকেয়া বিল আছে?\n• ব্যবসার অবস্থা কেমন?\n• রহিম থেকে ৫০০ টাকা পেলাম',
     },
-    'ack': {'en': ['👍', 'Got it.', 'Okay!'], 'bl': ['👍', 'Thik ache.', 'Accha!'], 'bn': ['👍', 'ঠিক আছে।', 'আচ্ছা!']},
+    'ack': {'en': ['Noted.', 'Understood.'], 'bl': ['Thik ache.', 'Bujhechi.'], 'bn': ['ঠিক আছে।', 'বুঝেছি।']},
+    'clarify': {
+        'en': 'Which figure would you like — cash in hand, sales this month, expenses, or what customers owe you?',
+        'bl': 'Kon hisab-ti jante chan — hate cash, ei mash-er bikri, khoroch, na customer-der kache paona?',
+        'bn': 'কোন হিসাবটি জানতে চান — হাতে নগদ, এই মাসের বিক্রি, খরচ, না গ্রাহকদের কাছে পাওনা?',
+    },
+    'secret': {
+        'en': '⚠️ Please never share a PIN, OTP or password with anyone, including me. If you have shared it, change '
+              'it now through your bank or bKash app. I do not store or need it.',
+        'bl': '⚠️ PIN, OTP ba password kauke diben na, amake-o na. Diye thakle ekhoni bank ba bKash app theke bodle nin. '
+              'Ami eta rakhi na, proyojon-o nei.',
+        'bn': '⚠️ পিন, ওটিপি বা পাসওয়ার্ড কাউকে দেবেন না, আমাকেও না। দিয়ে থাকলে এখনই ব্যাংক বা বিকাশ অ্যাপ থেকে বদলে নিন। '
+              'আমি এগুলো রাখি না, প্রয়োজনও নেই।',
+    },
+    'transfer': {
+        'en': 'I cannot send or move money. Once you have made the payment yourself, tell me, for example “Paid 5,000 to '
+              'Rahim”, and I will record it.',
+        'bl': 'Ami taka pathate pari na. Apni nije pathanor por bolben, jemon “Rahim ke 5000 dilam”, ami entry kore dibo.',
+        'bn': 'আমি টাকা পাঠাতে পারি না। আপনি নিজে পাঠানোর পর বলবেন, যেমন “রহিমকে ৫০০০ দিলাম”, আমি এন্ট্রি করে দেব।',
+    },
+    'others': {
+        'en': 'I can only see your own business records. Other businesses’ data is private and never shared.',
+        'bl': 'Ami shudhu apnar nijer business-er hisab dekhte pari. Onno business-er tottho gopon, kokhono dewa hoy na.',
+        'bn': 'আমি শুধু আপনার নিজের ব্যবসার হিসাব দেখতে পারি। অন্য ব্যবসার তথ্য গোপন, কখনো দেওয়া হয় না।',
+    },
+    'injection': {
+        'en': 'I will continue as your Capzoryx financial assistant. How may I help with your accounts?',
+        'bl': 'Ami Capzoryx-er arthik shohokari hishebei thakbo. Apnar hisab-er kon bishoye shahajjo korte pari?',
+        'bn': 'আমি Capzoryx-এর আর্থিক সহকারী হিসেবেই থাকব। আপনার হিসাবের কোন বিষয়ে সাহায্য করতে পারি?',
+    },
     'unknown': {
-        'en': "Hmm, I didn't quite get that. I'm best with questions about your cash, sales, spending, dues and bills — "
-              "try “how much cash do I have?” or “who owes me?”",
-        'bl': 'Hmm, thik bujhte parlam na. Cash, bikri, khoroch, paona ar bill niye jiggesh korle bhalo parbo — '
-              'jemon “cash koto?” ba “ke koto paona?”',
-        'bn': 'দুঃখিত, ঠিক বুঝতে পারলাম না। নগদ, বিক্রি, খরচ, পাওনা আর বিল নিয়ে জিজ্ঞেস করলে ভালো পারব — '
-              'যেমন “হাতে কত টাকা আছে?” বা “কে কত পাওনা?”',
+        'en': "I'm sorry, I could not understand that. I can help with your cash, sales, expenses, dues and bills — for "
+              "example, “How much cash do I have?” or “Who owes me money?”",
+        'bl': 'Dukkhito, bishoyti bujhte parini. Cash, bikri, khoroch, paona ba bill niye jiggesh korte paren — jemon '
+              '“cash koto?” ba “ke koto paona?”',
+        'bn': 'দুঃখিত, বিষয়টি বুঝতে পারিনি। নগদ, বিক্রি, খরচ, পাওনা বা বিল নিয়ে জিজ্ঞেস করতে পারেন — যেমন '
+              '“হাতে কত টাকা আছে?” বা “কে কত পাওনা?”',
     },
     'off': {
-        'en': "I'd love to answer that, but book replies are off for this chat. Turn them on in Capzoryx → {settings}.",
-        'bl': 'Uttor dite chai, kintu ei chat-e book reply bondho. Capzoryx → {settings} theke chalu korun.',
-        'bn': 'উত্তর দিতে চাই, কিন্তু এই চ্যাটে হিসাবের উত্তর বন্ধ। Capzoryx → {settings} থেকে চালু করুন।',
+        'en': 'Book replies are off for this chat. You can turn them on in Capzoryx → {settings}.',
+        'bl': 'Ei chat-e book reply bondho ache. Capzoryx → {settings} theke chalu korte paren.',
+        'bn': 'এই চ্যাটে হিসাবের উত্তর বন্ধ আছে। Capzoryx → {settings} থেকে চালু করতে পারেন।',
     },
     'records_off': {
-        'en': 'I understood: {draft}. To save entries from chat, turn on “chat entries” in Capzoryx → {settings}. '
-              'Until then you can add it in the app.',
-        'bl': 'Bujhlam: {draft}. Chat theke entry save korte Capzoryx → {settings} e “chat entries” chalu korun.',
-        'bn': 'বুঝলাম: {draft}। চ্যাট থেকে এন্ট্রি সেভ করতে Capzoryx → {settings} এ “chat entries” চালু করুন।',
+        'en': 'I have understood: {draft}. To save entries from chat, please turn on “chat entries” in Capzoryx → '
+              '{settings}. Until then, you can add it in the app.',
+        'bl': 'Bujhechi: {draft}. Chat theke entry save korte Capzoryx → {settings} e “chat entries” chalu korun.',
+        'bn': 'বুঝেছি: {draft}। চ্যাট থেকে এন্ট্রি সেভ করতে Capzoryx → {settings} এ “chat entries” চালু করুন।',
     },
     'draft': {
-        'en': 'Got it — {draft}. Shall I save it?', 'bl': 'Bujhlam — {draft}. Save kori?',
-        'bn': 'বুঝলাম — {draft}। সেভ করব?',
+        'en': 'I have noted: {draft}. Shall I save this entry?', 'bl': 'Noted: {draft}. Entry-ti save korbo?',
+        'bn': 'লিখে নিলাম: {draft}। এন্ট্রিটি সেভ করব?',
     },
     'draft_unclear': {
-        'en': "Sounds like you want to record a payment, but I couldn't be sure of the amount or direction. "
-              "Say it like “received 500 from Rahim” or “paid 1,200 to Karim”.",
-        'bl': 'Mone hocche entry korte chan, kintu amount ba dik (pelam/dilam) nishchit na. Emon bolun: '
+        'en': 'It appears you wish to record a payment, but the amount or direction is not clear. Please write, for '
+              'example, “Received 500 from Rahim” or “Paid 1,200 to Karim”.',
+        'bl': 'Mone hocche apni entry korte chan, kintu amount ba dik (pelam/dilam) spashto na. Erokom likhun: '
               '“Rahim theke 500 taka pelam” ba “Karim ke 1200 dilam”.',
-        'bn': 'মনে হচ্ছে এন্ট্রি করতে চান, কিন্তু টাকার পরিমাণ বা দিক নিশ্চিত না। এভাবে বলুন: '
+        'bn': 'মনে হচ্ছে আপনি এন্ট্রি করতে চান, কিন্তু টাকার পরিমাণ বা দিক স্পষ্ট নয়। এভাবে লিখুন: '
               '“রহিম থেকে ৫০০ টাকা পেলাম” বা “করিমকে ১২০০ দিলাম”।',
     },
     'draft_currency': {
-        'en': 'Chat entries work for taka (BDT) books for now. Please add this one in the app.',
-        'bl': 'Chat entry ekhon shudhu taka (BDT) hisab-e chole. Eta app theke add korun.',
+        'en': 'Chat entries are available for taka (BDT) books at present. Please add this one in the app.',
+        'bl': 'Chat entry ekhon shudhu taka (BDT) hisab-e chole. Eti app theke jog korun.',
         'bn': 'চ্যাট এন্ট্রি এখন শুধু টাকার (BDT) হিসাবে চলে। এটি অ্যাপ থেকে যোগ করুন।',
     },
     'saved': {
-        'en': 'Saved ✅ {draft}. Cash in hand is now {balance}.', 'bl': 'Save holo ✅ {draft}. Ekhon hate ache {balance}.',
-        'bn': 'সেভ হয়েছে ✅ {draft}। এখন হাতে আছে {balance}।',
+        'en': 'Saved: {draft}. Your cash in hand is now {balance}.', 'bl': 'Save kora hoyeche: {draft}. Ekhon hate ache {balance}.',
+        'bn': 'সেভ করা হয়েছে: {draft}। এখন হাতে আছে {balance}।',
     },
     'save_failed': {
-        'en': "I couldn't save that one ({reason}). Nothing was changed — please add it in the app.",
-        'bl': 'Save korte parlam na ({reason}). Kichu bodlay ni — app theke add korun.',
-        'bn': 'সেভ করতে পারলাম না ({reason})। কিছু বদলায়নি — অ্যাপ থেকে যোগ করুন।',
+        'en': 'I could not save that entry ({reason}). Nothing was changed; please add it in the app.',
+        'bl': 'Entry-ti save kora jayni ({reason}). Kichu bodlay ni; app theke jog korun.',
+        'bn': 'এন্ট্রিটি সেভ করা যায়নি ({reason})। কিছু বদলায়নি; অ্যাপ থেকে যোগ করুন।',
     },
-    'cancelled': {'en': 'Okay, I dropped it. Nothing was saved.', 'bl': 'Thik ache, bad dilam. Kichu save hoy ni.',
+    'cancelled': {'en': 'Understood. The entry was not saved.', 'bl': 'Thik ache, bad dilam. Kichu save hoy ni.',
                   'bn': 'ঠিক আছে, বাদ দিলাম। কিছু সেভ হয়নি।'},
     'nothing_pending': {'en': "There's nothing waiting to be saved.", 'bl': 'Save korar moto kichu nei.',
                         'bn': 'সেভ করার মতো কিছু নেই।'},
@@ -218,8 +245,8 @@ def hello(lang):
     if lang == 'en':
         return 'Good morning' if 5 <= hour < 12 else 'Good afternoon' if 12 <= hour < 17 else 'Good evening' if hour < 22 else 'Hello'
     if lang == 'bl':
-        return 'Assalamu alaikum' if hour < 12 else 'Salam'
-    return 'আসসালামু আলাইকুম' if hour < 12 else 'সালাম'
+        return 'Assalamu alaikum'
+    return 'আসসালামু আলাইকুম'
 
 
 def understand_tz():
@@ -301,9 +328,9 @@ def answer_topic(db, ctx, kind, window, lang, ds):
     elif kind in ('payables', 'overdue_bills'):
         late = kind == 'overdue_bills'
         if not n:
-            text = {'en': 'No overdue supplier bills. 👍' if late else "You don't owe any suppliers right now. 👍",
-                    'bl': 'Kono bokeya bill nei. 👍' if late else 'Ekhon kono supplier-er dena nei. 👍',
-                    'bn': 'কোনো বকেয়া বিল নেই। 👍' if late else 'এখন কোনো সাপ্লায়ারের দেনা নেই। 👍'}[lang]
+            text = {'en': 'No overdue supplier bills.' if late else "You don't owe any suppliers right now.",
+                    'bl': 'Kono bokeya bill nei.' if late else 'Ekhon kono supplier-er dena nei.',
+                    'bn': 'কোনো বকেয়া বিল নেই।' if late else 'এখন কোনো সাপ্লায়ারের দেনা নেই।'}[lang]
         else:
             text = {'en': f'{n} supplier bill{"s are" if n > 1 else " is"} overdue — {amount} in total.' if late
                     else f'You owe suppliers {amount} on {n} open bill{"s" if n > 1 else ""}.',
@@ -315,15 +342,15 @@ def answer_topic(db, ctx, kind, window, lang, ds):
     elif kind in ('receivables', 'overdue_receipts'):
         late = kind == 'overdue_receipts'
         if not n:
-            text = {'en': 'Nobody is late paying you. 👍' if late else 'No customer owes you anything right now.',
-                    'bl': 'Kono customer er paona meyad periye jay ni. 👍' if late else 'Ekhon kono customer er kache paona nei.',
-                    'bn': 'কোনো কাস্টমারের পাওনা মেয়াদ পেরোয়নি। 👍' if late else 'এখন কোনো কাস্টমারের কাছে পাওনা নেই।'}[lang]
+            text = {'en': 'No customer payments are overdue.' if late else 'No customer owes you anything right now.',
+                    'bl': 'Kono customer er paona meyad periye jay ni.' if late else 'Ekhon kono customer er kache paona nei.',
+                    'bn': 'কোনো কাস্টমারের পাওনা মেয়াদ পেরোয়নি।' if late else 'এখন কোনো কাস্টমারের কাছে পাওনা নেই।'}[lang]
         else:
-            text = {'en': f'{amount} from customers is overdue ({n} due{"s" if n > 1 else ""}). A friendly reminder might help.'
+            text = {'en': f'{amount} from customers is overdue ({n} due{"s" if n > 1 else ""}). A courteous reminder is advisable.'
                     if late else f'Customers owe you {amount} across {n} open due{"s" if n > 1 else ""}.',
-                    'bl': f'Customer-der {amount} paona meyad periye geche ({n} ta). Ekta reminder dile bhalo hoy.'
+                    'bl': f'Customer-der {amount} paona meyad periye geche ({n} ta). Ekta bhodro reminder dewa uchit.'
                     if late else f'Customer-der kache apnar paona {amount} ({n} ta).',
-                    'bn': f'কাস্টমারদের {amount} পাওনার মেয়াদ পেরিয়েছে ({count(n, lang)}টি)। একটা রিমাইন্ডার দিলে ভালো হয়।'
+                    'bn': f'কাস্টমারদের {amount} পাওনার মেয়াদ পেরিয়েছে ({count(n, lang)}টি)। একটি সৌজন্যমূলক রিমাইন্ডার দেওয়া উচিত।'
                     if late else f'কাস্টমারদের কাছে আপনার পাওনা {amount} ({count(n, lang)}টি)।'}[lang]
             buttons = [(BUTTONS['list'][lang], '__list_receivables__')]
     else:
@@ -339,7 +366,7 @@ def answer_topic(db, ctx, kind, window, lang, ds):
                 'bn': f'কিছু না বদলালে {d} দিন পর হাতে থাকবে প্রায় {amount}'
                 + (f' — আজকের চেয়ে {change} {"বেশি" if diff > 0 else "কম"}।' if diff else ', আজকের মতোই।')}[lang]
         if result['amount_minor'] < 0:
-            text += {'en': ' ⚠️ That means a cash gap — want to see who you can collect from?',
+            text += {'en': ' ⚠️ This indicates a cash shortfall. Would you like to see whom you can collect from?',
                      'bl': ' ⚠️ Mane cash-e ghatti — ke ke theke tola jay dekhben?',
                      'bn': ' ⚠️ মানে নগদে ঘাটতি — কার কাছ থেকে টাকা তোলা যায় দেখবেন?'}[lang]
             buttons = [(BUTTONS['list'][lang], '__list_receivables__')]
@@ -363,7 +390,7 @@ def top_list(db, ctx, which, lang, ds):
                 totals[name] = (amount + inv.amount_minor, overdue or late, min(due, inv.due_on))
         rows = sorted(totals.items(), key=lambda item: -item[1][0])[:5]
         if not rows:
-            return {'en': 'No open supplier bills. 👍', 'bl': 'Kono khola bill nei. 👍', 'bn': 'কোনো খোলা বিল নেই। 👍'}[lang]
+            return {'en': 'No open supplier bills.', 'bl': 'Kono khola bill nei.', 'bn': 'কোনো খোলা বিল নেই।'}[lang]
         head = {'en': 'Biggest open bills:', 'bl': 'Sobcheye boro khola bill:', 'bn': 'সবচেয়ে বড় খোলা বিল:'}[lang]
         lines = [f'• {name} — {money(a, code, lang)}' + (' (overdue)' if late and lang == 'en' else ' (বকেয়া)' if late and lang == 'bn'
                  else ' (bokeya)' if late else f' · due {day_label(due, lang)}' if lang == 'en' else '') for name, (a, late, due) in rows]
@@ -422,15 +449,15 @@ def summary(db, ctx, lang, ds):
                  f'• ৭ দিন পর: প্রায় {f(week)}']
     if month.get('first_shortfall_on'):
         day = day_label(datetime.fromisoformat(str(month['first_shortfall_on'])).date(), lang)
-        tip = {'en': f'⚠️ Heads up: cash may dip below your safety level around {day}.',
+        tip = {'en': f'⚠️ Please note: cash may fall below your safety reserve around {day}.',
                'bl': f'⚠️ Shabdhan: {day} er dike cash safety level er niche jete pare.',
                'bn': f'⚠️ সাবধান: {day} নাগাদ নগদ নিরাপদ সীমার নিচে নামতে পারে।'}[lang]
     elif late_in['amount_minor']:
-        tip = {'en': f'Tip: collecting the overdue {f(late_in)} would give you more breathing room.',
-               'bl': f'Tip: bokeya {f(late_in)} tulte parle hate aro taka thakbe.',
+        tip = {'en': f'Recommendation: collecting the overdue {f(late_in)} would strengthen your cash position.',
+               'bl': f'Poramorsho: bokeya {f(late_in)} aday korle apnar nogod obostha shokto hobe.',
                'bn': f'পরামর্শ: বকেয়া {f(late_in)} তুলতে পারলে হাতে আরও টাকা থাকবে।'}[lang]
     else:
-        tip = {'en': 'Looks steady. 👍', 'bl': 'Sob thik-thak cholche. 👍', 'bn': 'সব ঠিকঠাক চলছে। 👍'}[lang]
+        tip = {'en': 'Your position looks stable.', 'bl': 'Apnar obostha sthitishil.', 'bn': 'আপনার অবস্থা স্থিতিশীল।'}[lang]
     return '\n'.join(lines + ['', tip])
 
 
@@ -490,7 +517,7 @@ def _decide(db, ctx, text):
         from api.app.notifications import sms_inbox
         entry = sms_inbox.item(db, ctx.business, sms[2])
         if not entry:
-            return Reply('That SMS was already handled. 👍')
+            return Reply('That SMS was already handled.')
         if sms[1] == 'skip':
             sms_inbox.mark(db, ctx.business, sms[2], 'skipped')
             return Reply('Skipped — nothing was saved.')
@@ -511,6 +538,12 @@ def _decide(db, ctx, text):
         return Reply('', save=state['pending'], lang=lang)
     if normalized in ('__save__', '__cancel__'):
         return Reply(say('nothing_pending', lang), lang=lang)
+
+    if p.guide:
+        from api.app.chat.guide import GUIDE, PAGE_LABEL
+        _, page, answers = GUIDE[p.guide]
+        buttons = [(f'Open {PAGE_LABEL[page]}', f'__open:{page}__')] if page and ctx.channel == 'web' else []
+        return Reply(answers[lang], buttons=buttons, lang=lang)
 
     if p.small_talk:
         save_state(db, ctx, lang, keep_topic=True)
