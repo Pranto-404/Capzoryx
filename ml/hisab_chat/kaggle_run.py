@@ -6,7 +6,11 @@ HF_TOKEN (Hugging Face write token) and any of GROQ_KEY, GEMINI_KEY, CEREBRAS_KE
     !rm -rf Capzoryx && git clone -q https://github.com/Pranto-404/Capzoryx
     %run Capzoryx/ml/hisab_chat/kaggle_run.py
 
-Use Save Version -> Save & Run All to keep it running with the browser closed. It ends by printing the values
+Use Save Version -> Save & Run All to keep it running with the browser closed.
+
+Google Colab (Pro A100 is fastest): Runtime -> Change runtime type -> A100. Add the same names under Secrets (the key
+icon on the left, turn on notebook access) and run the same two lines. With 30 GB or more of GPU memory the run uses
+full precision, all the data and two epochs. Keep the tab open until it finishes. It ends by printing the values
 to add on Render.
 
 ZeroGPU (needs a Hugging Face PRO account): put `%env HISAB_TARGET=zerogpu` above the %run line. The run then also
@@ -20,16 +24,29 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def gpu_memory_gb():
+    try:
+        out = subprocess.run(['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'],
+                             capture_output=True, text=True, check=True).stdout.split()
+        return int(out[0]) / 1024 if out else 0
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return 0
+
+
 OWNER = os.getenv('HISAB_OWNER', 'Pranto-404')
 MODEL_REPO, SPACE_REPO = f'{OWNER}/hisab-chat-gguf', f'{OWNER}/hisab-chat'
 MERGED_REPO, ZERO_SPACE = f'{OWNER}/hisab-chat-merged', f'{OWNER}/hisab-chat-zero'
 ZEROGPU = os.getenv('HISAB_TARGET', '').lower() == 'zerogpu'
-# Free plan default: Qwen3-1.7B answers in 1-3 GPU seconds (many replies per free ZeroGPU quota) and still runs on a
-# free 2-core CPU Space. HISAB_BASE=Qwen/Qwen3-4B-Instruct-2507 gives better Bangla at about twice the cost.
+# Default Qwen3-4B-Instruct-2507 (good Bangla, served on ZeroGPU). HISAB_BASE=Qwen/Qwen3-1.7B is faster and also gets
+# a free CPU copy.
 BASE = os.getenv('HISAB_BASE', 'Qwen/Qwen3-4B-Instruct-2507')
 SMALL = '1.7B' in BASE
 # Data size: 1.0 is about 6,900 conversations. The 4B default uses 60% so the whole run fits in about 2 hours on a T4.
-SCALE = float(os.getenv('HISAB_SCALE', '1.0' if SMALL else '0.6'))
+BIG_GPU = gpu_memory_gb() >= 30  # Colab A100 / L4-class cards: full precision, all the data, two epochs
+SCALE = float(os.getenv('HISAB_SCALE', '1.0' if SMALL or BIG_GPU else '0.6'))
+EPOCHS = os.getenv('HISAB_EPOCHS', '2' if BIG_GPU else '1')
 # A free 2-core CPU Space is only fast enough for the small model; the 4B one is served on ZeroGPU alone.
 CPU_COPY = SMALL or not ZEROGPU or os.getenv('HISAB_CPU') == '1'
 TEACHER_SECRETS = {'GROQ_KEY': 'CAPZORYX_CHAT_GROQ_KEY', 'GEMINI_KEY': 'CAPZORYX_CHAT_GEMINI_KEY',
@@ -43,16 +60,24 @@ def step(title, *command):
 
 
 def load_secrets():
+    """Kaggle secrets, Colab secrets (the key icon on the left, with notebook access on), or the environment."""
     try:
         from kaggle_secrets import UserSecretsClient
-    except ImportError:  # outside Kaggle the values come from the environment
-        return
-    client = UserSecretsClient()
+        get = UserSecretsClient().get_secret
+    except ImportError:
+        try:
+            from google.colab import userdata
+            get = userdata.get
+        except ImportError:  # elsewhere the values come from the environment
+            return
     for name, env in {'HF_TOKEN': 'HF_TOKEN', **TEACHER_SECRETS}.items():
         try:
-            os.environ[env] = client.get_secret(name)
+            value = get(name)
+            if value:
+                os.environ[env] = value
         except Exception:  # noqa: BLE001 - a missing optional secret is fine
             pass
+
 
 
 def probe_teachers():
@@ -112,8 +137,9 @@ def start_zerogpu_space():
 
 def main():
     load_secrets()
+    print(f'GPU memory: {gpu_memory_gb():.0f} GB; base {BASE}; data x{SCALE}; epochs {EPOCHS}', flush=True)
     if not os.getenv('HF_TOKEN'):
-        raise SystemExit('Add a Hugging Face write token as the Kaggle secret HF_TOKEN.')
+        raise SystemExit('Add a Hugging Face write token as the secret HF_TOKEN (Kaggle: Add-ons -> Secrets; Colab: the key icon, with notebook access on).')
     teachers = probe_teachers()
     step('Install training libraries', sys.executable, '-m', 'pip', '-q', 'install', 'unsloth', 'httpx')
     # Short everyday chat plus whole-business answers (any industry), so the model knows the owner's business.
@@ -122,7 +148,7 @@ def main():
          '--size', n(3000), '--teacher', n(800) if teachers else '0',
          '--business', n(2200), '--business-teacher', n(900) if teachers else '0')
     step('Train, export and upload', sys.executable, '-m', 'ml.hisab_chat.train', '--data', 'data/hisab_chat',
-         '--output', 'runs/hisab-chat', '--epochs', '1', '--base', BASE, *([] if SMALL else ['--qlora']),
+         '--output', 'runs/hisab-chat', '--epochs', EPOCHS, '--base', BASE, *([] if SMALL or BIG_GPU else ['--qlora']),
          *(['--gguf', '--push', MODEL_REPO] if CPU_COPY else []), *(['--merged', MERGED_REPO] if ZEROGPU else []))
     key = start_space() if CPU_COPY else None  # the free CPU copy answers when GPU quota is used up (small model only)
     cpu = f"https://{SPACE_REPO.replace('/', '-').lower()}.hf.space/v1"
