@@ -3,7 +3,7 @@
 All money math is deterministic, in integer minor units (Decimal only for quantities and percentages). The AI never
 computes these numbers. When an input is missing the result says what is missing instead of guessing.
 
-A market quotation is not what a dealer will pay back, so the owner's per-unit selling costs (making charge, buyback
+A market price is not always what a buyer will actually pay, so the owner's per-unit selling costs (making charge, buyback
 deduction, transport) are subtracted before calling something a profit.
 """
 from collections import defaultdict
@@ -46,6 +46,11 @@ def reference_for(db, business, product, currency):
                         observed_at=obs['observed_at'], indicator=key)
         if obs:
             return None  # a market price exists but in a different unit; converting silently would mislead
+    from api.app.market import product_indicator
+    own = latest(db, business, product_indicator(product['id']), currency, 'per ' + (product.get('unit') or 'unit'))
+    if own:  # this product's own market price, from the owner's quote or cited research
+        return dict(value_minor=own['value_minor'], basis='market', source=own['source'], kind=own['kind'],
+                    observed_at=own['observed_at'], indicator=product_indicator(product['id']))
     if product.get('price_minor') is not None:
         return dict(value_minor=product['price_minor'], basis='own_price', source='Your selling price', kind='owner', observed_at=None, indicator=None)
     return None
@@ -54,7 +59,7 @@ def reference_for(db, business, product, currency):
 def position(product, reference):
     """Per-unit and total position. The gold example: cost 194,000, reference 200,000, costs 7,000 → net −1,000."""
     out = dict(id=product['id'], name=product['name'], unit=product.get('unit') or '', quantity=product.get('quantity'),
-               cost_minor=product.get('cost_minor'), expense_minor=product.get('expense_minor') or 0, reference=reference, missing=[])
+               cost_minor=product.get('cost_minor'), price_minor=product.get('price_minor'), expense_minor=product.get('expense_minor') or 0, reference=reference, missing=[])
     if product.get('cost_minor') is None:
         out['missing'].append('cost')
     if reference is None:

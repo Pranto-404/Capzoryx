@@ -98,3 +98,11 @@ All ten pass. Where each one is checked:
 - **Email** for critical alerts uses the existing mailer and only reaches owners with a verified address. The email carries no amounts.
 - **Erasing** a workspace's private data also removes its business profile, products, quotes, research, alerts and advisor feedback. The workspace export includes all of them.
 - **Scale:** tested with 1,500 products. Profile, insights, advisor and market each answer well under a second.
+
+## Any industry, not only gold
+
+Gold was only the example in the brief. Every product of every business can have its own market price: what it sells for around the owner. The price comes from:
+- the owner's quote, such as the shop next door, a wholesale market or an online listing
+- web research with a citation
+
+The 25 most valuable products are followed this way. Profit, break-even, scenarios, alerts and advice all use that price, and the advisor also compares it with the owner's own selling price (priced above or below the market). Gold and silver keep their built-in metal feeds as a special case.

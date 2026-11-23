@@ -69,13 +69,13 @@ def find(data, profile):
             measure='Net position for this product on Your numbers.',
             strategies=[
                 strategy('A', 'Protect what you have, no spending',
-                         ['Ask two dealers for a written buyback price today; the published price is not what they pay.',
+                         ['Ask two buyers or dealers for a firm price today; a published or listed price is not always what they pay.',
                           f"Sell only if a buyer pays above {m(p['break_even_minor'], c)}; otherwise hold.",
                           'Pause new purchases of this item until the price is back above break-even.'],
                          'No cost', f'Avoids adding to a position that would lose about {m(further, c)} more if prices fell another 5%.' if further else 'Avoids adding to a losing position.',
                          'Low', 'Prices may rise while you wait; holding also ties up cash.', 'Dealer quotes collected; no new stock bought below break-even.'),
                 strategy('B', 'Move stock at a margin with a small offer',
-                         ['Offer an exchange or upgrade deal where the customer pays a making or service charge.',
+                         ['Offer a bundle, exchange or upgrade deal that earns a service or add-on charge instead of a deep discount.',
                           f"Cap the promotion cost at a small part of {budget_text}."],
                          f"Up to {m(share(budget, 10), c)} (10% of your growth budget)" if budget else 'A small, fixed amount you choose',
                          'Turns stock into cash at or above break-even through charges rather than metal price.',
@@ -108,6 +108,46 @@ def find(data, profile):
                     strategy('C', 'Buy in bulk or change supplier',
                              ['Get quotes from two other suppliers; buy a larger lot only if it lowers unit cost by 5% or more.'],
                              f'Uses part of {budget_text}', 'Lower cost on every unit sold.', 'Medium', 'Stock that sells slowly ties up cash.', 'Unit cost on new purchases.'),
+                ]))
+    for p in data['positions']:
+        ref = p.get('reference') or {}
+        own = p.get('price_minor')
+        if p['status'] == 'incomplete' or ref.get('basis') != 'market' or not own or not str(ref.get('indicator', '')).startswith('p:'):
+            continue
+        gap = round((own - ref['value_minor']) * 10000 / ref['value_minor'])
+        qty = Decimal(p['quantity']) if p.get('quantity') else None
+        if gap >= 1000:
+            out.append(dict(
+                key=f"above:{p['id']}", kind='priced_above_market', severity=2, title=f"{p['name']} is priced {gap / 100:.0f}% above the market",
+                what=f"You sell at {m(own, c)}; the market price is {m(ref['value_minor'], c)} ({ref['source']}, {str(ref['observed_at'])[:10]}).",
+                why='Customers who compare prices may buy elsewhere unless they see a clear reason to pay more.',
+                impact_minor=None, confidence='medium', evidence=[f"{ref['source']}, {str(ref['observed_at'])[:10]}"],
+                measure='Units sold per week of this product.',
+                strategies=[
+                    strategy('A', 'Show why you are worth more, or close the gap', ['Point out what you offer that others do not (quality, warranty, delivery, service).',
+                             f"If sales are slowing, move the price toward {m(ref['value_minor'], c)} while staying above break-even {m(p['break_even_minor'], c)}."],
+                             'No cost', 'Keeps price-sensitive customers.', 'Low', 'A lower price cuts margin on every unit.', 'Weekly units sold before and after.'),
+                    strategy('B', 'A small, targeted offer', ['Run a limited offer for this product only, to repeat customers.'],
+                             'A small, fixed amount you choose', 'Tests whether price is what holds sales back.', 'Low', 'Offers can become expected.', 'Sales during the offer.'),
+                    strategy('C', 'Lower your cost to compete', ['Get quotes from other suppliers for this product.'],
+                             'Time, and possibly a larger order', 'Lets you match the market without losing margin.', 'Medium', 'New suppliers can be less reliable.', 'Unit cost on new purchases.'),
+                ]))
+        elif gap <= -1000:
+            gain = int(qty * (ref['value_minor'] - own) / 2) if qty else None
+            out.append(dict(
+                key=f"below:{p['id']}", kind='room_to_raise', severity=1, title=f"{p['name']} sells {abs(gap) / 100:.0f}% below the market",
+                what=f"You sell at {m(own, c)}; the market price is {m(ref['value_minor'], c)} ({ref['source']}, {str(ref['observed_at'])[:10]}).",
+                why='You may be giving away margin that customers would pay.',
+                impact_minor=gain, confidence='medium', evidence=[f"{ref['source']}, {str(ref['observed_at'])[:10]}"],
+                measure='Margin and units sold for this product.',
+                strategies=[
+                    strategy('A', 'Raise the price in a small step', [f"Move toward {m(ref['value_minor'], c)} in one or two steps and watch sales."],
+                             'No cost', f'Closing half the gap adds about {m(gain, c)} on the stock you hold.' if gain else 'More margin on every unit.',
+                             'Low', 'Some loyal customers may notice the change.', 'Units sold and margin per week.'),
+                    strategy('B', 'Keep the price, add a paid extra', ['Offer delivery, packaging or a warranty as a paid add-on.'],
+                             'Little or none', 'More income per sale without changing the headline price.', 'Low', 'Extras that are not wanted do not sell.', 'Add-ons sold.'),
+                    strategy('C', 'Use the margin to grow', ['Spend part of the extra margin on reaching new customers.'],
+                             'Part of the extra margin', 'Turns the price advantage into more customers.', 'Medium', 'Growth spending may not pay back.', 'New customers per month.'),
                 ]))
     g = data['growth']
     if g['cash_margin_bp'] is not None and g['cash_margin_bp'] < 0:
@@ -226,7 +266,7 @@ def answer(db, business, ask):
         missing = [p['name'] for p in data['positions'] if p['status'] == 'incomplete']
         if missing:
             lines.append(f"Not calculated (missing data): {', '.join(missing)}.")
-        lines.append('A dealer may pay less than the published price, so compare with a written buyback quote.')
+        lines.append('Buyers may pay less than a listed or published price, so compare with a firm offer.')
         return '\n'.join(lines)
     move = ask[1]
     held = [p for p in usable if p.get('quantity') and p['reference']['basis'] == 'market']
@@ -244,7 +284,7 @@ def answer(db, business, ask):
              f"• Better case ({better:+.1f}%): {m(net_at(held, better), c)}",
              f"• Worse case ({worse:+.1f}%): {m(net_at(held, worse), c)}"]
     if net_at(held, move) < 0:
-        lines.append('In the base case you would be below break-even. Options: get written buyback quotes, sell only above break-even, '
+        lines.append('In the base case you would be below break-even. Options: get firm prices from buyers, sell only above break-even, '
                      'and pause new purchases until prices recover.')
     else:
         lines.append('In the base case you would be above break-even.')

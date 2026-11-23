@@ -10,7 +10,8 @@ type Indicator={key:string;label:string;unit:string;currency:string;source_kind:
 type Research={status:'running'|'done'|'unavailable'|'failed';reason:string;started_at:number;finished_at:number|null;
   result:{findings:{text:string;sources:Source[]}[];competitors:{name:string;kind:string;area:string;why:string;sources:Source[]}[];sources:Source[];searches:string[]}|null};
 type Alert={id:string;level:number;created_at:number;title:string;lines:string[];advice:string;delivery:{channel:string;status:string}[]};
-type Market={currency:string;profile_ready:boolean;indicators:Indicator[];coverage_note:string;research:Research|null;research_allowed:boolean;research_configured:boolean;owner_competitors:string[]};
+type ProductPrice={id:string;name:string;indicator:string;unit:string;currency:string;price_minor:number|null;latest:Observation|null;status:string;your_price_gap_bp:number|null};
+type Market={currency:string;profile_ready:boolean;indicators:Indicator[];products:ProductPrice[];coverage_note:string;research:Research|null;research_allowed:boolean;research_configured:boolean;owner_competitors:string[]};
 
 const KIND:Record<string,string>={delayed:T('Daily reference rate'),derived:T('Estimate'),owner:T('Your price'),research:T('Web research')};
 const COMPETITOR:Record<string,string>={direct:T('Direct'),indirect:T('Indirect'),emerging:T('Emerging'),leader:T('Market leader'),benchmark:T('Benchmark')};
@@ -55,6 +56,23 @@ export function MarketPanel({request,openSettings}:{request:Request;openSettings
       {quote===i.key&&<QuoteForm currency={i.currency} unit={i.unit} busy={busy} cancel={()=>setQuote(null)}
         submit={b=>void act(async()=>{const next=await request<Market>('/market/quotes',{indicator:i.key,...b});setQuote(null);return next;})}/>}
     </li>)}</ul>
+    {!!data.products.length&&<><h3>{t('Your products in the market')}</h3>
+      <p className="muted small-print">{t('What each product sells for around you. Add prices you see in shops, markets or online, or run research for cited prices.')}</p>
+      <ul className="market-list">{data.products.map(p=><li key={p.id}>
+        <div><b>{p.name}</b><small>{p.price_minor!=null?t('You sell at {price} {unit}',{price:money(p.price_minor,p.currency),unit:p.unit}):p.unit}</small></div>
+        <div className="market-value">
+          {p.latest?<><strong>{money(p.latest.value_minor,p.currency)}</strong>
+            <small><span className={'pill kind-'+p.latest.kind}>{t(KIND[p.latest.kind]||p.latest.kind)}</span> {day(p.latest.observed_at)}
+              {p.latest.url?<> · <a href={p.latest.url} target="_blank" rel="noreferrer noopener">{p.latest.source}</a></>:<> · {p.latest.source}</>}</small>
+            {p.your_price_gap_bp!=null&&Math.abs(p.your_price_gap_bp)>=100&&<small className={p.your_price_gap_bp>0?'market-warn':undefined}>
+              {p.your_price_gap_bp>0?t('Your price is {pct}% above the market',{pct:(p.your_price_gap_bp/100).toFixed(0)}):t('Your price is {pct}% below the market',{pct:(-p.your_price_gap_bp/100).toFixed(0)})}</small>}</>
+            :<strong className="muted">{t('No market price yet')}</strong>}
+          {p.status==='stale'&&<small className="market-warn">{t('Older than two weeks: add a newer price.')}</small>}
+          {quote!==p.indicator&&<button className="link" onClick={()=>setQuote(p.indicator)}>{p.latest?t('Update market price'):t('Add a market price')}</button>}
+        </div>
+        {quote===p.indicator&&<QuoteForm currency={p.currency} unit={p.unit} busy={busy} cancel={()=>setQuote(null)}
+          submit={b=>void act(async()=>{const next=await request<Market>('/market/quotes',{indicator:p.indicator,...b});setQuote(null);return next;})}/>}
+      </li>)}</ul></>}
     {data.coverage_note&&<p className="muted small-print">{data.coverage_note}</p>}
 
     {!!alerts.length&&<><h3>{t('Recent alerts')}</h3><ul className="market-alerts">{alerts.slice(0,6).map(a=><li key={a.id} className={'alert-'+a.level}>
@@ -89,7 +107,7 @@ function QuoteForm({currency,unit,busy,cancel,submit}:{currency:string;unit:stri
     <div className="form-row">
       <label>{t('Price ({currency} {unit})',{currency,unit})}<input required inputMode="decimal" value={value} onChange={e=>setValue(e.target.value)}/></label>
       <label>{t('Date')}<input type="date" required value={on} max={new Date().toISOString().slice(0,10)} onChange={e=>setOn(e.target.value)}/></label>
-      <label>{t('Where you saw it')}<input required minLength={2} maxLength={120} value={source} onChange={e=>setSource(e.target.value)} placeholder={t('e.g. BAJUS, my dealer')}/></label>
+      <label>{t('Where you saw it')}<input required minLength={2} maxLength={120} value={source} onChange={e=>setSource(e.target.value)} placeholder={t('e.g. shop next door, wholesale market, Daraz')}/></label>
     </div>
     <div className="actions"><button disabled={busy||!(minor>0)}>{t('Save price')}</button><button type="button" className="ghost" onClick={cancel}>{t('Cancel')}</button></div>
   </form>;
