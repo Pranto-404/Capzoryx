@@ -7,13 +7,24 @@ import {t,T,useI18n} from './i18n';
 
 type Request=<R,>(path:string,body?:unknown)=>Promise<R>;
 type EntryType='expense'|'income'|'bill';
-type Draft={title?:string;needs_review?:boolean;entry_type:EntryType;amount_minor:number;effective_on:string;memo:string;warnings:string[];evidence:string;party:string;category:string;confidence:number;due_on?:string;vendor_name?:string;invoice_number?:string};
-type Split={drafts:Draft[];dropped:{evidence:string;reason:string}[];method:'ai'|'rules'};
-type Row={id:string;title:string;include:boolean;type:EntryType;amount:string;date:string;note:string;party:string;warnings:string[];evidence:string;due:string;invoice:string};
+type Draft={title?:string;needs_review?:boolean;entry_type:EntryType;amount_minor:number;effective_on:string;memo:string;warnings:string[];evidence:string;party:string;category:string;due_on?:string};
+type Split={drafts:Draft[];dropped:{evidence:string;reason:string;count?:number}[];method:'ai'|'rules'};
+type Row={id:string;title:string;include:boolean;type:EntryType;amount:string;date:string;note:string;party:string;warnings:string[];evidence:string;due:string};
 type Status={speech:boolean;cloud_allowed:boolean;max_seconds:number};
 type Recognition={lang:string;continuous:boolean;interimResults:boolean;start():void;stop():void;onresult:((e:{resultIndex:number;results:ArrayLike<{isFinal:boolean;0:{transcript:string}}>})=>void)|null;onend:(()=>void)|null;onerror:((e:{error:string})=>void)|null};
 
 const TYPE:Record<EntryType,string>={expense:T('Money paid'),income:T('Money received'),bill:T('Bill still to pay')};
+const DROPPED:Record<string,string>={
+  AMOUNT_NOT_SAID:T('The amount was not clearly said.'),
+  AMBIGUOUS_AMOUNT:T('Say each payment and its amount in a separate sentence.'),
+  AMOUNT_OUT_OF_RANGE:T('This amount is outside the supported range.'),
+  CURRENCY_MISMATCH:T('Record this payment in a workspace for its currency.'),
+  NOT_IN_NOTE:T('These words do not appear together in the note.'),
+  NOT_PAID:T('The note says the payment did not happen.'),
+  PLANNED:T('The note describes a future payment.'),
+  QUESTION:T('The note asks a question.'),
+  TOO_MANY_ENTRIES:T('Split the note into smaller batches of up to 40 entries.'),
+};
 // Server warnings, listed so they are translated with the rest of the page.
 export const SERVER_WARNINGS=[T('No day was said, so today is used. Change it if needed.'),T('Check the date.'),
   T('Two numbers were said here. Check that this is the right amount.'),T('Found by the backup reader. Check it, or untick it if it is not a payment.'),
@@ -144,10 +155,10 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       const data=await request<Split>('/assist/batch-drafts',{transcript:transcript.trim(),consent:!!status?.cloud_allowed,...(week!=='recent'?{week_start:weekStart(week)}:{})});
       if(!alive.current)return;
       setRows(data.drafts.map(d=>({id:crypto.randomUUID(),title:d.title||d.category||'',include:!d.needs_review,type:d.entry_type,amount:major(d.amount_minor,currency),date:d.effective_on,
-        note:d.memo,party:d.party,warnings:d.warnings,evidence:d.evidence,due:d.due_on||d.effective_on,invoice:d.invoice_number||''})));
+        note:d.memo,party:d.party,warnings:d.warnings,evidence:d.evidence,due:d.due_on||d.effective_on})));
       setDropped(data.dropped);setMethod(data.method);
       setStage(data.drafts.length?'review':'idle');
-      if(!data.drafts.length)setError(t('No amounts were found in the note. Say or type each payment with its amount, for example “Shombar bhara 5000 taka”.'));
+      if(!data.drafts.length&&!data.dropped.length)setError(t('No amounts were found in the note. Say or type each payment with its amount, for example “Shombar bhara 5000 taka”.'));
     }catch(e){if(alive.current){setStage('idle');setError(errorText(e));}}
   }
   const update=(id:string,patch:Partial<Row>)=>setRows(cur=>cur.map(r=>r.id===id?{...r,...patch}:r));
@@ -164,7 +175,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
         if(r.type==='bill'){
           const vendor=slug(r.party)||'voice-supplier';
           if(r.date>today)throw new Error(t('Entry {n}: a bill date cannot be in the future.',{n:i+1}));
-          return {request_id:r.id,kind:'invoice',amount_minor:minor,effective_on:r.date,vendor_id:vendor,invoice_number:r.invoice||`VOICE-${r.date.replaceAll('-','')}-${i+1}`,due_on:r.due<r.date?r.date:r.due,memo:r.note.slice(0,2000)};
+          return {request_id:r.id,kind:'invoice',amount_minor:minor,effective_on:r.date,vendor_id:vendor,invoice_number:`VOICE-${r.id}`,due_on:r.due<r.date?r.date:r.due,memo:r.note.slice(0,2000)};
         }
         return {request_id:r.id,kind:'cash',amount_minor:minor,effective_on:r.date,direction:r.type==='income'?'inflow':'outflow',status:r.date>today?'scheduled':'cleared',memo:r.note.slice(0,2000)};
       });
@@ -207,6 +218,10 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       {transcript&&!busy&&<button className="secondary" onClick={()=>{setTranscript('');setRows([]);setDropped([]);setStage('idle');}}>{t('Clear')}</button>}</div>
     {error&&<p className="error" role="alert">{error}</p>}
     {result&&<p className="success" role="status">{result}</p>}
+    {dropped.length>0&&<details className="batch-dropped" open={rows.length===0}>
+      <summary>{t('{count} parts were not turned into drafts',{count:dropped.reduce((sum,d)=>sum+(d.count||1),0)})}</summary>
+      <ul>{dropped.map((d,i)=><li key={i}>{d.evidence&&<>“{d.evidence}” · </>}{t(DROPPED[d.reason]||T('Check the note and try again.'))}</li>)}</ul>
+    </details>}
 
     {(stage==='review'||stage==='saving')&&<div className="batch-review">
       <h3>{t('{count} drafts from your note',{count:rows.length})}</h3>
@@ -235,8 +250,6 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
         </div>
         {r.warnings.map((w,j)=><p className="notice small" key={j}>{t(w)}</p>)}
       </li>)}</ol>
-      {dropped.length>0&&<details className="batch-dropped"><summary>{t('{count} parts were not turned into drafts',{count:dropped.length})}</summary>
-        <ul>{dropped.map((d,i)=><li key={i}>“{d.evidence}” · {d.reason==='AMOUNT_NOT_SAID'?t('the amount was not clearly said'):t('these words are not in the note')}</li>)}</ul></details>}
       <p className="batch-total"><span>{t('Paid {amount}',{amount:major(total('expense'),currency)+' '+currency})}</span><span>{t('Received {amount}',{amount:major(total('income'),currency)+' '+currency})}</span>{total('bill')>0&&<span>{t('Bills {amount}',{amount:major(total('bill'),currency)+' '+currency})}</span>}</p>
       <div className="actions"><button disabled={stage==='saving'||!chosen.length} onClick={()=>void save()}>{stage==='saving'?t('Saving…'):t('Save {count} records',{count:chosen.length})}</button>
         <button className="secondary" disabled={stage==='saving'} onClick={()=>{setRows([]);setStage('idle');}}>{t('Discard all')}</button></div>

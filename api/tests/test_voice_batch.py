@@ -207,6 +207,37 @@ def test_two_equal_amounts_are_two_entries(monkeypatch):
     assert [(d['amount_minor'], d['effective_on']) for d in drafts] == [(50000, '2026-11-23'), (50000, '2026-11-18')]
 
 
+def test_rule_fallback_uses_corrected_amount_and_preserves_relative_dates():
+    note = '3 din age transport 500 dilam. Yesterday rent 5000 taka dilam, na na 4500 taka.'
+    drafts, dropped, method = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)
+    assert [(d['amount_minor'], d['effective_on']) for d in drafts] == [(50000, '2026-11-21'), (450000, '2026-11-23')]
+    assert drafts[1]['needs_review'] and not dropped and method == 'rules'
+
+
+def test_model_quote_keeps_negation_and_rejects_foreign_currency(monkeypatch):
+    note = 'I did not pay the 3000 rent. Aj software 10 USD dilam.'
+    _ai(monkeypatch, [{'evidence': 'pay the 3000 rent', 'amount': 3000, 'type': 'expense'},
+                      {'evidence': 'software 10', 'amount': 10, 'type': 'expense'}])
+    drafts, dropped, _ = vb.split_note(note, TODAY, 'BDT', 2)
+    assert not drafts
+    assert {d['reason'] for d in dropped} == {'NOT_PAID', 'CURRENCY_MISMATCH'}
+
+
+def test_rule_fallback_keeps_conjoined_and_repeated_payments():
+    note = 'Aj dokan bhara 5000 taka dilam ar transport 300 taka dilam. Transport 300 taka dilam.'
+    drafts, dropped, _ = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)
+    assert not dropped
+    assert [d['amount_minor'] for d in drafts] == [500000, 30000, 30000]
+
+
+def test_synthetic_voice_bills_have_unique_numbers_even_in_separate_batches():
+    def bill(amount):
+        note = f'Aj stationery {amount} taka baki'
+        return vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)[0][0]
+
+    assert bill(600)['invoice_number'] != bill(650)['invoice_number']
+
+
 def test_too_many_entries_are_reported_not_silently_dropped():
     raw = [{'evidence': 'bhara 100 dilam', 'amount': 100, 'type': 'expense'}] * (vb.MAX_ENTRIES + 5)
     _, dropped = vb.checked_drafts(raw, 'bhara 100 dilam', TODAY, 'BDT', 2)

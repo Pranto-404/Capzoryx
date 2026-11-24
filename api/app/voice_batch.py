@@ -14,10 +14,12 @@ import base64
 import binascii
 import json
 import logging
+import math
 import re
 import time
 import unicodedata
 from datetime import date, timedelta
+from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, Depends
@@ -26,6 +28,7 @@ from pydantic import Field, StrictBool
 from api.app import security as sec
 from api.app.accounts import today_bd
 from api.app.contracts import Contract
+from api.app.currencies import CURRENCIES
 from api.app.routes import db_connection, principal
 
 log = logging.getLogger(__name__)
@@ -133,7 +136,7 @@ def spoken_amounts(text):
             i += 1
         if seen:
             value = total + current
-            if value > 0:
+            if math.isfinite(value) and value > 0:
                 found.add(round(value, 2))
         if i == start:
             i += 1
@@ -228,8 +231,54 @@ def intent(text):
     return 'unclear'
 
 
-SPLIT = re.compile(r'[.](?!\d)|[।!;\n]+|(?<=\?)|,(?!\d)|\b(?:tarpor|tarpore|then|arpor|erpor|after that|and then)\b|তারপর|এরপর|আর তারপর', re.I)
+CORRECTION = r'\b(?:na\s+na|no\s+no|correction|i mean)\b|না\s+না|মানে'
+SPLIT = re.compile(rf'[.](?!\d)|[।!;\n]+|(?<=\?)|,(?!\d|\s*(?:{CORRECTION}))|'
+                   r'\b(?:tarpor|tarpore|and then|then|arpor|erpor|after that)\b|আর তারপর|তারপর|এরপর', re.I)
+JOIN = re.compile(r'\b(?:and|ar|r)\b|(?<!\w)আর(?!\w)', re.I)
+CORRECTED = re.compile(CORRECTION, re.I)
+ISO_DAY = re.compile(r'\b20\d\d-\d\d-\d\d\b')
+WORD_AGO = re.compile(r'(?<!\w)(?:' + '|'.join(re.escape(word) for word, value in _SMALL.items() if value <= 13)
+                      + r')\s*(?:din|দিন|days?)\s*(?:age|আগে|ago)(?!\w)')
+CURRENCY_WORDS = {
+    'BDT': r'৳|টাকা|\b(?:taka|tk)\b',
+    'USD': r'\busd\b|\bus\s+dollars?\b|ডলার',
+    'EUR': r'€|\b(?:eur|euros?)\b|ইউরো',
+    'GBP': r'£|\b(?:gbp|pounds? sterling)\b',
+    'INR': r'₹|\b(?:inr|indian\s+rupees?)\b',
+}
+DOLLAR_CURRENCIES = {'USD', 'CAD', 'AUD', 'NZD', 'SGD', 'HKD'}
 FILLER = re.compile(r'\b(?:taka|tk|bdt|dilam|diyechi|disi|pelam|pailam|e|te|theke|ke|r|ar|and|then|tarpor)\b|টাকা|দিলাম|পেলাম|থেকে', re.I)
+
+
+def _payment_amounts(text):
+    normalized = _norm(text)
+    normalized = ISO_DAY.sub(' ', WORD_AGO.sub(' ', AGO.sub(' ', normalized)))
+    return spoken_amounts(CORRECTED.split(normalized)[-1])
+
+
+def _foreign_currency(part, currency):
+    codes = {code for code in re.findall(r'\b[A-Z]{3}\b', part) if code in CURRENCIES}
+    codes.update(code for code, pattern in CURRENCY_WORDS.items() if re.search(pattern, part, re.I))
+    dollars = '$' in part or re.search(r'\bdollars?\b', part, re.I)
+    return any(code != currency for code in codes) or (dollars and currency not in DOLLAR_CURRENCIES)
+
+
+def _note_parts(transcript):
+    parts = []
+    for fragment in SPLIT.split(transcript):
+        fragment = fragment.strip(' ,')
+        if len(fragment) < 3:
+            continue
+        # Keep number phrases such as "one hundred and fifty" together.
+        start = 0
+        for match in JOIN.finditer(fragment):
+            left = fragment[start:match.start()].strip()
+            right = fragment[match.end():].strip()
+            if intent(left) != 'unclear' and intent(right) != 'unclear' and _payment_amounts(left) and _payment_amounts(right):
+                parts.append(left)
+                start = match.end()
+        parts.append(fragment[start:].strip())
+    return parts
 
 
 def _title(part):
@@ -242,15 +291,11 @@ def _title(part):
 def rule_entries(transcript):
     """A sentence-by-sentence reading used without AI, and to catch anything the AI missed."""
     entries = []
-    for part in SPLIT.split(transcript):
-        part = (part or '').strip(' ,-')
-        if len(part) < 3:
-            continue
-        amounts = spoken_amounts(part)
-        if len(amounts) != 1:  # none, or two numbers that cannot be told apart without help
-            continue
-        kind = intent(part)
-        entries.append(dict(evidence=part, amount=next(iter(amounts)), type=kind, party='', category='', title=_title(part), note=part[:120]))
+    for position, part in enumerate(_note_parts(transcript)):
+        amounts = _payment_amounts(part)
+        if amounts:
+            entries.append(dict(evidence=part, amount=next(iter(amounts)) if len(amounts) == 1 else None,
+                                type=intent(part), title=_title(part), position=position))
     return entries
 
 
@@ -319,55 +364,81 @@ def quoted(evidence, transcript):
     return bool(words) and f' {words} ' in f' {_flat(transcript)} '
 
 
-def _covered(part, evidences):
-    """Most of a rule part's words are inside some AI entry's quote: the AI already handled it."""
-    mine = set(TOKEN.findall(_norm(part)))
-    return bool(mine) and any(len(mine & set(TOKEN.findall(_norm(e)))) / len(mine) >= 0.6 for e in evidences)
-
-
 CATEGORY = re.compile(r'^[a-z][a-z /&-]{0,30}$')
 SKIP_REASONS = {'negated': 'NOT_PAID', 'planned': 'PLANNED', 'question': 'QUESTION'}
 
 
-def checked_drafts(raw_entries, transcript, today, currency, digits, week_start=None):
-    """Validated drafts in the order they were said; entries that fail a check are reported with the reason."""
-    drafts, dropped, day = [], [], None
-    seen = set()
-    raw_entries = raw_entries or []
-    if len(raw_entries) > MAX_ENTRIES:
-        dropped.append(dict(evidence='', reason='TOO_MANY_ENTRIES', count=len(raw_entries) - MAX_ENTRIES))
-    order = []
-    for raw in raw_entries[:MAX_ENTRIES]:
-        if not isinstance(raw, dict):
-            continue
-        evidence = re.sub(r'\s+', ' ', str(raw.get('evidence') or '')).strip()[:400]
-        if not quoted(evidence, transcript):
-            dropped.append(dict(evidence=evidence[:120], reason='NOT_IN_NOTE'))
-            continue
-        what = intent(evidence)
-        if what in SKIP_REASONS:
-            dropped.append(dict(evidence=evidence[:120], reason=SKIP_REASONS[what]))
-            continue
-        try:
-            amount = round(float(str(raw.get('amount')).replace(',', '')), 2)
-        except (TypeError, ValueError):
-            amount = 0
-        said = spoken_amounts(evidence)  # only this entry's own words: never another sentence's number
-        if amount <= 0 or amount not in said:
-            dropped.append(dict(evidence=evidence[:120], reason='AMOUNT_NOT_SAID'))
-            continue
+def _part_dates(parts, today, week_start):
+    day = None
+    dates = []
+    for part in parts:
         warnings = []
-        spoken = said_day(evidence, today, week_start)  # the day comes from the quoted words, never from the AI
+        spoken = said_day(part, today, week_start)
         if spoken is not None:
-            if day is not None and spoken < day and _weekday(evidence) is not None and week_start is None:
+            if day is not None and spoken < day and _weekday(part) is not None and week_start is None:
                 warnings.append('The days in your note go backwards. Choose the week above if this was last week.')
             day = spoken
         elif day is None:
             warnings.append('No day was said, so today is used. Change it if needed.')
         effective = day or today
-        if effective > today or effective < today - timedelta(days=60):
+        unsafe = effective > today or effective < today - timedelta(days=60)
+        if unsafe:
             warnings.append('Check the date.')
             effective = min(max(effective, today - timedelta(days=60)), today)
+        dates.append((effective, warnings, unsafe))
+    return dates
+
+
+def checked_drafts(raw_entries, transcript, today, currency, digits, week_start=None, *, from_rules=False):
+    """Validate model evidence and check the full clause for negation, currency and correction."""
+    drafts, dropped = [], []
+    parts = _note_parts(transcript)
+    dates = _part_dates(parts, today, week_start)
+    raw_entries = raw_entries or []
+    if len(raw_entries) > MAX_ENTRIES:
+        dropped.append(dict(evidence='', reason='TOO_MANY_ENTRIES', count=len(raw_entries) - MAX_ENTRIES))
+    taken = set()
+    amounts_in_parts = set()
+    for raw in raw_entries[:MAX_ENTRIES]:
+        if not isinstance(raw, dict):
+            continue
+        evidence = str(raw.get('evidence') or '').strip()[:MAX_TRANSCRIPT]
+        quote = _flat(evidence)
+        candidates = ([raw['position']] if from_rules else
+                      [i for i, part in enumerate(parts) if quoted(evidence, part)])
+        if not candidates:
+            dropped.append(dict(evidence=evidence[:120], reason='NOT_IN_NOTE'))
+            continue
+        position = next((i for i in candidates if (i, quote) not in taken), candidates[0])
+        part = parts[position]
+        what = intent(part)
+        if what in SKIP_REASONS:
+            dropped.append(dict(evidence=part[:120], reason=SKIP_REASONS[what]))
+            continue
+        if _foreign_currency(part, currency):
+            dropped.append(dict(evidence=part[:120], reason='CURRENCY_MISMATCH'))
+            continue
+        try:
+            amount = round(float(str(raw.get('amount')).replace(',', '')), 2)
+        except (TypeError, ValueError):
+            amount = 0
+        said = _payment_amounts(evidence)
+        corrected = bool(CORRECTED.search(part))
+        if corrected:
+            said &= _payment_amounts(part)
+        if not math.isfinite(amount) or amount <= 0 or amount not in said:
+            reason = 'AMBIGUOUS_AMOUNT' if from_rules and len(said) > 1 else 'AMOUNT_NOT_SAID'
+            dropped.append(dict(evidence=part[:120], reason=reason))
+            continue
+        minor = int(round(amount * 10 ** digits)) if amount <= 10**12 else 0
+        if not 0 < minor <= 10**12:
+            dropped.append(dict(evidence=part[:120], reason='AMOUNT_OUT_OF_RANGE'))
+            continue
+        if (position, minor) in amounts_in_parts:
+            continue
+        amounts_in_parts.add((position, minor))
+        effective, date_warnings, unsafe_date = dates[position]
+        warnings = date_warnings.copy()
         claimed = raw.get('type') if raw.get('type') in ('expense', 'income', 'bill') else None
         kind = what if what in ('expense', 'income', 'bill') else (claimed or 'expense')
         if what == 'unclear':
@@ -377,47 +448,50 @@ def checked_drafts(raw_entries, transcript, today, currency, digits, week_start=
         party = re.sub(r'[\x00-\x1f]+', ' ', str(raw.get('party') or '')).strip()[:60]
         category = str(raw.get('category') or '').strip().casefold()
         category = category if CATEGORY.match(category) else ''
-        title = re.sub(r'[\x00-\x1f]+', ' ', str(raw.get('title') or '')).strip()[:40] or _title(evidence) or category.capitalize()
-        key = _flat(evidence)
-        if key in seen:  # the very same words twice: one entry
-            continue
-        seen.add(key)
-        minor = int(round(amount * 10 ** digits))
-        if len(said) > 1:
+        title = re.sub(r'[\x00-\x1f]+', ' ', str(raw.get('title') or '')).strip()[:40] or _title(part) or category.capitalize()
+        taken.add((position, quote))
+        ambiguous = len(_payment_amounts(part)) > 1 or corrected
+        if ambiguous:
             warnings.append('Two numbers were said here. Check that this is the right amount.')
         memo = ' · '.join(x for x in (title, party if party and party not in title else '') if x)[:200]
         draft = dict(ok=True, kind='invoice' if kind == 'bill' else 'cash', entry_type=kind, amount_minor=minor,
                      currency=currency, workspace_currency=currency, currency_mismatch=False,
                      effective_on=effective.isoformat(), memo=memo, title=title, warnings=warnings, can_save=True,
-                     needs_review=what == 'unclear' or len(said) > 1, confidence=0.9 if not warnings else 0.6, evidence=evidence,
-                     party=party, category=category)
+                     needs_review=what == 'unclear' or ambiguous or unsafe_date,
+                     confidence=0.9 if not warnings else 0.6, evidence=part if corrected else evidence,
+                     party=party, category=category, _position=position)
         if kind == 'bill':
             draft.update(due_on=(effective + timedelta(days=7)).isoformat(), vendor_name=party or 'Supplier',
-                         invoice_number=f'VOICE-{effective:%Y%m%d}-{len(drafts) + 1}')
+                         invoice_number=f'VOICE-{uuid4()}')
         else:
             draft.update(direction='inflow' if kind == 'income' else 'outflow', status='cleared')
         drafts.append(draft)
-        order.append(effective)
     return drafts, dropped
 
 
 def split_note(transcript, today, currency, digits, *, use_ai=True, deadline=None, week_start=None):
-    """(drafts, dropped, method). With AI, anything the rule reader found that no AI entry quotes is added for checking."""
-    rules, rule_dropped = checked_drafts(rule_entries(transcript), transcript, today, currency, digits, week_start)
+    """Use validated AI entries, with deterministic recovery for missed clauses."""
+    drafts, dropped = checked_drafts(rule_entries(transcript), transcript, today, currency, digits, week_start, from_rules=True)
+    method = 'rules'
     if use_ai:
         found = ai_entries(transcript, deadline or time.monotonic() + 30)
         if found:
-            drafts, dropped = checked_drafts(found[0], transcript, today, currency, digits, week_start)
-            if drafts or dropped:
-                # Parts the AI got wrong (unquoted text, a borrowed amount) are not "covered": the rule reader may recover them.
-                covered = [d['evidence'] for d in drafts] + [d['evidence'] for d in dropped if d['reason'] in SKIP_REASONS.values()]
-                for extra in rules:
-                    if not _covered(extra['evidence'], covered):
-                        extra['warnings'].append('Found by the backup reader. Check it, or untick it if it is not a payment.')
-                        extra['confidence'], extra['needs_review'] = 0.5, True
-                        drafts.append(extra)
-                return drafts, dropped, 'ai'
-    return rules, rule_dropped, 'rules'
+            ai_drafts, ai_dropped = checked_drafts(found[0], transcript, today, currency, digits, week_start)
+            dropped = list({(d['evidence'], d['reason']): d for d in ai_dropped + dropped}.values())
+            if ai_drafts:
+                method = 'ai'
+                covered = {d['_position'] for d in ai_drafts}
+                extras = [d for d in drafts if d['_position'] not in covered]
+                for extra in extras:
+                    extra['warnings'].append('Found by the backup reader. Check it, or untick it if it is not a payment.')
+                    extra['confidence'], extra['needs_review'] = 0.5, True
+                drafts = ai_drafts + extras
+    drafts.sort(key=lambda d: d['_position'])
+    if len(drafts) > MAX_ENTRIES:
+        dropped.append(dict(evidence='', reason='TOO_MANY_ENTRIES', count=len(drafts) - MAX_ENTRIES))
+    for draft in drafts:
+        del draft['_position']
+    return drafts[:MAX_ENTRIES], dropped, method
 
 
 # ---------- speech to text ----------
@@ -607,7 +681,6 @@ def batch_drafts(body: NoteText, actor=Depends(principal), db=Depends(db_connect
     with sec.transaction(db):
         ds = sec.original_dataset(db, actor.business_id)
         cloud = body.consent and _cloud_allowed(db, actor)
-    from api.app.currencies import CURRENCIES
     digits = CURRENCIES[ds.currency]['digits']
     today = today_bd()
     week = body.week_start if body.week_start and today - timedelta(days=60) <= body.week_start <= today else None
