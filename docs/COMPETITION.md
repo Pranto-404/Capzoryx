@@ -5,7 +5,7 @@ and voice notes, forecasts cash gaps and proposes rescue plans.
 
 **Direction.** Multi-entry voice capture and batch drafting.
 
-Open **Try the sample demo** from the homepage, or use the same site's `/demo` path. The fictional walkthrough
+Open the [live judge demo](https://capzoryx-competition.onrender.com/demo) or use **Try the sample demo** from the live workspace homepage. The fictional walkthrough
 needs no account, microphone or AI provider. It runs the real rule-based splitter and cash radar with fixed inputs.
 
 ## Challenge 1: a whole week of spending in one voice note, every entry a separate draft
@@ -17,7 +17,7 @@ Where: **Add records → Voice note** (website, installed app and Android app).
 2. **Speech to text.** With Smart assist enabled, the note goes to **Whisper large-v3** on Groq. Configured Whisper turbo,
    Gemini audio and Hugging Face backups share a time budget. The engine gets a hint list of Bangla money words and the workspace's
    supplier names, so names and "hajar" come out right. The transcript is shown and the owner can correct it. The
-   audio is not stored. (`api/app/voice_batch.py`)
+   audio stays in the tab for replay or a second transcription. The workspace does not store the audio. (`api/app/voice_batch.py`)
 3. **Split into entries.** An AI model splits the transcript. Nothing it returns is trusted until it passes these
    checks:
    - every entry must quote words that are really in the note;
@@ -48,8 +48,8 @@ Where: **Overview** and **Cash flow → Cash radar**. Logic is in `api/app/servi
 - **Realistic dates.** Each open invoice is expected on due date + habit. Money later than the customer's habit is
   marked "later than usual". Money more than 30 days overdue *and* two weeks past the habit is "doubtful" and is not
   counted as arriving tomorrow.
-- **Three outlooks, side by side:** everyone pays on the due date (the plain forecast), realistic, and "late money
-  does not come".
+- **Cash and projections:** view recorded cash and a confirmed-cash baseline after known expenses. Compare the due-date
+  case, the realistic payment-habit case and the stress case without late or doubtful receipts.
 - **Alert levels:**
   - **Alert** only when the *realistic* outlook falls below the safety reserve within 14 days.
   - **Watch** (in the app, no notification) when only the stress case does. The radar names the customers it depends
@@ -70,10 +70,13 @@ Tests: `api/tests/test_radar.py`. They cover:
 
 ## Demo script (3 minutes)
 
-Start with the public sample. Make four drafts, edit one amount, and explain why the payment that never moved was
-skipped. Switch between the two Cash Radar cases. When the customer pays eight days after the due date, the projected
-balance falls Tk 20,000 below the Tk 5,000 reserve. The second case shows a quiet Watch because its realistic forecast
-stays above the reserve.
+1. Open the [live judge demo](https://capzoryx-competition.onrender.com/demo). Choose **Seven-day spending sample** and **Make drafts**.
+2. Show the seven dated expenses totaling **Tk 21,950**. Edit one draft or untick one, then confirm the sample.
+   The **Short sample** also demonstrates a bill, an incoming payment and a deliberately skipped payment.
+3. Switch the two Cash Radar cases. The eight-day late payment leads to a **Tk 20,000 shortfall below the safety
+   reserve**. In the second case the realistic outlook stays above the reserve and the stress case shows a **Watch**.
+4. Explain the delivery rule. The app sends an alert on a realistic shortfall, updates it when the problem materially
+   worsens, and clears pending alerts if the episode resolves during quiet hours.
 
 For the signed-in workflow:
 

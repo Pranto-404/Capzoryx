@@ -20,6 +20,7 @@ import re
 import time
 import unicodedata
 from datetime import date, timedelta
+from typing import Literal
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -87,7 +88,7 @@ SCALES = {'thousand': 1000, 'হাজার': 1000, 'hajar': 1000, 'hazar': 100
           'million': 1_000_000, 'crore': 10_000_000, 'কোটি': 10_000_000, 'koti': 10_000_000}
 FRACTIONS = {'দেড়': 1.5, 'der': 1.5, 'deŗ': 1.5, 'আড়াই': 2.5, 'arai': 2.5, 'adai': 2.5}
 HALF_MORE = {'সাড়ে', 'sare', 'shade', 'sharhe'}
-TOKEN = re.compile(r'\d+(?:[.,]\d+)*(?:\.\d+)?k?|[\wঀ-৿]+', re.UNICODE)
+TOKEN = re.compile(r'\d+(?:[.,]\d+)*(?:\.\d+)?k?|[^\W\d][\w\u0981-\u0983\u09bc\u09be-\u09cd\u09d7\u09e2\u09e3\u200c\u200d]*', re.UNICODE)
 
 
 def _norm(text):
@@ -203,29 +204,45 @@ def said_day(text, today, week_start=None):
 
 # ---------- what kind of statement a part is ----------
 INCOME = re.compile(r'\b(?:received|got|earned|sold|sale|sales|collected|income|pelam|pailam|peyechi|peyesi|paisi|'
-                    r'bikri|becha|bechlam|joma)\b|পেয়েছি|পেলাম|পাইলাম|বিক্রি|বেচা|বেচলাম|আয়|জমা', re.I)
-BILL = re.compile(r'\b(?:baki|due|owe|bill pending|unpaid)\b|বাকি|পাওনা', re.I)
+                    r'bikri|becha|bechlam|joma|borrowed|nilam|niyechilam)\b|পেয়েছি|পেলাম|পাইলাম|বিক্রি|বেচা|বেচলাম|আয়|জমা|'
+                    r'নিয়েছিলাম|নিয়েছি|নিলাম|পেয়েছিলাম', re.I)
+BILL = re.compile(r'\b(?:baki|due|owe|bill pending|unpaid)\b|(?<!\w)বাকি(?![\w\u0981-\u09cd])|পাওনা', re.I)
 SPENT = re.compile(r'\b(?:paid|pay|spent|bought|buy|gave|dilam|diyechi|disi|dichi|kinlam|kinechi|khoroch|khorch|bhara|vara|'
-                   r'rent|transport|bill|salary|beton|mal|bazar|nasta|chaa|cha|lunch|tel|fuel|repair|kharcha|expense)\b|'
-                   r'দিলাম|দিয়েছি|কিনলাম|কিনেছি|খরচ|ভাড়া|বিল|বেতন|মাল|বাজার|নাস্তা|চা|তেল', re.I)
+                   r'rent|transport|bill|salary|beton|mal|bazar|nasta|chaa|cha|lunch|tel|fuel|repair|kharcha|expense|kinsi|'
+                   r'delivery|packaging)\b|'
+                   r'দিলাম|দিয়েছি|দিয়েছিলাম|দিতে পেরেছি|কিনলাম|কিনেছি|খরচ|ভাড়া|বিল|বেতন|মাল|বাজার|নাস্তা|চা|তেল', re.I)
+PURCHASE = re.compile(r'(?:৳\s*\d+(?:[.,]\d+)*|টাকা)\s+দিয়ে(?:ই)?\s+|'
+                      r'\b(?:paid for|bought|spent on)\b', re.I)
+REQUESTED = re.compile(r'ধার\s+চে(?:য়ে|ই)ছিল|টাকা\s+চে(?:য়ে|ই)ছিল|'
+                       r'\b(?:asked (?:me )?(?:for|to lend)|wanted to borrow|dhar cheyechilo)\b', re.I)
+BALANCE = re.compile(r'আমার কাছে.{0,80}টাকা (?:আছে|ছিল)|হাতে.{0,60}টাকা (?:আছে|ছিল)|'
+                     r'\b(?:cash on hand|balance|had left|taka ase|taka ache)\b', re.I)
 # "Rahim 5000 taka dey nai", "দেইনি", "pai nai", "didn't pay": nothing moved.
 NEGATED = re.compile(r'\b(?:dey ?nai|dei ?nai|dey ?ni|deini|dini|dei nii|pai ?nai|pay ?nai|paini|hoy ?nai|hoini|'
                      r'not paid|didn\'?t|did not|never|no payment)\b|দেয়নি|দেয়নি|দেইনি|দিইনি|দিনি|পাইনি|পায়নি|পায়নি|হয়নি|হয়নি', re.I)
 # Plans and questions are not money that moved: "kal dibo", "will pay", "koto dibo?".
 PLANNED = re.compile(r'\b(?:dibo|debo|dite hobe|korbo|kinbo|will pay|will buy|going to|plan|planning|next week|'
                      r'agami|porer shoptahe)\b|দিব|দেব|দিতে হবে|কিনব|করব|আগামী|পরের সপ্তাহে', re.I)
+BN_NEGATED = re.compile(r'(?:দেয়|দেই|দিই|পাই|পায়|হয়)\s+নাই|(?:দিতে|পেতে)\s+পারিনি')
 
 
 def intent(text):
     """'income', 'bill', 'expense', or a reason the part is not a money movement ('negated', 'planned', 'question', 'unclear')."""
-    if NEGATED.search(text):
+    text = _norm(text)
+    if NEGATED.search(text) or BN_NEGATED.search(text):
         return 'negated'
     if PLANNED.search(text):
         return 'planned'
     if '?' in text:
         return 'question'
+    if REQUESTED.search(text):
+        return 'requested'
+    if BALANCE.search(text) and not (SPENT.search(text) or PURCHASE.search(text) or INCOME.search(text)):
+        return 'balance'
     if BILL.search(text):
         return 'bill'
+    if PURCHASE.search(text):
+        return 'expense'
     if INCOME.search(text):
         return 'income'
     if SPENT.search(text):
@@ -233,9 +250,12 @@ def intent(text):
     return 'unclear'
 
 
-CORRECTION = r'\b(?:na\s+na|no\s+no|correction|i mean)\b|না\s+না|মানে'
+CORRECTION = r'\b(?:na\s+na|no\s+no|correction|i mean)\b|না\s+না|(?<!\w)মানে(?!\w)'
 SPLIT = re.compile(rf'[.](?!\d)|[।!;\n]+|(?<=\?)|,(?!\d|\s*(?:{CORRECTION}))|'
-                   r'\b(?:tarpor|tarpore|and then|then|arpor|erpor|after that)\b|আর তারপর|তারপর|এরপর', re.I)
+                   r'\b(?:tarpor|tarpore|and then|then|arpor|erpor|after that)\b|'
+                   r'আর তারপর|তারপরে|তারপর|এরপরে|এরপর|(?=\s+(?:ও তো|সে তো|কিন্তু)\s)|'
+                   r'(?<=টাকা আছে)(?=\s)|(?<=টাকা ছিল)(?=\s)', re.I)
+CONTRAST = re.compile(r'^(?:কিন্তু|but)\s+', re.I)
 JOIN = re.compile(r'\b(?:and|ar|r)\b|(?<!\w)আর(?!\w)', re.I)
 CORRECTED = re.compile(CORRECTION, re.I)
 ISO_DAY = re.compile(r'\b20\d\d-\d\d-\d\d\b')
@@ -290,14 +310,42 @@ def _title(part):
     return ' '.join(words[:5])[:40].strip(' ,.-') or ''
 
 
+BN_DRAFT_LABELS = (
+    (r'ক্রিকেট', 'ক্রিকেট', 'sports'),
+    (r'স্ন্যাক্স|স্ন্যাকস|নাশতা|নাস্তা', 'স্ন্যাক্স / নাস্তা', 'food'),
+    (r'ভাড়া', 'ভাড়া', 'transport'),
+    (r'ধার.*(?:নিয়েছি|নিলাম|নিয়েছিলাম)|থেকে.{0,45}টাকা.{0,10}(?:নিয়েছি|নিলাম|নিয়েছিলাম)', 'টাকা নেওয়া', 'other'),
+    (r'ওকে.{0,35}টাকা দিলাম|তাকে.{0,35}টাকা দিলাম|দিতে পেরেছি', 'টাকা দেওয়া', 'other'),
+)
+
+
+LATIN_DRAFT_LABELS = (
+    (r'\btransport\b', 'Transport', 'transport'),
+    (r'\b(?:inventory|stock kinsi)\b', 'Inventory', 'stock'),
+    (r'\b(?:salary|beton)\b', 'Salary', 'salary'),
+    (r'\b(?:electricity|biddut)\b', 'Electricity', 'utilities'),
+    (r'\bdelivery\b', 'Delivery', 'delivery'),
+    (r'\b(?:rent|vara|bhara)\b', 'Rent', 'rent'),
+    (r'\bpackaging\b', 'Packaging', 'packaging'),
+)
+
+
+def _rule_label(part):
+    for pattern, title, category in BN_DRAFT_LABELS + LATIN_DRAFT_LABELS:
+        if re.search(pattern, _norm(part)):
+            return title, category
+    return _title(part), ''
+
+
 def rule_entries(transcript):
     """A sentence-by-sentence reading used without AI, and to catch anything the AI missed."""
     entries = []
     for position, part in enumerate(_note_parts(transcript)):
         amounts = _payment_amounts(part)
         if amounts:
+            title, category = _rule_label(part)
             entries.append(dict(evidence=part, amount=next(iter(amounts)) if len(amounts) == 1 else None,
-                                type=intent(part), title=_title(part), position=position))
+                                type=intent(part), title=title, category=category, position=position))
     return entries
 
 
@@ -367,7 +415,10 @@ def quoted(evidence, transcript):
 
 
 CATEGORY = re.compile(r'^[a-z][a-z /&-]{0,30}$')
-SKIP_REASONS = {'negated': 'NOT_PAID', 'planned': 'PLANNED', 'question': 'QUESTION'}
+SKIP_REASONS = {
+    'negated': 'NOT_PAID', 'planned': 'PLANNED', 'question': 'QUESTION',
+    'requested': 'REQUESTED_ONLY', 'balance': 'BALANCE_ONLY',
+}
 
 
 def _part_dates(parts, today, week_start):
@@ -489,6 +540,22 @@ def split_note(transcript, today, currency, digits, *, use_ai=True, deadline=Non
                     extra['confidence'], extra['needs_review'] = 0.5, True
                 drafts = ai_drafts + extras
     drafts.sort(key=lambda d: d['_position'])
+    # A contrast immediately after a request can repeat a transfer already stated just before it.
+    # Keep every other repeated entry, since two distinct payments may have the same amount.
+    parts = _note_parts(transcript)
+    draft_by_part = {draft['_position']: draft for draft in drafts}
+    repeated = set()
+    for position, part in enumerate(parts):
+        if position < 2 or not CONTRAST.match(part) or intent(parts[position - 1]) != 'requested':
+            continue
+        earlier, current = draft_by_part.get(position - 2), draft_by_part.get(position)
+        if earlier and current and earlier['entry_type'] == current['entry_type'] == 'expense':
+            same_amount = earlier['amount_minor'] == current['amount_minor']
+            shared_recipient = re.search(r'(?:ওকে|তাকে|\bhim\b|\bher\b)', parts[position - 2]) and re.search(
+                r'(?:ওকে|তাকে|\bhim\b|\bher\b)', part)
+            if same_amount and shared_recipient:
+                repeated.add(position)
+    drafts = [draft for draft in drafts if draft['_position'] not in repeated]
     if len(drafts) > MAX_ENTRIES:
         dropped.append(dict(evidence='', reason='TOO_MANY_ENTRIES', count=len(drafts) - MAX_ENTRIES))
     for draft in drafts:
@@ -499,20 +566,22 @@ def split_note(transcript, today, currency, digits, *, use_ai=True, deadline=Non
 # ---------- speech to text ----------
 WHISPER_MODELS = ('whisper-large-v3', 'whisper-large-v3-turbo')
 TRANSCRIPTION_BUDGET_SECONDS = 52
-VOCABULARY = ('টাকা হাজার শো লাখ বিকাশ নগদ রকেট ভাড়া বেতন বিল বাকি বিক্রি খরচ দোকান মাল ডেলিভারি গতকাল পরশু আজ '
-              'taka hajar bKash Nagad')
+SPEECH_PROMPTS = {
+    'bn': ('বাংলা বা বাংলিশে একজন দোকানির কথার হুবহু প্রতিলিপি। টাকার অঙ্ক, নাম, তারিখ, বিরতি, ধার চেয়েছিল, '
+           'দিতে পেরেছি, দেয় নাই, হাতে আছে, পাঁচশো, দুশো, ভাড়া, খরচ, বিকাশ, নগদ, bKash, taka, hajar।'),
+    'en': 'Verbatim small-business voice note. Keep names, amounts, dates, corrections and negatives as spoken.',
+}
 
 
-def _vocabulary(db, business):
-    """Names the owner uses (suppliers and customers) help the speech engine spell them; at most a few dozen words."""
+def _vocabulary(db, business, language):
+    """Give the transcriber a few relevant vendor spellings in addition to its language prompt."""
     names = set()
     try:
         ds = sec.original_dataset(db, business)
         names |= {i.vendor_id.replace('-', ' ') for i in ds.invoices[-60:]}
     except Exception:  # noqa: BLE001 - a hint only
         pass
-    hint = VOCABULARY + ' ' + ' '.join(sorted(names)[:30])
-    return hint[:600]
+    return SPEECH_PROMPTS[language] + ' ' + ', '.join(sorted(names)[:12])[:160]
 
 
 def _speech_timeout(deadline, per_attempt=14):
@@ -522,31 +591,50 @@ def _speech_timeout(deadline, per_attempt=14):
     return httpx.Timeout(remaining, connect=min(4, remaining), write=min(4, remaining))
 
 
-def whisper(audio, mime, language, hint, deadline):
+def _uncertain_whisper(segments):
+    """Use each segment's reported confidence without rewriting or discarding any words."""
+    if not isinstance(segments, list):
+        return False
+    for segment in segments:
+        if not isinstance(segment, dict) or not str(segment.get('text') or '').strip():
+            continue
+        if any(isinstance(segment.get(key), (float, int)) and check(segment[key]) for key, check in (
+            ('avg_logprob', lambda value: value < -1.4),
+            ('compression_ratio', lambda value: value > 2.8),
+        )):
+            return True
+    return False
+
+
+def whisper(audio, mime, language, hint, deadline, models=WHISPER_MODELS):
     from api.app.market import groq_key
     key = groq_key()
     if not key:
-        return None, 'groq: no key'
+        return None, 'groq: no key', False
     reasons = []
-    for model in WHISPER_MODELS:
-        timeout = _speech_timeout(deadline)
+    extensions = {'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'mp4',
+                  'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-m4a': 'm4a', 'audio/aac': 'aac'}
+    extension = extensions[mime.split(';')[0]]
+    for model in models:
+        timeout = _speech_timeout(deadline, 24 if model == WHISPER_MODELS[0] else 14)
         if timeout is None:
             break
         try:
             with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=timeout) as client:
                 response = client.post('https://api.groq.com/openai/v1/audio/transcriptions',
                                        headers={'Authorization': 'Bearer ' + key},
-                                       data={'model': model, 'language': language, 'temperature': '0', 'response_format': 'json',
+                                       data={'model': model, 'language': language, 'temperature': '0', 'response_format': 'verbose_json',
                                              'prompt': hint},
-                                       files={'file': ('note.' + ('ogg' if 'ogg' in mime else 'mp4' if 'mp4' in mime else 'webm'), audio, mime)})
+                                       files={'file': (f'note.{extension}', audio, mime)})
             if response.status_code == 200:
-                text = str(response.json().get('text') or '').strip()
+                body = response.json()
+                text = str(body.get('text') or '').strip()
                 if text:
-                    return text, model
+                    return text, model, _uncertain_whisper(body.get('segments'))
             reasons.append(f'{model} {response.status_code}')
-        except (httpx.HTTPError, ValueError) as error:
+        except (httpx.HTTPError, ValueError, AttributeError) as error:
             reasons.append(f'{model} {type(error).__name__}')
-    return None, '; '.join(reasons)
+    return None, '; '.join(reasons), False
 
 
 def _gemini_speech_key():
@@ -569,7 +657,8 @@ def gemini_transcript(audio, mime, language, hint, deadline):
         return None, 'gemini: no key'
     ask = ('Transcribe this voice note exactly as spoken, in the language spoken ('
            + ('Bangla, write Bangla words in Bangla script' if language == 'bn' else 'English') +
-           '). Write amounts as the speaker said them. Do not add, translate or summarise anything. '
+           '). Preserve names, amounts, negations, requests, cash balances and every self-correction in spoken order. '
+           'Use punctuation at natural pauses. Never add, translate or summarise anything. Write [unclear] for an unreadable word. '
            'Words that may appear: ' + hint)
     body = {'contents': [{'parts': [{'inline_data': {'mime_type': mime.split(';')[0], 'data': base64.b64encode(audio).decode()}},
                                     {'text': ask}]}], 'generationConfig': {'temperature': 0}}
@@ -588,7 +677,7 @@ def gemini_transcript(audio, mime, language, hint, deadline):
                 if text:
                     return text, model
             reasons.append(f'{model} {response.status_code}')
-        except (httpx.HTTPError, ValueError, KeyError, IndexError) as error:
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
             reasons.append(f'{model} {type(error).__name__}')
     return None, '; '.join(reasons)
 
@@ -614,21 +703,29 @@ def hf_transcript(audio, mime, language, hint, deadline):
         return None, f'hf {type(error).__name__}'
 
 
-def transcribe(audio, mime, language, hint):
+def transcribe(audio, mime, language, hint, alternate=False):
     deadline = time.monotonic() + TRANSCRIPTION_BUDGET_SECONDS
-    text, used = whisper(audio, mime, language, hint, deadline)
-    if text:
-        return text, used
-    log.warning('voice note: whisper unavailable (%s)', used)
-    text, used2 = gemini_transcript(audio, mime, language, hint, deadline)
-    if text:
-        return text, used2
-    log.warning('voice note: gemini unavailable (%s)', used2)
-    text, used3 = hf_transcript(audio, mime, language, hint, deadline)
-    if text:
-        return text, used3
-    log.warning('voice note: hugging face unavailable (%s)', used3)
-    return None, None
+    args = (audio, mime, language, hint, deadline)
+    if alternate:
+        text, model = gemini_transcript(*args)
+        if text:
+            return text, model
+        text, model, _ = whisper(*args, models=WHISPER_MODELS[::-1])
+        if text:
+            return text, model
+        return hf_transcript(*args)
+    text, model, uncertain = whisper(*args)
+    if text and not uncertain:
+        return text, model
+    if not text:
+        log.warning('voice note: whisper unavailable (%s)', model)
+    backup, backup_model = gemini_transcript(*args)
+    if backup:
+        return backup, backup_model
+    backup, backup_model = hf_transcript(*args)
+    if backup:
+        return backup, backup_model
+    return (text, model) if text else (None, None)
 
 
 def speech_available():
@@ -642,6 +739,7 @@ class VoiceNote(Contract):
     mime: str = Field(pattern=r'^audio/(webm|ogg|mp4|mpeg|wav|x-m4a|aac)(;codecs=[a-z0-9.]+)?$')
     language: str = Field(pattern=r'^(bn|en)$')
     consent: StrictBool
+    mode: Literal['primary', 'alternate'] = 'primary'
 
 
 class NoteText(Contract):
@@ -679,11 +777,12 @@ def voice_note(body: VoiceNote, actor=Depends(principal), db=Depends(db_connecti
     if not 1000 <= len(audio) <= MAX_AUDIO_BYTES:
         sec.fail(422, 'INVALID_VOICE_DURATION')
     with sec.transaction(db):
-        hint = _vocabulary(db, actor.business_id)
-    text, model = transcribe(audio, body.mime, body.language, hint)
+        hint = _vocabulary(db, actor.business_id, body.language)
+    text, model = transcribe(audio, body.mime, body.language, hint, alternate=body.mode == 'alternate')
     if not text:
         sec.fail(503, 'SPEECH_SERVICE_BUSY')
-    return dict(transcript=text[:MAX_TRANSCRIPT], engine='whisper' if 'whisper' in model else 'gemini', simulation_only=True)
+    return dict(transcript=text[:MAX_TRANSCRIPT], engine='whisper' if 'whisper' in model else 'gemini',
+                model=model, truncated=len(text) > MAX_TRANSCRIPT, simulation_only=True)
 
 
 @router.post('/batch-drafts')

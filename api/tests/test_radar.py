@@ -40,6 +40,10 @@ def test_a_late_payer_moves_the_shortfall_into_view_honestly():
     view = r.outlook(books(), 5_000_00, TODAY, items)
     assert view['outlooks']['on_time']['first_shortfall_on'] is None
     assert view['level'] == 'alert' and view['breach_on'] == str(D(5)) and view['shortfall_minor'] == 20_000_00
+    assert view['available_cash_minor'] == 15_000_00
+    assert view['confirmed']['closing_minor'] == -15_000_00
+    assert view['outlooks']['realistic']['closing_minor'] == 10_000_00
+    assert view['outlooks']['stress']['closing_minor'] == -15_000_00
 
 
 def test_radar_rebases_old_books_and_carries_over_unpaid_bills():

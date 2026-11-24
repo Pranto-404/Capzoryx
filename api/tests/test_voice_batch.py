@@ -104,6 +104,31 @@ def test_speech_uses_whisper_then_gemini(monkeypatch):
     assert calls[:2] == ['api.groq.com/openai/v1/audio/transcriptions'] * 2  # large-v3, then turbo
 
 
+def test_uncertain_bangla_audio_uses_a_second_provider_and_preserves_audio_format(monkeypatch):
+    calls = []
+
+    def handle(request):
+        calls.append(request.url.host)
+        if request.url.host == 'api.groq.com':
+            assert b'note.wav' in request.content
+            assert b'verbose_json' in request.content
+            return httpx.Response(200, json={'text': 'ভুল অংশ', 'segments': [
+                {'text': 'ভুল অংশ', 'avg_logprob': -1.8},
+            ]})
+        return httpx.Response(200, json={'candidates': [{'content': {'parts': [
+            {'text': 'রফিককে দুশো টাকা দিলাম।'},
+        ]}}]})
+
+    monkeypatch.setattr(vb, 'TRANSPORT', httpx.MockTransport(handle))
+    monkeypatch.setenv('CAPZORYX_CHAT_GROQ_KEY', 'gsk_test')
+    monkeypatch.setenv('CAPZORYX_CHAT_GEMINI_KEY', 'gm_test')
+    assert vb.transcribe(b'x' * 2000, 'audio/wav', 'bn', 'বাংলা')[0] == 'রফিককে দুশো টাকা দিলাম।'
+    assert calls == ['api.groq.com', 'generativelanguage.googleapis.com']
+    calls.clear()
+    assert vb.transcribe(b'x' * 2000, 'audio/wav', 'bn', 'বাংলা', alternate=True)[0] == 'রফিককে দুশো টাকা দিলাম।'
+    assert calls == ['generativelanguage.googleapis.com']
+
+
 def test_dedicated_speech_capability_does_not_require_cloud_chat(world, monkeypatch):  # noqa: F811
     c, _ = world
     monkeypatch.setattr('api.app.gateway.disclosure', lambda: [])
@@ -247,6 +272,28 @@ def test_synthetic_voice_bills_have_unique_numbers_even_in_separate_batches():
     assert bill(600)['invoice_number'] != bill(650)['invoice_number']
 
 
+def test_long_bangla_story_keeps_five_movements_without_registering_the_requested_loan_or_balance():
+    note = (
+        'আমি করিম থেকে পাঁচশো টাকা নিয়েছিলাম এরপর বাজারে যাওয়ার পরে আমার রফিকের সঙ্গে দেখা হয় '
+        'ওকে আমি দুশো টাকা দিলাম ও তো আমার কাছে তিনশো টাকা ধার চেয়েছিল কিন্তু আমি দিতে পেরেছি ওকে দুইশো টাকা '
+        'এরপর আমার কাছে যে তিনশো টাকা আছে ওইটা নিয়ে মাঠে যেখানে একশো টাকা দিয়ে ক্রিকেট খেললাম। '
+        'তো ৳30 দিয়ে যখন আমি স্ন্যাক্স পেলাম তারপর আমি বাকিটাকে দিয়ে ভাড়া খরচ করে ৳৫০ ভাড়া খরচ করলাম। এরপর বাসায় গেলাম।'
+    )
+    drafts, dropped, method = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)
+    assert method == 'rules'
+    assert [(d['entry_type'], d['amount_minor']) for d in drafts] == [
+        ('income', 50000), ('expense', 20000), ('expense', 10000), ('expense', 3000), ('expense', 5000),
+    ]
+    assert {d['reason'] for d in dropped} == {'REQUESTED_ONLY', 'BALANCE_ONLY'}
+    assert sum(d['amount_minor'] for d in drafts if d['entry_type'] == 'expense') == 38000
+
+
+@pytest.mark.parametrize('note', ['রহিম ৫০০০ টাকা দেয় নাই', 'ওকে ২০০ টাকা দিতে পারিনি'])
+def test_bangla_spaced_negations_remain_out_of_the_drafts(note):
+    drafts, dropped, _ = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)
+    assert not drafts and dropped[0]['reason'] == 'NOT_PAID'
+
+
 def test_public_competition_demo_runs_engines_without_an_account(world):
     c, _ = world
     assert c.get('/api/session').status_code == 401
@@ -260,6 +307,14 @@ def test_public_competition_demo_runs_engines_without_an_account(world):
     assert data['radar']['habit']['receivables'][0]['habit_days'] == 8
     assert data['radar']['habit']['outlooks']['on_time']['first_shortfall_on'] is None
     assert data['radar']['overdue']['level'] == 'watch'
+    week = data['weekly_voice']['drafts']
+    assert [d['category'] for d in week] == ['transport', 'stock', 'salary', 'utilities', 'delivery', 'rent', 'packaging']
+    assert [d['amount_minor'] for d in week] == [120000, 500000, 350000, 210000, 90000, 800000, 125000]
+    assert all(d['entry_type'] == 'expense' and not d['needs_review'] for d in week)
+    assert len({d['effective_on'] for d in week}) == 7
+    assert sum(d['amount_minor'] for d in week) == 2195000
+    pasted = c.post('/api/competition/drafts', json={'transcript': 'আমি ৳৩০ দিয়ে নাস্তা কিনলাম।'})
+    assert pasted.status_code == 200 and pasted.json()['drafts'][0]['amount_minor'] == 3000
     assert c.get('/api/session').status_code == 401
 
 

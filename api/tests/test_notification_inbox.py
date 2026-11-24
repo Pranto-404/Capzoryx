@@ -91,6 +91,23 @@ def test_resolved_cash_breach_is_not_delivered_after_quiet_hours(world):
         dispatch(db, job, morning)
         assert db.execute('SELECT status FROM notification_jobs WHERE id=?', (job,)).fetchone()[0] == 'cancelled'
 
+
+def test_cash_radar_sends_one_severity_update_on_the_same_day(world):
+    c, path = world
+    business = signup(c, 'severity_update')['business_id']
+    today = today_bd()
+    due = (today + timedelta(days=2)).isoformat()
+    with sqlite3.connect(path) as db:
+        for number, minor, hour in [('FIRST', 10000, 9), ('SECOND', 5000, 10)]:
+            response, _ = record(c, kind='invoice', vendor_id='fixture-supplier', invoice_number=number,
+                                 due_on=due, amount_minor=minor)
+            assert response.status_code == 201, response.text
+            assert tick_business(db, business, local(today, hour))
+        assert tick_business(db, business, local(today, 11))
+        alerts = db.execute("""SELECT status FROM notification_jobs WHERE business_id=? AND channel='inapp'
+                              AND json_extract(payload_json,'$.kind')='cash_breach'""", (business,)).fetchall()
+    assert [row[0] for row in alerts] == ['sent', 'sent']
+
 def test_remote_claim_uses_returning_and_quiet_window_wrap():
     seen=[]
     def handle(request):
