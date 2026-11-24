@@ -22,7 +22,7 @@ function habit(i:Item){
 export function CashRadar({request,revision}:{request:Request;revision:string}){
   const [data,setData]=useState<Radar|null>(null);
   const [error,setError]=useState('');
-  useEffect(()=>{let live=true;void request<Radar>('/radar').then(d=>{if(live)setData(d);}).catch(e=>{if(live)setError(e instanceof Error?e.message:t('Request failed.'));});return()=>{live=false;};},[revision]);// eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{let live=true;void request<Radar>('/radar').then(d=>{if(live){setData(d);setError('');}}).catch(e=>{if(live)setError(e instanceof Error?e.message:t('Request failed.'));});return()=>{live=false;};},[request,revision]);
   if(error)return <section className="panel cash-radar"><h2>{t('Cash radar')}</h2><p className="error">{error}</p></section>;
   if(!data)return null;
   const m=(minor:number)=>money(minor,data.currency);

@@ -7,7 +7,8 @@ from api.app import security as sec
 from api.app.accounts import today_bd
 from api.app.notifications.routes import signature
 from api.app.notifications.scheduler import tick_business
-from api.app.notifications.service import BD, claim, deliver_after, enqueue
+from api.app.notifications.service import BD, claim, deliver_after, dispatch, enqueue
+from api.app.services.radar import should_alert
 from api.tests.test_accounts import PASSWORD, signup, world
 from api.tests.test_manual_inputs import record
 from api.tests.test_receivables import post
@@ -75,6 +76,20 @@ def test_preferences_revocation_and_private_inbox(world):
     assert c.get('/api/notifications').json()['items'] == []
     assert c.post(endpoint,json={}).status_code == 404
 
+
+def test_resolved_cash_breach_is_not_delivered_after_quiet_hours(world):
+    c, path = world
+    business = signup(c, 'resolved_radar')['business_id']
+    today = today_bd()
+    at = local(today, 23)
+    morning = local(today + timedelta(days=1), 8)
+    with sqlite3.connect(path) as db, sec.transaction(db):
+        assert should_alert(db, business, dict(level='alert', breach_on=str(today), shortfall_minor=100), at)
+        enqueue(db, business, 'cash_breach', str(today), at=at)
+        job = db.execute("SELECT id FROM notification_jobs WHERE status='queued' AND channel='inapp'").fetchone()[0]
+        assert not should_alert(db, business, dict(level='clear', breach_on=None, shortfall_minor=0), morning)
+        dispatch(db, job, morning)
+        assert db.execute('SELECT status FROM notification_jobs WHERE id=?', (job,)).fetchone()[0] == 'cancelled'
 
 def test_remote_claim_uses_returning_and_quiet_window_wrap():
     seen=[]

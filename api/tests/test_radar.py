@@ -42,6 +42,17 @@ def test_a_late_payer_moves_the_shortfall_into_view_honestly():
     assert view['level'] == 'alert' and view['breach_on'] == str(D(5)) and view['shortfall_minor'] == 20_000_00
 
 
+def test_radar_rebases_old_books_and_carries_over_unpaid_bills():
+    old = D(-40)
+    ds = books(bills=((2, 30_000_00),))
+    invoice = ds.invoices[0].model_copy(update={'issued_on': old})
+    stale = ds.model_copy(update={'as_of': old, 'invoices': [invoice]})
+    view = r.outlook(stale, 0, TODAY, [])
+    assert (view['level'], view['as_of'], view['breach_on']) == ('alert', str(TODAY), str(D(2)))
+    overdue = stale.model_copy(update={'invoices': [invoice.model_copy(update={'due_on': D(-20)})]})
+    assert r.outlook(overdue, 0, TODAY, [])['breach_on'] == str(D(1))
+
+
 def test_money_a_little_late_is_a_quiet_watch_not_an_alarm():
     # A new customer's 25,000 is 4 days overdue. Expected soon; only if it never comes is there a shortfall.
     items = r.expectations([('c1', 'cust', D(-4), 25_000_00)], {}, None, TODAY)
@@ -80,6 +91,15 @@ def test_no_nagging_within_a_customers_habit():
     # 3 days overdue for a customer who pays 8 days late: still within habit. 10 days overdue: later than usual.
     items = r.expectations([('k1', 'karim', D(-3), 1), ('k2', 'karim', D(-10), 1)], {'karim': (8, 3)}, 8, TODAY)
     assert [i['status'] for i in items] == ['usually_late', 'later_than_usual']
+
+
+def test_radar_resends_after_cumulative_deterioration():
+    db = sqlite3.connect(':memory:')
+    r.schema(db)
+    original = dict(level='alert', breach_on=str(D(7)), shortfall_minor=100)
+    assert r.should_alert(db, 'b', original, 1000)
+    assert not r.should_alert(db, 'b', dict(original, shortfall_minor=115), 1100)
+    assert r.should_alert(db, 'b', dict(original, shortfall_minor=126), 1200)
 
 
 def test_radar_endpoint(world):  # noqa: F811

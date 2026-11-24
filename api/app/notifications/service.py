@@ -71,6 +71,8 @@ def claim(db, identity, at):
 
 
 def relevant(db, business, kind, record, at):
+    if kind == 'cash_breach':
+        return bool(db.execute("SELECT 1 FROM radar_state WHERE business_id=? AND level='alert'", (business,)).fetchone())
     if kind == 'collections_review':
         from api.app.feature_flags import workspace_status
         today = datetime.fromtimestamp(at, BD).date().isoformat()
