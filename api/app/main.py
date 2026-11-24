@@ -18,7 +18,7 @@ from api.app import market
 from api.app import insights
 from api.app import monitor
 from api.app import advisor
-from api.app import voice_batch
+from api.app import competition, voice_batch
 from api.app.services import radar
 from api.app.chat import routes as chat_routes
 from api.app.notifications import email_alerts, push
@@ -131,6 +131,7 @@ app.include_router(hisab_hosted.router)
 app.include_router(books.router)
 app.include_router(voice.router)
 app.include_router(voice_batch.router)
+app.include_router(competition.router)
 app.include_router(i18n.router)
 app.include_router(passport.router)
 app.include_router(plans.router)

@@ -6,7 +6,7 @@ import {t,T} from './i18n';
 type Request=<R,>(path:string,body?:unknown)=>Promise<R>;
 type Item={receivable_id:string;customer_id:string;customer:string;due_on:string;amount_minor:number;habit_days:number;basis:'customer'|'business'|'due_date';expected_on:string;overdue_days:number;status:'on_time'|'usually_late'|'later_than_usual'|'doubtful'};
 type Outlook={closing_minor:number;lowest_minor:number;first_shortfall_on:string|null;shortfall_minor:number};
-type Radar={level:'clear'|'watch'|'alert';breach_on:string|null;shortfall_minor:number;reserve_minor:number;currency:string;
+export type Radar={level:'clear'|'watch'|'alert';breach_on:string|null;shortfall_minor:number;reserve_minor:number;currency:string;
   outlooks:{on_time:Outlook;realistic:Outlook;stress:Outlook};receivables:Item[];depends_on:Item[];doubtful_minor:number;late_minor:number};
 
 const LEVEL={clear:T('All clear'),watch:T('Watch'),alert:T('Alert')};
@@ -24,7 +24,10 @@ export function CashRadar({request,revision}:{request:Request;revision:string}){
   const [error,setError]=useState('');
   useEffect(()=>{let live=true;void request<Radar>('/radar').then(d=>{if(live){setData(d);setError('');}}).catch(e=>{if(live)setError(e instanceof Error?e.message:t('Request failed.'));});return()=>{live=false;};},[request,revision]);
   if(error)return <section className="panel cash-radar"><h2>{t('Cash radar')}</h2><p className="error">{error}</p></section>;
-  if(!data)return null;
+  return data?<CashRadarView data={data}/>:null;
+}
+
+export function CashRadarView({data}:{data:Radar}){
   const m=(minor:number)=>money(minor,data.currency);
   const o=data.outlooks;
   const headline=data.level==='alert'

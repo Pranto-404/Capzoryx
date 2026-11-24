@@ -7,8 +7,13 @@ import {ThemeProvider} from './Theme';
 import {I18nProvider} from './i18n';
 import './style.css';
 const EmailUnsubscribe=lazy(()=>import('./EmailAlerts').then(module=>({default:module.EmailUnsubscribe})));
+const CompetitionDemo=lazy(()=>import('./CompetitionDemo'));
 const passport = /^\/verify\/([a-f0-9]{32})\/?$/.exec(location.pathname);
-createRoot(document.getElementById('root')!).render(<StrictMode><ThemeProvider><I18nProvider>{location.pathname==='/bill-reminders/unsubscribe'?<Suspense fallback={null}><EmailUnsubscribe/></Suspense>:passport ? <VerifyPassport id={passport[1]}/> : <App />}</I18nProvider></ThemeProvider></StrictMode>);
+const demo = /^\/demo\/?$/.test(location.pathname);
+const page = demo ? <Suspense fallback={<main/>}><CompetitionDemo/></Suspense>
+  : location.pathname==='/bill-reminders/unsubscribe' ? <Suspense fallback={null}><EmailUnsubscribe/></Suspense>
+  : passport ? <VerifyPassport id={passport[1]}/> : <App/>;
+createRoot(document.getElementById('root')!).render(<StrictMode><ThemeProvider><I18nProvider>{page}</I18nProvider></ThemeProvider></StrictMode>);
 
 if (!nativeBuild && import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {

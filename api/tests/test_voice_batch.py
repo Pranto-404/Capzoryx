@@ -238,6 +238,22 @@ def test_synthetic_voice_bills_have_unique_numbers_even_in_separate_batches():
     assert bill(600)['invoice_number'] != bill(650)['invoice_number']
 
 
+def test_public_competition_demo_runs_engines_without_an_account(world):
+    c, _ = world
+    assert c.get('/api/session').status_code == 401
+    response = c.get('/api/competition/demo')
+    assert response.status_code == 200
+    data = response.json()
+    assert data['voice']['method'] == 'rules'
+    assert [d['amount_minor'] for d in data['voice']['drafts']] == [500000, 30000, 1200000, 185000]
+    assert [d['reason'] for d in data['voice']['dropped']] == ['NOT_PAID']
+    assert data['radar']['habit']['level'] == 'alert'
+    assert data['radar']['habit']['receivables'][0]['habit_days'] == 8
+    assert data['radar']['habit']['outlooks']['on_time']['first_shortfall_on'] is None
+    assert data['radar']['overdue']['level'] == 'watch'
+    assert c.get('/api/session').status_code == 401
+
+
 def test_too_many_entries_are_reported_not_silently_dropped():
     raw = [{'evidence': 'bhara 100 dilam', 'amount': 100, 'type': 'expense'}] * (vb.MAX_ENTRIES + 5)
     _, dropped = vb.checked_drafts(raw, 'bhara 100 dilam', TODAY, 'BDT', 2)
