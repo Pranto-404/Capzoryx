@@ -27,6 +27,7 @@ PHRASE_BOOST = (
     ('how is my business', 'summary', 2), ('how s business', 'summary', 2), ('how is business', 'summary', 2),
     ('how are things', 'summary', 2.5), ('how am i doing', 'summary', 2.5), ('what s new', 'summary', 1.5),
     ('how much do i have', 'balance', 2), ('koto ache', 'balance', 1), ('কত আছে', 'balance', 1),
+    ('কত টাকা আছে', 'balance', 2.5), ('koto taka ache', 'balance', 2.5), ('koto taka ase', 'balance', 2.5),
     ('dite hobe', 'payables', 2), ('দিতে হবে', 'payables', 2), ('owe me', 'receivables', 1.5),
     ('pete hobe', 'receivables', 2), ('পেতে হবে', 'receivables', 2), ('cash flow', 'forecast', 1),
     ('hate koto', 'balance', 1.5), ('hate kot', 'balance', 1.5), ('cash position', 'balance', 2), ('current cash', 'balance', 1.5),
