@@ -76,8 +76,10 @@ for words, value in [('ek ak', 1), ('dui du duii', 2), ('tin teen', 3), ('char',
 _HUNDREDS = {}
 for i, forms in enumerate(['এক', 'দুই দু', 'তিন', 'চার', 'পাঁচ', 'ছয় ছ', 'সাত', 'আট', 'নয়']):
     for form in forms.split():
-        for ending in ('শ', 'শো', 'শত'):
+        for ending in ('শ', 'শো', 'শত', 'সো'):
             _HUNDREDS[unicodedata.normalize('NFC', form + ending)] = (i + 1) * 100
+for spelling in ('কুড়ি', 'কুডি', 'কুরি'):
+    _SMALL[unicodedata.normalize('NFC', spelling)] = 20
 for i, forms in enumerate(['ek', 'du dui', 'tin', 'char', 'pach panch', 'choy chhoy', 'sat saat', 'at aat', 'noy']):
     for form in forms.split():
         for ending in ('sho', 'sh', 'show', 'shoto'):
@@ -262,7 +264,7 @@ ISO_DAY = re.compile(r'\b20\d\d-\d\d-\d\d\b')
 WORD_AGO = re.compile(r'(?<!\w)(?:' + '|'.join(re.escape(word) for word, value in _SMALL.items() if value <= 13)
                       + r')\s*(?:din|দিন|days?)\s*(?:age|আগে|ago)(?!\w)')
 CURRENCY_WORDS = {
-    'BDT': r'৳|টাকা|\b(?:taka|tk)\b',
+    'BDT': r'৳|টাকা|তাকা|\b(?:taka|takar|tk)\b',
     'USD': r'\busd\b|\bus\s+dollars?\b|ডলার',
     'EUR': r'€|\b(?:eur|euros?)\b|ইউরো',
     'GBP': r'£|\b(?:gbp|pounds? sterling)\b',
@@ -276,6 +278,23 @@ def _payment_amounts(text):
     normalized = _norm(text)
     normalized = ISO_DAY.sub(' ', WORD_AGO.sub(' ', AGO.sub(' ', normalized)))
     return spoken_amounts(CORRECTED.split(normalized)[-1])
+
+
+def _has_unreadable_amount_tail(part):
+    """A word between a known spoken number and its currency can be a misheard part of that number."""
+    tokens = TOKEN.findall(_norm(part))
+    for i, token in enumerate(tokens):
+        if token not in _SMALL and token not in _HUNDREDS and not token[0].isdigit():
+            continue
+        for end in range(i + 2, min(i + 4, len(tokens))):
+            if tokens[end] not in {'টাকা', 'টাকার', 'তাকা', 'তাকার', 'কা', 'taka', 'takar'}:
+                continue
+            middle = tokens[i + 1:end]
+            if all(word not in {'টাকা', 'টাকার', 'তাকা', 'তাকার', 'taka', 'takar', 'tk'} for word in middle):
+                if any(word not in _SMALL and word not in _HUNDREDS and word not in SCALES
+                       and word not in HUNDRED and word != 'and' and not word[0].isdigit() for word in middle):
+                    return True
+    return False
 
 
 def _foreign_currency(part, currency):
@@ -522,7 +541,7 @@ def checked_drafts(raw_entries, transcript, today, currency, digits, week_start=
     return drafts, dropped
 
 
-def split_note(transcript, today, currency, digits, *, use_ai=True, deadline=None, week_start=None):
+def split_note(transcript, today, currency, digits, *, use_ai=True, deadline=None, week_start=None, source='typed'):
     """Use validated AI entries, with deterministic recovery for missed clauses."""
     drafts, dropped = checked_drafts(rule_entries(transcript), transcript, today, currency, digits, week_start, from_rules=True)
     method = 'rules'
@@ -559,6 +578,12 @@ def split_note(transcript, today, currency, digits, *, use_ai=True, deadline=Non
     if len(drafts) > MAX_ENTRIES:
         dropped.append(dict(evidence='', reason='TOO_MANY_ENTRIES', count=len(drafts) - MAX_ENTRIES))
     for draft in drafts:
+        if source == 'speech':
+            draft['needs_review'] = True
+            draft['warnings'].append('Check this amount against the recording before selecting the draft.')
+            if _has_unreadable_amount_tail(parts[draft['_position']]):
+                draft['amount_minor'] = 0
+                draft['warnings'].append('Part of the amount is unclear. Enter the amount you heard.')
         del draft['_position']
     return drafts[:MAX_ENTRIES], dropped, method
 
@@ -568,7 +593,7 @@ WHISPER_MODELS = ('whisper-large-v3', 'whisper-large-v3-turbo')
 TRANSCRIPTION_BUDGET_SECONDS = 52
 SPEECH_PROMPTS = {
     'bn': ('বাংলা বা বাংলিশে একজন দোকানির কথার হুবহু প্রতিলিপি। টাকার অঙ্ক, নাম, তারিখ, বিরতি, ধার চেয়েছিল, '
-           'দিতে পেরেছি, দেয় নাই, হাতে আছে, পাঁচশো, দুশো, ভাড়া, খরচ, বিকাশ, নগদ, bKash, taka, hajar।'),
+           'দিতে পেরেছি, দেয় নাই, হাতে আছে, ভাড়া, খরচ, বিকাশ, নগদ, bKash, taka, hajar।'),
     'en': 'Verbatim small-business voice note. Keep names, amounts, dates, corrections and negatives as spoken.',
 }
 
@@ -620,11 +645,14 @@ def whisper(audio, mime, language, hint, deadline, models=WHISPER_MODELS):
         if timeout is None:
             break
         try:
+            form = {'model': model, 'language': language, 'temperature': '0',
+                    'response_format': 'json' if model == WHISPER_MODELS[1] else 'verbose_json'}
+            if hint:
+                form['prompt'] = hint
             with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=timeout) as client:
                 response = client.post('https://api.groq.com/openai/v1/audio/transcriptions',
                                        headers={'Authorization': 'Bearer ' + key},
-                                       data={'model': model, 'language': language, 'temperature': '0', 'response_format': 'verbose_json',
-                                             'prompt': hint},
+                                       data=form,
                                        files={'file': (f'note.{extension}', audio, mime)})
             if response.status_code == 200:
                 body = response.json()
@@ -710,7 +738,7 @@ def transcribe(audio, mime, language, hint, alternate=False):
         text, model = gemini_transcript(*args)
         if text:
             return text, model
-        text, model, _ = whisper(*args, models=WHISPER_MODELS[::-1])
+        text, model, _ = whisper(audio, mime, language, '', deadline, models=WHISPER_MODELS[::-1])
         if text:
             return text, model
         return hf_transcript(*args)
@@ -746,6 +774,7 @@ class NoteText(Contract):
     transcript: str = Field(min_length=2, max_length=MAX_TRANSCRIPT)
     week_start: date | None = None  # the first day of the week the note describes, when the owner chose one
     consent: StrictBool = False  # may the note go to an AI service to be split (otherwise rules only)
+    source: Literal['typed', 'speech'] = 'typed'
 
 
 def _owner_or_bookkeeper(actor):
@@ -796,5 +825,6 @@ def batch_drafts(body: NoteText, actor=Depends(principal), db=Depends(db_connect
     digits = CURRENCIES[ds.currency]['digits']
     today = today_bd()
     week = body.week_start if body.week_start and today - timedelta(days=60) <= body.week_start <= today else None
-    drafts, dropped, method = split_note(body.transcript.strip(), today, ds.currency, digits, use_ai=cloud, week_start=week)
+    drafts, dropped, method = split_note(body.transcript.strip(), today, ds.currency, digits, use_ai=cloud,
+                                         week_start=week, source=body.source)
     return dict(drafts=drafts, dropped=dropped, method=method, simulation_only=True)

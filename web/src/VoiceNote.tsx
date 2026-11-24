@@ -30,7 +30,8 @@ const DROPPED:Record<string,string>={
 // Server warnings, listed so they are translated with the rest of the page.
 export const SERVER_WARNINGS=[T('No day was said, so today is used. Change it if needed.'),T('Check the date.'),
   T('Two numbers were said here. Check that this is the right amount.'),T('Found by the backup reader. Check it, or untick it if it is not a payment.'),
-  T('The days in your note go backwards. Choose the week above if this was last week.'),T('No payment word was heard. Check whether this money was paid or received.'),T('The type was set from your words. Check it.')];
+  T('The days in your note go backwards. Choose the week above if this was last week.'),T('No payment word was heard. Check whether this money was paid or received.'),T('The type was set from your words. Check it.'),
+  T('Check this amount against the recording before selecting the draft.'),T('Part of the amount is unclear. Enter the amount you heard.')];
 const MIME=['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/mp4','audio/webm'];
 const shown=(text:string,currency:string)=>{try{return money(parseMinor(text,currency),currency);}catch{return `${text} ${currency}`;}};
 const major=(minor:number,currency:string)=>{const d=currencyDigits(currency);return (minor/10**d).toFixed(d);};
@@ -68,6 +69,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
   const [clipUrl,setClipUrl]=useState('');
   const [alternate,setAlternate]=useState('');
   const [truncated,setTruncated]=useState(false);
+  const [source,setSource]=useState<'typed'|'speech'>('typed');
   const dictationText=useRef('');
   const wantDictation=useRef(false);
   const recorder=useRef<MediaRecorder|null>(null);
@@ -162,6 +164,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       if(mode==='alternate'&&transcript.trim()){
         setAlternate(data.transcript);setStage('idle');
       }else{
+        setSource('speech');
         changeTranscript(data.transcript);
       }
     }catch(e){if(alive.current){setStage('idle');setError(errorText(e)+' '+t('The recording is still available to replay or retry.'));}}
@@ -174,6 +177,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       const engine=new Dictation();engine.lang=language==='bn'?'bn-BD':'en-US';engine.continuous=true;engine.interimResults=true;
       engine.onresult=e=>{let said='',draft='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i][0].transcript;if(e.results[i].isFinal)said+=x+' ';else draft+=x;}
         if(said.trim()){
+          setSource('speech');
           const copy=(dictationText.current?dictationText.current+'\n':'')+said.trim();
           if(copy.length>4000)setTruncated(true);
           dictationText.current=copy.slice(0,4000);
@@ -202,9 +206,9 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
   async function split(useOnline=false){
     setError('');setResult('');setStage('splitting');
     try{
-      const data=await request<Split>('/assist/batch-drafts',{transcript:transcript.trim(),consent:useOnline,...(week!=='recent'?{week_start:weekStart(week)}:{})});
+      const data=await request<Split>('/assist/batch-drafts',{transcript:transcript.trim(),consent:useOnline,source,...(week!=='recent'?{week_start:weekStart(week)}:{})});
       if(!alive.current)return;
-      setRows(data.drafts.map(d=>({id:crypto.randomUUID(),title:d.title||d.category||'',include:!d.needs_review,type:d.entry_type,amount:major(d.amount_minor,currency),date:d.effective_on,
+      setRows(data.drafts.map(d=>({id:crypto.randomUUID(),title:d.title||d.category||'',include:!d.needs_review,type:d.entry_type,amount:d.amount_minor?major(d.amount_minor,currency):'',date:d.effective_on,
         note:d.memo,party:d.party,warnings:d.warnings,evidence:d.evidence,due:d.due_on||d.effective_on})));
       setDropped(data.dropped);setMethod(data.method);
       setStage(data.drafts.length?'review':'idle');
@@ -235,7 +239,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       const done=await request<{saved:number;replayed?:boolean}>('/workspace/records/batch',{expected_revision:revision,records});
       if(!alive.current)return;
       setResult(t('{count} records added. Your balance, forecast and activity are updated.',{count:done.replayed?records.length:done.saved}));
-      setStage('saved');setRows([]);setTranscript('');setDropped([]);setClip(null);setAlternate('');setTruncated(false);
+      setStage('saved');setRows([]);setTranscript('');setDropped([]);setClip(null);setAlternate('');setTruncated(false);setSource('typed');
       await onSaved();
     }catch(e){if(alive.current){setStage('review');setError(errorText(e));}}
   }
@@ -266,7 +270,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     {alternate&&<div className="voice-alternate">
       <label htmlFor="alternate-transcript">{t('Alternative transcription')}</label>
       <textarea id="alternate-transcript" rows={4} value={alternate} dir="auto" readOnly/>
-      <button className="secondary" disabled={busy} onClick={()=>{changeTranscript(alternate);setAlternate('');}}>{t('Use this transcription')}</button>
+      <button className="secondary" disabled={busy} onClick={()=>{setSource('speech');changeTranscript(alternate);setAlternate('');}}>{t('Use this transcription')}</button>
     </div>}
     {truncated&&<p className="notice" role="status">{t('The transcript reached the text limit. Review the text and record the rest as a separate note.')}</p>}
     <label htmlFor="voice-transcript">{t('What you said (you can correct it)')}</label>
@@ -276,7 +280,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       <option value="last">{t('Last week ({from} to {to})',{from:formatDate(weekStart('last')),to:formatDate(plusDays(weekStart('last'),6))})}</option></select></label>
     <div className="actions"><button disabled={busy||transcript.trim().length<3} onClick={()=>void split()}>{stage==='splitting'?t('Making drafts…'):t('Make drafts')}</button>
       {status?.cloud_allowed&&method==='rules'&&(dropped.some(item=>item.reason==='AMBIGUOUS_AMOUNT')||rows.length===0)&&<button className="secondary" disabled={busy} onClick={()=>void split(true)}>{t('Try online help for these drafts')}</button>}
-      {(transcript||clip)&&!busy&&<button className="secondary" onClick={()=>{changeTranscript('');setClip(null);setAlternate('');setTruncated(false);}}>{t('Clear')}</button>}</div>
+      {(transcript||clip)&&!busy&&<button className="secondary" onClick={()=>{changeTranscript('');setClip(null);setAlternate('');setTruncated(false);setSource('typed');}}>{t('Clear')}</button>}</div>
     {error&&<p className="error" role="alert">{error}</p>}
     {result&&<p className="success" role="status">{result}</p>}
     {dropped.length>0&&<details className="batch-dropped" open={rows.length===0}>
@@ -287,6 +291,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     {(stage==='review'||stage==='saving')&&<div className="batch-review">
       <h3>{t('{count} drafts from your note',{count:rows.length})}</h3>
       {method==='rules'&&<p className="notice small">{t('Read without AI. Check each draft carefully.')}</p>}
+      {source==='speech'&&<p className="notice small">{t('Listen to the recording or check the transcript. Select each verified draft to save it.')}</p>}
       <div className="voice-summary" aria-label={t('Summary of your note')}>
         <div className="voice-totals"><div><small>{t('Money paid')}</small><b className="negative">{money(total('expense'),currency)}</b></div>
           <div><small>{t('Money received')}</small><b className="positive">{money(total('income'),currency)}</b></div>

@@ -288,6 +288,14 @@ def test_long_bangla_story_keeps_five_movements_without_registering_the_requeste
     assert sum(d['amount_minor'] for d in drafts if d['entry_type'] == 'expense') == 38000
 
 
+def test_speech_draft_holds_unreadable_partial_amounts_for_manual_review():
+    note = 'করিম থেকে একসো কুডি তাকা পেলাম। আশাকে দুশো তলিষ তাকা দিলাম। হাসান থেকে চারসো আসিতা কা পেলাম।'
+    drafts, _, _ = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False, source='speech')
+    assert [draft['amount_minor'] for draft in drafts] == [12000, 0, 0]
+    assert all(draft['needs_review'] for draft in drafts)
+    assert 'Part of the amount is unclear. Enter the amount you heard.' in drafts[1]['warnings']
+
+
 @pytest.mark.parametrize('note', ['রহিম ৫০০০ টাকা দেয় নাই', 'ওকে ২০০ টাকা দিতে পারিনি'])
 def test_bangla_spaced_negations_remain_out_of_the_drafts(note):
     drafts, dropped, _ = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)
