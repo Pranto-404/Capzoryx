@@ -73,6 +73,7 @@ class ProposalRequest(Contract):
 class ApprovalRequest(Contract):
     proposal_hash: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     decision: Literal["approve", "reject"]
+    solo_confirmed: bool = False  # an owner with no approver in the workspace confirms they checked it alone
 
 class ProposalState(str, Enum):
     AWAITING_APPROVAL = "AWAITING_APPROVAL"

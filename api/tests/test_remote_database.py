@@ -102,3 +102,26 @@ def test_schemas_start_twice_on_a_remote_database():
   assert not db.failed
   db.close()
  assert 'inputs' in {r[1] for r in real.execute('PRAGMA table_info(research_runs)')}
+
+
+def test_idle_stream_closed_by_the_server_reopens_only_outside_a_transaction():
+ calls=[]
+ def handler(request):
+  body=json.loads(request.content);calls.append(body)
+  if body['baton']=='stale':return httpx.Response(404)
+  return ok(request,'stale' if len(calls)==1 else 'fresh-'+str(len(calls)))
+ db=client(handler)
+ db.execute('SELECT 1')  # the stream is now idle; the server forgets it during a long outside call
+ db.execute('BEGIN IMMEDIATE')
+ assert calls[1]['baton']=='stale' and calls[2]['baton'] is None
+ assert calls[2]['requests'][0]['stmt']['sql']=='PRAGMA foreign_keys=ON' and db.in_transaction
+ db.close()
+ # Inside a transaction the same 404 is a lost transaction: never reopened.
+ calls.clear()
+ def inside(request):
+  body=json.loads(request.content);calls.append(body)
+  return httpx.Response(404) if len(calls)==2 else ok(request,'stale')
+ db=client(inside);db.execute('BEGIN')
+ with pytest.raises(sqlite3.DatabaseError):db.execute('SELECT 1')
+ assert len(calls)==2
+ db.close()

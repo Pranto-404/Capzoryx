@@ -338,7 +338,7 @@ def call_groq(prompt):
             payload = {'model': model, 'messages': [{'role': 'user', 'content': prompt}], 'temperature': 0.2, 'max_tokens': 2048}
             if tools:
                 payload['tools'] = tools
-            with httpx.Client(transport=TRANSPORT, timeout=90, trust_env=False, follow_redirects=False) as client:
+            with httpx.Client(transport=TRANSPORT, timeout=150, trust_env=False, follow_redirects=False) as client:
                 r = client.post('https://api.groq.com/openai/v1/chat/completions', headers={'Authorization': 'Bearer ' + key}, json=payload)
             if r.status_code != 200:
                 try:
@@ -459,37 +459,41 @@ def run_research(identity, business):
             items = products(db, business)
             currency = sec.original_dataset(db, business).currency
             shared = notes(db, business, research_only=True, limit=6)
-        status, reason, result = 'done', '', None
-        try:
-            result = parse_research(call_research(research_prompt(profile, items, currency, shared)))
-            if not result['findings'] and not result['competitors']:
-                status, reason = 'failed', 'The search returned nothing usable. Try again later.'
-        except RuntimeError as error:
-            log.warning('market research failed: %s', error)  # details for the operator; the owner gets a plain message
-            status, reason = 'failed', 'The research services are busy right now. Research will try again automatically within a few hours.'
-        with sec.transaction(db):
-            now = sec.now()
-            if result:
-                items = tracked(items)[:10]
-                for price in result['prices']:
-                    if price.get('item'):
-                        if not 1 <= price['item'] <= len(items):
-                            continue
-                        product = items[price['item'] - 1]
-                        price['indicator'], unit = product_indicator(product['id']), 'per ' + (product.get('unit') or 'unit')
-                    else:
-                        unit = 'per ' + weight_unit(currency)
-                    if price['sources'] and price['value_minor'] > 0:  # only cited prices become observations
-                        cite = price['sources'][0]
-                        record(db, business, price['indicator'], currency, unit, price['value_minor'],
-                               'Web research: ' + (cite['title'] or 'cited page'), cite['url'], price['observed_on'] + 'T00:00:00+00:00',
-                               'research', 'medium')
-                key = customer_key(db, business, create=True)
-                box = seal(key, sec.canonical(result).encode(), identity + '/research')
-                db.execute('UPDATE research_runs SET status=?,result_enc=?,key_tag=?,reason=?,finished_at=? WHERE id=?',
-                           (status, box, key_tag(key), reason, now, identity))
-            else:
-                db.execute('UPDATE research_runs SET status=?,reason=?,finished_at=? WHERE id=?', (status, reason, now, identity))
+    status, reason, result = 'done', '', None
+    try:
+        result = parse_research(call_research(research_prompt(profile, items, currency, shared)))
+        if not result['findings'] and not result['competitors']:
+            status, reason = 'failed', 'The search returned nothing usable. Try again later.'
+    except RuntimeError as error:
+        log.warning('market research failed: %s', error)  # details for the operator; the owner gets a plain message
+        status, reason = 'failed', 'The research services are busy right now. Research will try again automatically within a few hours.'
+    # A web search can take minutes; a fresh connection saves the result, so an idle database stream cannot lose it.
+    with closing(connect()) as db, sec.transaction(db):
+        now = sec.now()
+        if result:
+            items = tracked(items)[:10]
+            for price in result['prices']:
+                if price.get('item'):
+                    if not 1 <= price['item'] <= len(items):
+                        continue
+                    product = items[price['item'] - 1]
+                    price['indicator'], unit = product_indicator(product['id']), 'per ' + (product.get('unit') or 'unit')
+                else:
+                    unit = 'per ' + weight_unit(currency)
+                if price['sources'] and price['value_minor'] > 0:  # only cited prices become observations
+                    cite = price['sources'][0]
+                    record(db, business, price['indicator'], currency, unit, price['value_minor'],
+                           'Web research: ' + (cite['title'] or 'cited page'), cite['url'], price['observed_on'] + 'T00:00:00+00:00',
+                           'research', 'medium')
+            key = customer_key(db, business, create=True)
+            box = seal(key, sec.canonical(result).encode(), identity + '/research')
+            db.execute('UPDATE research_runs SET status=?,result_enc=?,key_tag=?,reason=?,finished_at=? WHERE id=?',
+                       (status, box, key_tag(key), reason, now, identity))
+        else:
+            db.execute('UPDATE research_runs SET status=?,reason=?,finished_at=? WHERE id=?', (status, reason, now, identity))
+
+
+STALE_RUN = 600
 
 
 def research_view(db, business):
@@ -502,7 +506,10 @@ def research_view(db, business):
         key = customer_key(db, business)
         if key and key_tag(key) == row[3]:
             result = json.loads(unseal(key, row[2], row[0] + '/research'))
-    return dict(id=row[0], status=row[1], reason=row[4], started_at=row[5], finished_at=row[6], result=result, inputs=row[7])
+    status, reason = row[1], row[4]
+    if status == 'running' and sec.now() - row[5] > STALE_RUN:  # the server restarted mid-search: say so instead of spinning
+        status, reason = 'failed', 'Research was interrupted. It will try again automatically, or you can start it again now.'
+    return dict(id=row[0], status=status, reason=reason, started_at=row[5], finished_at=row[6], result=result, inputs=row[7])
 
 
 # ---------- routes ----------
@@ -601,7 +608,7 @@ def queue_research(db, business, manual=False):
     last = research_view(db, business)
     now = sec.now()
     inputs = research_inputs(db, business)
-    if last and last['status'] == 'running' and now - last['started_at'] < 300:
+    if last and last['status'] == 'running' and now - last['started_at'] < STALE_RUN:
         return None
     fresh = last and last['status'] == 'done' and last.get('inputs') == inputs
     if fresh and now - last['started_at'] < (RESEARCH_EVERY if manual else REFRESH_EVERY):

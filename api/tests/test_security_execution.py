@@ -488,3 +488,25 @@ def test_private_bootstrap_permissions_and_no_overwrite(tmp_path):
         assert env_file.stat().st_mode & 0o777==0o600
     rejected=subprocess.run(command,cwd=root,capture_output=True,text=True)
     assert rejected.returncode!=0 and env_file.read_bytes()==before
+
+
+def test_owner_with_no_approver_approves_alone_after_checking(rig):
+    seed(rig,business='company-SOLO')
+    with closing(rig.db()) as db:
+        rig.tokens['solo']=sec.provision_session(db,'solo-owner','company-SOLO','owner')
+    p=rig.proposal(role='solo')
+    unconfirmed=rig.decision(p,role='solo')
+    assert unconfirmed.status_code==409 and rig.postings()==0  # the owner must say they checked it
+    done=rig.request('solo','POST',f"/api/proposals/{p['proposal_id']}/approve",json={'proposal_hash':p['action_hash'],'decision':'approve','solo_confirmed':True})
+    assert done.status_code==200,done.text
+    assert done.json()['state']=='EXECUTED' and rig.postings()==1
+    with closing(rig.db()) as db:
+        events=[e for e in sec.verified_audit(db,'company-SOLO') if e['trace_id']==p['proposal_id']]
+    assert any('single_person' in json.dumps(e) for e in events)
+
+
+def test_once_an_approver_exists_the_owner_cannot_approve_alone(rig):
+    p=rig.proposal()  # company-A has a separate approver
+    response=rig.request('owner','POST',f"/api/proposals/{p['proposal_id']}/approve",json={'proposal_hash':p['action_hash'],'decision':'approve','solo_confirmed':True})
+    assert response.status_code==403 and rig.postings()==0
+    assert rig.decision(p).status_code==200 and rig.postings()==1

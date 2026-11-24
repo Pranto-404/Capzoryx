@@ -78,13 +78,16 @@ def test_separate_registered_approver_single_posting_and_invite_replay(world):
     proposal=c.post('/api/proposals',json={'invoice_id':'INV-105'});assert proposal.status_code==201
     p=proposal.json();body={'proposal_hash':p['action_hash'],'decision':'approve'}
     route='/api/proposals/'+p['proposal_id']+'/approve'
-    assert c.post(route,json=body).status_code==403
+    assert c.post(route,json=body).status_code==409  # alone, the owner must tick that they checked it
     code=c.post('/api/account/invitations',json={'role':'approver'}).json()['code']
     signup(c,'approver_person')
     assert c.get('/api/proposals/'+p['proposal_id']).status_code==404
     joined=c.post('/api/account/join',json={'code':code});assert joined.status_code==200
     assert joined.json()['role']=='approver' and joined.json()['business_id']==owner['business_id']
     approver_cookie=c.cookies.get(COOKIE)
+    with TestClient(app,headers={**HEADERS,'Cookie':COOKIE+'='+owner_cookie}) as owner_client:
+        refused=owner_client.post(route,json={**body,'solo_confirmed':True})
+        assert refused.status_code==403 and refused.json()['error']['code']=='SECOND_PERSON_APPROVAL_REQUIRED'  # now the approver decides
     def decide(_):
         with TestClient(app,headers={**HEADERS,'Cookie':COOKIE+'='+approver_cookie}) as other:
             return other.post(route,json=body).status_code

@@ -1,6 +1,6 @@
 import {recall,remember} from './offlineCache';
 import {t,T} from './i18n';
-import {apiFetch,nativeBuild} from './apiBase';
+import {apiFetch,installedApp} from './apiBase';
 import {currencies} from './currencies';
 const messages:Record<string,string> = {
   HISAB_NOT_AVAILABLE:'Hisab-LM is temporarily unavailable. Use Read it or enter the record manually.',
@@ -50,7 +50,7 @@ export function client(token: string, signal: AbortSignal, onUnauthorized: () =>
       throw new ApiError(data?.error?.code || 'SERVER_ERROR', response.status, fields ? fields.map(x => `${String(x.field).split('.').pop()?.replaceAll('_', ' ')}: ${x.message}`).join('; ') : undefined,typeof data?.provider_http_status==='number'?data.provider_http_status:undefined);
     }
     if (!data || data.simulation_only !== true) throw new ApiError('INVALID_SERVER_RESPONSE', 502);
-    if (body === undefined) { remember(path, data); if (nativeBuild) window.dispatchEvent(new Event('capzoryx:live-data')); }
+    if (body === undefined) { remember(path, data); if (installedApp) window.dispatchEvent(new Event('capzoryx:live-data')); }
     return data as T;
   };
 }
@@ -65,6 +65,8 @@ const friendly: Record<string,string> = {
   RESEARCH_RECENT:T('Your market was researched a moment ago. New research runs automatically when your business details change.'),
   RESEARCH_CONSENT_REQUIRED:T('Online research is turned off. Turn it on in My business.'),
   PROFILE_REQUIRED:T('Set up your business first.'),
+  SECOND_PERSON_APPROVAL_REQUIRED:T('This workspace has an approver, so they must approve this payment.'),
+  SOLO_APPROVAL_CONFIRMATION_REQUIRED:T('Tick the box to confirm you checked the supplier and the amount.'),
   NOTE_LIMIT:T('You have shared the most business notes a workspace can hold. Delete old ones to add more.'),
   NOTE_NOT_FOUND:T('That business note was already deleted. Refresh the page.'),
   INDICATOR_NOT_WATCHED:T('That price is not followed for this business.'),

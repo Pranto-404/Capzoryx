@@ -391,7 +391,9 @@ def verify_approval(db, proposal, payload):
     if row is None:
         fail(409,'APPROVAL_REQUIRED')
     values = approval_values(row)
-    if row['decision'] != 'approve' or row['action_hash'] != proposal['action_hash'] or row['approver_id']==proposal['proposer_id'] or not payload['created_at'] <= row['decision_at'] < payload['expires_at'] or not valid_signature(row['signature'],'approval',values):
+    # The same person may approve their own proposal only as the sole owner; the server signs that case separately.
+    purpose = 'approval-solo' if row['approver_id']==proposal['proposer_id'] else 'approval'
+    if row['decision'] != 'approve' or row['action_hash'] != proposal['action_hash'] or not payload['created_at'] <= row['decision_at'] < payload['expires_at'] or not valid_signature(row['signature'],purpose,values):
         fail(409,'APPROVAL_INTEGRITY_FAILURE')
     return row
 
@@ -509,7 +511,8 @@ def execute_approved(db, principal, row, payload):
     """Server-only. Must share approval's locked transaction, with verified human decision."""
     if not db.in_transaction:raise RuntimeError('Execution requires locked approval transaction')
     principal=recheck(db,principal)
-    if principal.role!='approver' or principal.user_id==row['proposer_id']:fail(403,'INDEPENDENT_HUMAN_EXECUTOR_REQUIRED')
+    solo=solo_owner(db,principal)
+    if not solo and (principal.role!='approver' or principal.user_id==row['proposer_id']):fail(403,'INDEPENDENT_HUMAN_EXECUTOR_REQUIRED')
     authoritative=verify_proposal(db,row)
     if payload!=authoritative:fail(409,'PROPOSAL_INTEGRITY_FAILURE')
     if row['state']!='APPROVED':fail(409,'APPROVED_STATE_REQUIRED')
@@ -519,7 +522,7 @@ def execute_approved(db, principal, row, payload):
     _,_,preview=check_invoice_policy(db,principal,row['invoice_id'])
     if now()>=payload['expires_at']:fail(409,'PROPOSAL_EXPIRED')
     principal=recheck(db,principal)
-    if principal.role!='approver':fail(403,'HUMAN_APPROVER_REQUIRED')
+    if principal.role!='approver' and not solo_owner(db,principal):fail(403,'HUMAN_APPROVER_REQUIRED')
     values=dict(posting_id=str(uuid.uuid4()),proposal_id=row['proposal_id'],business_id=principal.business_id,invoice_id=row['invoice_id'],amount_minor=payload['amount_minor'],created_at=now())
     db.execute('INSERT INTO postings VALUES (?,?,?,?,?,?,?)',(*values.values(),signed('posting',values)))
     for account,delta in [('cash',-payload['amount_minor']),('payables',payload['amount_minor'])]:
@@ -532,14 +535,27 @@ def execute_approved(db, principal, row, payload):
     return dict(proposal_id=row['proposal_id'],state='EXECUTED',posting_id=values['posting_id'],action_hash=row['action_hash'],balance_minor=observed,simulation_only=True)
 
 
+def has_approver(db, business):
+    """An active, separate approver in this workspace means every payment needs that second person."""
+    return bool(db.execute("SELECT 1 FROM effective_security_users WHERE business_id=? AND role='approver' AND active=1",(business,)).fetchone())
+
+
+def solo_owner(db, principal):
+    """The owner of a workspace with no approver may decide their own payments (with an explicit check)."""
+    return principal.role=='owner' and not has_approver(db,principal.business_id)
+
+
 def decide(db, principal, proposal_id, request):
     try:
         with transaction(db):
             current=recheck(db,principal)
-            if current.role!='approver':fail(403,'HUMAN_APPROVER_REQUIRED')
+            solo=solo_owner(db,current)
+            if current.role=='owner' and not solo:fail(403,'SECOND_PERSON_APPROVAL_REQUIRED')
+            if current.role!='approver' and not solo:fail(403,'HUMAN_APPROVER_REQUIRED')
             row=get_proposal(db,current,proposal_id)
             payload=verify_proposal(db,row)
-            if current.user_id==row['proposer_id']:fail(403,'INDEPENDENT_APPROVER_REQUIRED')
+            if not solo and current.user_id==row['proposer_id']:fail(403,'INDEPENDENT_APPROVER_REQUIRED')
+            if solo and request.decision=='approve' and not request.solo_confirmed:fail(409,'SOLO_APPROVAL_CONFIRMATION_REQUIRED')
             if not hmac.compare_digest(request.proposal_hash,row['action_hash']):fail(409,'APPROVAL_HASH_MISMATCH')
             verify_audit_head(db,current.business_id)
             if row['state']=='EXECUTED':
@@ -552,10 +568,11 @@ def decide(db, principal, proposal_id, request):
             if row['state']!='AWAITING_APPROVAL':fail(409,'DECISION_ALREADY_FINAL')
             if now()>=payload['expires_at']:fail(409,'PROPOSAL_EXPIRED')
             values=dict(proposal_id=proposal_id,approver_id=current.user_id,decision=request.decision,action_hash=row['action_hash'],decision_at=now())
-            db.execute('INSERT INTO approvals VALUES (?,?,?,?,?,?)',(*values.values(),signed('approval',values)))
+            alone=solo and current.user_id==row['proposer_id']
+            db.execute('INSERT INTO approvals VALUES (?,?,?,?,?,?)',(*values.values(),signed('approval-solo' if alone else 'approval',values)))
             new_state='APPROVED' if request.decision=='approve' else 'REJECTED'
             db.execute('UPDATE proposals SET state=? WHERE proposal_id=?',(new_state,proposal_id))
-            audit(db,current,proposal_id,new_state,{'action_hash':row['action_hash'],'decision':request.decision})
+            audit(db,current,proposal_id,new_state,{'action_hash':row['action_hash'],'decision':request.decision,'single_person':solo})
             if new_state=='REJECTED':return proposal_view(get_proposal(db,current,proposal_id))
             return execute_approved(db,current,get_proposal(db,current,proposal_id),payload)
     except PolicyError as exc:

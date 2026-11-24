@@ -84,6 +84,12 @@ class RemoteConnection:
                 # A pooled connection the server already closed. Nothing has started on this stream yet, so one retry is safe.
                 if self.baton is not None:raise
                 response=self.client.post(self.base+'/v3/pipeline',json={'baton':self.baton,'requests':requests})
+            if response.status_code == 404 and self.baton is not None and not self.in_transaction and request['type'] != 'close':
+                # The server closed this idle stream (for example during a long call to an outside service). No
+                # transaction was open, so nothing is lost: start a fresh stream once.
+                self.baton = None
+                requests = [{'type':'execute','stmt':{'sql':'PRAGMA foreign_keys=ON'}}, request]
+                response = self.client.post(self.base+'/v3/pipeline',json={'baton':None,'requests':requests})
             if not response.is_success:
                 self.failed = True
                 # Some proxies use 400 for an invalid or malformed JWT. Classify

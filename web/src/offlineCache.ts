@@ -1,6 +1,6 @@
 /** Android app only: the last data each screen loaded, so the app still opens and shows the books without a
  * connection. Kept in the app's private storage, per signed-in user and workspace, and removed on sign-out. */
-import {nativeBuild} from './apiBase';
+import {installedApp as nativeBuild} from './apiBase';
 import type {Session} from './types';
 
 const PREFIX='capzoryx-cache:';

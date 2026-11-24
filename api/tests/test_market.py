@@ -205,3 +205,20 @@ def test_failed_research_shows_a_plain_message(world, monkeypatch):  # noqa: F81
     c.post(BASE + '/research', json={}).raise_for_status()
     research = c.get(BASE).json()['research']
     assert research['status'] == 'failed' and 'busy' in research['reason'] and '503' not in research['reason']
+
+
+def test_interrupted_research_stops_spinning(world, net, monkeypatch):  # noqa: F811
+    from contextlib import closing
+    from api.app.database import connect
+    c, _ = world
+    monkeypatch.setenv('CAPZORYX_CHAT_GEMINI_KEY', 'test-key')
+    signup(c, 'market_stuck')
+    setup_gold(c)
+    business = c.get('/api/session').json()['business_id']
+    with closing(connect()) as db, db:
+        db.execute("INSERT INTO research_runs(id,business_id,status,created_at,inputs) VALUES ('stuck',?, 'running', ?, '')",
+                   (business, 1_000))  # started long ago; the server restarted before it finished
+    research = c.get(BASE).json()['research']
+    assert research['status'] == 'failed' and 'interrupted' in research['reason']
+    again = c.post(BASE + '/research', json={})
+    assert again.status_code == 202 and c.get(BASE).json()['research']['status'] == 'done'
