@@ -5,14 +5,17 @@ and voice notes, forecasts cash gaps and proposes rescue plans.
 
 **Direction.** Multi-entry voice capture and batch drafting.
 
+Open **Try the sample demo** from the homepage, or use the same site's `/demo` path. The fictional walkthrough
+needs no account, microphone or AI provider. It runs the real rule-based splitter and cash radar with fixed inputs.
+
 ## Challenge 1: a whole week of spending in one voice note, every entry a separate draft
 
 Where: **Add records → Voice note** (website, installed app and Android app).
 
 1. **Record** up to 3 minutes (opus, about 32 kbps), or type or paste the note. Live browser dictation is the fallback
    when recording is not possible.
-2. **Speech to text.** The note goes to **Whisper large-v3** on Groq (free tier); `whisper-large-v3-turbo` and then
-   Gemini audio are tried if it is busy. The engine gets a hint list of Bangla money words and the workspace's
+2. **Speech to text.** With Smart assist enabled, the note goes to **Whisper large-v3** on Groq. Configured Whisper turbo,
+   Gemini audio and Hugging Face backups share a time budget. The engine gets a hint list of Bangla money words and the workspace's
    supplier names, so names and "hajar" come out right. The transcript is shown and the owner can correct it. The
    audio is not stored. (`api/app/voice_batch.py`)
 3. **Split into entries.** An AI model splits the transcript. Nothing it returns is trusted until it passes these
@@ -25,13 +28,14 @@ Where: **Add records → Voice note** (website, installed app and Android app).
 
    Entries that fail are listed as "not turned into drafts", with the reason. A second, rule-based reader always
    runs too. It makes the drafts when no AI service answers, and it adds anything the AI missed, marked "check".
-   Self-corrections ("na na, 600") keep the corrected amount and are flagged for a second look.
+   Self-corrections such as "na na, 600" keep the corrected amount and start unticked for review. The splitter reports
+   foreign-currency amounts so they can be recorded in a workspace for that currency.
 4. **Batch review.** One card per entry: type (paid, received, bill still to pay), amount, date and note. Each can be
    edited or unticked. Totals are shown before saving.
 5. **Save all, atomically.** `POST /api/workspace/records/batch` adds every chosen record in one transaction (all or
    none). It is safe to retry: sending the same batch again is recognised and not saved twice.
 
-Tests: `api/tests/test_voice_batch.py` (29 cases) and `scripts/check_voice_batch_browser.cjs` (a real browser on a
+Tests: `api/tests/test_voice_batch.py` and `scripts/check_voice_batch_browser.cjs` (a real browser on a
 phone-sized screen: one note becomes 5 drafts, one is edited, one unticked, and 4 are saved together).
 
 ## Challenge 2: the cash radar stays honest when a customer pays late
@@ -39,7 +43,8 @@ phone-sized screen: one note becomes 5 drafts, one is edited, one unticked, and 
 Where: **Overview** and **Cash flow → Cash radar**. Logic is in `api/app/services/radar.py`.
 
 - **Learns habits.** For each customer, the median number of days they paid after the due date. With fewer than two
-  payments it uses the business-wide habit; with no history, the due date.
+  settled invoices it uses the business-wide habit when available, or the due date. Partial payments count as one
+  observation once the invoice is settled.
 - **Realistic dates.** Each open invoice is expected on due date + habit. Money later than the customer's habit is
   marked "later than usual". Money more than 30 days overdue *and* two weeks past the habit is "doubtful" and is not
   counted as arriving tomorrow.
@@ -65,6 +70,13 @@ Tests: `api/tests/test_radar.py`. They cover:
 
 ## Demo script (3 minutes)
 
+Start with the public sample. Make four drafts, edit one amount, and explain why the payment that never moved was
+skipped. Switch between the two Cash Radar cases. When the customer pays eight days after the due date, the projected
+balance falls Tk 20,000 below the Tk 5,000 reserve. The second case shows a quiet Watch because its realistic forecast
+stays above the reserve.
+
+For the signed-in workflow:
+
 1. Sign in, open **Add records**, tap **Record a voice note** and say:
    "Shombar dokan bhara 5000 taka dilam, tarpor transport e 300. Budhbar Rahim theke 12 hajar pelam. Shukrobar biddut
    bill 1,850. Aj chaa nasta 250."
@@ -81,3 +93,10 @@ Tests: `api/tests/test_radar.py`. They cover:
 - Optional backups: `CAPZORYX_CHAT_GEMINI_KEY` and the other free keys in `docs/AI_KEYS.md`.
 - Smart assist must be on in the workspace before a recording or a note is sent to these services. Without it, typed
   notes are split by the rule-based reader on the server.
+
+### Free frontend backup
+
+Render can build the website with `npm ci --prefix web && npm run build --prefix web` and start it with
+`node web/scripts/serve-render.mjs`. Its proxy uses the same API as the Vercel app. Set
+`CAPZORYX_FALLBACK_WEB_ORIGIN` on the backend to the Render website's exact HTTPS origin. Compare the website's
+`/.well-known/capzoryx-website.json` with `/api/health` after deploying.

@@ -18,7 +18,6 @@ next bill is due, answers in Bangla, Banglish or English like a person would, an
 <p align="center">
   <a href="https://github.com/Pranto-404/Capzoryx/actions/workflows/ci.yml"><img src="https://github.com/Pranto-404/Capzoryx/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/license-MIT-0f9b7c" alt="MIT license">
-  <img src="https://img.shields.io/badge/backend%20tests-726-0f9b7c" alt="726 backend tests">
   <img src="https://img.shields.io/badge/languages-37-3b5bdb" alt="37 languages">
   <img src="https://img.shields.io/badge/own%20AI-Hisab--Chat-7c5cff" alt="Own AI: Hisab-Chat">
 </p>
@@ -31,14 +30,14 @@ Built by **Team Capzoryx** · project start **21 November 2026**.
 
 - **It talks like a person.** "cash kto ase vai?", "হাতে কত টাকা আছে?", "Kindly share my cash position" all get a
   natural reply in the same language, with follow-ups ("ar goto mashe?"), summaries and who-owes-whom lists.
-- **The numbers are always right.** Figures come from a deterministic finance engine in integer minor units, never from
-  a language model. Any AI reply that states an amount not in the owner's books is thrown away.
+- **Check the numbers.** Workspace balances and forecasts come from a deterministic engine that uses integer minor units.
+  The assistant validates amounts in model-generated replies against its financial context.
 - **Our own AI, trained to be trustworthy.** Hisab-Chat is fine-tuned on synthetic Bangla, Banglish and English
   conversations, then quizzed, graded and corrected by larger teacher models in self-play rounds.
 - **It works where shops already are.** A Telegram bot, bKash/Nagad/bank SMS turned into one-tap drafts, offline entry
   on cheap phones, voice and bill photos read on the device.
-- **People decide.** Every draft is shown before it is saved; a different person approves any payment; the ledger is
-  append-only with a signed audit chain.
+- **People decide.** Every draft is shown before saving. A separate approver reviews payments when one is assigned.
+  A solo owner can record a reviewed payment. Both paths leave a signed audit trail.
 - **Free to run.** Vercel, Render, Turso, Hugging Face and free AI tiers, with daily budgets that keep quotas safe.
 
 <p align="center">
@@ -62,7 +61,7 @@ Built by **Team Capzoryx** · project start **21 November 2026**.
 | **Payment SMS** | Forward bKash, Nagad, Rocket and bank SMS from an Android phone; each payment becomes a draft with Save or Skip. OTP and PIN messages are dropped. |
 | **Receivables** | Customer dues, collection estimates and polite reminders the owner sends. |
 | **Loans** | Real offers compared on effective annual cost against the business's own cash flow. |
-| **Approvals and activity** | A second person approves payments; plain-language history backed by a signed audit chain. |
+| **Approvals and activity** | Review payments as a solo owner or assign a separate approver. See the signed activity history. |
 | **Cash-flow passport** | A signed, expiring summary a lender can verify by QR, revocable at any time. |
 | **Everywhere** | 37 interface languages (right-to-left included), 150+ currencies, installable web app, Android build, light and dark themes, Ctrl+K quick jump. |
 
@@ -159,7 +158,7 @@ Set these on the backend (Render). `.env.example` lists every option.
 api/app/            FastAPI service: accounts, ledger, forecasts, receivables, passport
 api/app/chat/       conversation brain, free-first model chain, in-app chat
 api/app/notifications/  Telegram bot, payment SMS inbox, email, push, scheduler
-api/tests/          726 backend tests
+api/tests/          Backend unit and integration tests
 web/src/            React app (website, installable PWA and Android share one codebase)
 web/android/        Capacitor Android project
 ml/hisab_chat/      Hisab-Chat data, training, self-play, evaluation, Space and Kaggle runner
@@ -169,7 +168,7 @@ docs/               guides, runbooks and the UX audit
 
 ## Quality
 
-- `python -m pytest api/tests -q`: 726 tests, including money invariants, roles, the Telegram and SMS flows, the chat
+- `python -m pytest api/tests -q`: Covers money invariants, roles, the Telegram and SMS flows, the chat
   brain on misspelt, slang and formal messages, and the model chain's number check.
 - `npm run build --prefix web` and `npm test --prefix web`: type-checked build and browser-side finance fixtures.
 - `node scripts/check_rahim_browser.cjs`: a real browser signs up, records cash, plans a collection, issues and

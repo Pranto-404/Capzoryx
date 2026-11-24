@@ -369,7 +369,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       <button className="app-sheet-user" onClick={()=>go('Settings')}><Avatar profile={profile} name={name}/><span><strong>{name}</strong><small>{roleLabel(session.role)} · {workspaceLabel(session.workspace_name||'My workspace')}</small></span><Icon name="arrow"/></button>
       <div className="app-sheet-grid">{sheetTabs.map(tb=><button key={tb} className="secondary" aria-current={tab===tb?'page':undefined} onClick={()=>go(tb)}><Icon name={tb}/><span>{t(tabLabel[tb])}</span></button>)}
         <button className="secondary" disabled={!snapshot||exporting} onClick={()=>{setSheet(false);void exportPdf();}}><Icon name="download"/><span>{exporting?t('Preparing PDF…'):t('Download PDF')}</span></button>
-        {!nativeBuild&&androidPhone&&<a className="button secondary" href={ANDROID_APP_URL} rel="noopener"><Icon name="download"/><span>{t('Android app')}</span></a>}</div>
+        {!nativeBuild&&androidPhone&&ANDROID_APP_URL&&<a className="button secondary" href={ANDROID_APP_URL} rel="noopener"><Icon name="download"/><span>{t('Android app')}</span></a>}</div>
       <div className="app-sheet-row">{switcher}<LanguagePicker compact id="language-sheet" onPicked={code=>{void request('/account/profile',{language:code}).catch(()=>{});}}/><ThemeButton/></div>
       <button className="secondary app-sheet-signout" onClick={logout}>{t('Sign out')}</button>
     </section></div>}

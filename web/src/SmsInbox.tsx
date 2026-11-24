@@ -78,7 +78,8 @@ export function PhoneSms({request,scope,onAdded}:{request:Request;scope:{busines
 export function GetAndroidApp(){
   return <section className="panel channel phone-sms"><h2>{t('Read payment SMS automatically')}</h2>
     <p className="muted">{t('A website cannot read your SMS, even when installed. The Capzoryx Android app can: it finds bKash, Nagad, Rocket and bank payments on your phone and adds them for review, with your permission.')}</p>
-    <ol className="steps"><li>{t('Download the app and open the file.')}</li><li>{t('If Android asks, allow installing apps from this source.')}</li><li>{t('Sign in with the same account, open Add, and turn on SMS reading.')}</li></ol>
-    <div className="actions"><a className="button" href={ANDROID_APP_URL} rel="noopener">{t('Download the Android app')}</a></div>
+    {ANDROID_APP_URL?<><ol className="steps"><li>{t('Download the app and open the file.')}</li><li>{t('If Android asks, allow installing apps from this source.')}</li><li>{t('Sign in with the same account, open Add, and turn on SMS reading.')}</li></ol>
+      <div className="actions"><a className="button" href={ANDROID_APP_URL} rel="noopener">{t('Download the Android app')}</a></div></>
+      :<p>{t('The Android download is pending. You can paste a payment receipt in the wallet feed.')}</p>}
   </section>;
 }
