@@ -19,6 +19,7 @@ import os
 import re
 import time
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Literal
 from urllib.parse import urlsplit
@@ -756,6 +757,45 @@ def transcribe(audio, mime, language, hint, alternate=False):
     return (text, model) if text else (None, None)
 
 
+def _speech_financial_signature(text, currency, today):
+    if len(text) > MAX_TRANSCRIPT:
+        return None
+    digits = CURRENCIES[currency]['digits']
+    drafts, dropped, _ = split_note(text, today, currency, digits, use_ai=False, source='speech')
+    if (not drafts or any(not draft['amount_minor'] or intent(draft['evidence']) not in ('expense', 'income', 'bill')
+                          for draft in drafts)
+            or any(item['reason'] in ('AMOUNT_NOT_SAID', 'AMBIGUOUS_AMOUNT', 'TOO_MANY_ENTRIES') for item in dropped)):
+        return None
+    return [(draft['entry_type'], draft['amount_minor'], draft['effective_on']) for draft in drafts]
+
+
+def compare_transcriptions(audio, mime, language, hint, currency, today):
+    """Run independent transcribers, then compare the grounded cash movements in their answers."""
+    deadline = time.monotonic() + TRANSCRIPTION_BUDGET_SECONDS
+    args = (audio, mime, language, hint, deadline)
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix='voice-compare') as pool:
+        primary = pool.submit(whisper, *args, models=WHISPER_MODELS[:1])
+        second = pool.submit(whisper, audio, mime, language, '', deadline, models=WHISPER_MODELS[1:])
+        gemini = pool.submit(gemini_transcript, *args) if _gemini_speech_key() else None
+        main_text, main_model, _ = primary.result()
+        second_text, second_model, _ = second.result()
+        gemini_text, gemini_model = gemini.result() if gemini else (None, None)
+    candidates = [(text, model) for text, model in (
+        (main_text, main_model), (gemini_text, gemini_model), (second_text, second_model)
+    ) if text]
+    if not candidates:
+        text, model = hf_transcript(*args)
+        return text, model, [], 'single'
+    text, model = candidates[0]
+    alternatives = [{'transcript': other[:MAX_TRANSCRIPT], 'model': provider}
+                    for other, provider in candidates[1:]]
+    if not alternatives:
+        return text, model, alternatives, 'single'
+    signatures = [_speech_financial_signature(candidate, currency, today) for candidate, _ in candidates]
+    same = signatures[0] is not None and all(signature == signatures[0] for signature in signatures[1:])
+    return text, model, alternatives, 'agree' if same else 'review'
+
+
 def speech_available():
     from api.app.market import groq_key
     return bool(groq_key() or _gemini_speech_key() or os.getenv('CAPZORYX_HISAB_HF_TOKEN') or os.getenv('HF_TOKEN'))
@@ -767,7 +807,7 @@ class VoiceNote(Contract):
     mime: str = Field(pattern=r'^audio/(webm|ogg|mp4|mpeg|wav|x-m4a|aac)(;codecs=[a-z0-9.]+)?$')
     language: str = Field(pattern=r'^(bn|en)$')
     consent: StrictBool
-    mode: Literal['primary', 'alternate'] = 'primary'
+    mode: Literal['primary', 'alternate', 'compare'] = 'primary'
 
 
 class NoteText(Contract):
@@ -798,7 +838,10 @@ def voice_note(body: VoiceNote, actor=Depends(principal), db=Depends(db_connecti
     _owner_or_bookkeeper(actor)
     if not body.consent or not _cloud_allowed(db, actor):
         sec.fail(403, 'VOICE_CONSENT_REQUIRED')
-    sec.budgets(db, [('voice-note:' + actor.user_id, 6), ('voice-note-all', 30)])
+    budget = [('voice-note:' + actor.user_id, 6), ('voice-note-all', 30)]
+    if body.mode == 'compare':
+        budget.extend([('voice-compare:' + actor.user_id, 4), ('voice-compare-all', 16)])
+    sec.budgets(db, budget)
     try:
         audio = base64.b64decode(body.audio_b64, validate=True)
     except (ValueError, binascii.Error):
@@ -807,11 +850,19 @@ def voice_note(body: VoiceNote, actor=Depends(principal), db=Depends(db_connecti
         sec.fail(422, 'INVALID_VOICE_DURATION')
     with sec.transaction(db):
         hint = _vocabulary(db, actor.business_id, body.language)
-    text, model = transcribe(audio, body.mime, body.language, hint, alternate=body.mode == 'alternate')
+        currency = sec.original_dataset(db, actor.business_id).currency if body.mode == 'compare' else None
+    alternatives, agreement = [], 'single'
+    if currency is None:
+        text, model = transcribe(audio, body.mime, body.language, hint, alternate=body.mode == 'alternate')
+    else:
+        text, model, alternatives, agreement = compare_transcriptions(
+            audio, body.mime, body.language, hint, currency, today_bd()
+        )
     if not text:
         sec.fail(503, 'SPEECH_SERVICE_BUSY')
     return dict(transcript=text[:MAX_TRANSCRIPT], engine='whisper' if 'whisper' in model else 'gemini',
-                model=model, truncated=len(text) > MAX_TRANSCRIPT, simulation_only=True)
+                model=model, truncated=len(text) > MAX_TRANSCRIPT, alternatives=alternatives,
+                agreement=agreement, simulation_only=True)
 
 
 @router.post('/batch-drafts')

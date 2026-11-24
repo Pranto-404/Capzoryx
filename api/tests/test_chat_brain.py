@@ -9,6 +9,7 @@ from api.app.chat import brain, understand
 CASES = [
     ('cash koto?', 'balance', 'bl'), ('hate koto taka ache', 'balance', 'bl'), ('how much cash do i have', 'balance', 'en'),
     ('whats my balnce', 'balance', 'en'), ('হাতে কত টাকা আছে?', 'balance', 'bn'), ('ব্যালেন্স কত', 'balance', 'bn'),
+    ('আমার কাছে কত টাকা আছে?', 'balance', 'bn'), ('amar kase koto taka ase', 'balance', 'bl'),
     ('how much did i earn this month', 'income', 'en'), ('ei mashe bikri koto holo', 'income', 'bl'),
     ('এই মাসে আয় কত?', 'income', 'bn'), ('total sales today', 'income', 'en'), ('revenu last month', 'income', 'en'),
     ('khoroch koto ajke', 'expenses', 'bl'), ('how much did I spend yesterday', 'expenses', 'en'),

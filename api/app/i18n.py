@@ -134,6 +134,10 @@ def interface_text(lang: str, db=Depends(db_connection)):
                 missing = [s for s in _STRINGS if _key(s) not in have]
         except (ProviderError, HTTPException):
             limiter.hold(stall, STALL_SECONDS)  # strings stay in English until a later attempt; nothing is broken
+        except sec.PolicyError as error:
+            if error.code != 'REQUEST_BUDGET_EXCEEDED':
+                raise
+            # Reading cached strings and language metadata still works after the translation budget is spent.
         finally:
             _LOCKS[lang].release()
     strings = {s: have[_key(s)] for s in _STRINGS if _key(s) in have}

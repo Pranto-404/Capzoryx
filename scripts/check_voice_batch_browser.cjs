@@ -18,7 +18,8 @@ const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar
     browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||undefined});
     const context=await browser.newContext({viewport:{width:390,height:860},locale:'en-US',timezoneId:'Asia/Dhaka'});
     await context.route(/^https?:\/\//,r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());
-    let primary=0,alternate=0;
+    let primary=0,alternate=0,compared=0;
+    const question='আমার কাছে কত টাকা আছে?';
     await context.route('**/api/assist/voice-note',route=>{
       if(route.request().method()==='GET')return route.fulfill({json:{speech:true,cloud_allowed:true,max_seconds:180,simulation_only:true}});
       const capture=route.request().postDataJSON();
@@ -26,6 +27,14 @@ const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar
       if(capture.mode==='primary'){
         primary++;
         return route.fulfill({status:503,json:{error:{code:'SPEECH_SERVICE_BUSY'}}});
+      }
+      if(capture.mode==='compare'){
+        compared++;
+        if(compared===1)return route.fulfill({json:{
+          transcript:'আজ ভাড়া ৳৫০০ দিলাম। ঠিক আছে?',engine:'whisper',agreement:'review',simulation_only:true,
+          alternatives:[{transcript:'আজ ভাড়া ৳৬০০ দিলাম।',model:'whisper-large-v3-turbo'}]
+        }});
+        return route.fulfill({json:{transcript:question,engine:'whisper',agreement:'single',simulation_only:true}});
       }
       alternate++;
       return route.fulfill({json:{transcript:'আমি ৳৫০ দিয়ে নাস্তা কিনলাম।',engine:'whisper',simulation_only:true}});
@@ -43,6 +52,18 @@ const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar
           this.ondataavailable?.({data:new Blob([new Uint8Array(2000)],{type:this.mimeType})});
           this.onstop?.();
         }
+      }});
+      let recognitionSessions=0;
+      Object.defineProperty(window,'SpeechRecognition',{value:class {
+        start(){
+          const session=++recognitionSessions;
+          this.timer=setTimeout(()=>{
+            const transcript=session===1?'আজ নাস্তায় ৫০ টাকা দিলাম।':'আর ভাড়া ১০০ টাকা দিলাম।';
+            this.onresult?.({resultIndex:0,results:[{isFinal:true,0:{transcript}}]});
+            if(session===1)this.onend?.();
+          },80);
+        }
+        stop(){clearTimeout(this.timer);this.onend?.();}
       }});
     });
     const page=await context.newPage();page.setDefaultTimeout(15000);
@@ -99,5 +120,44 @@ const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar
     assert.equal(primary,1);
     assert.equal(alternate,1);
     console.log('PASS Bangla recording retained after provider failure and retried without recording again');
+
+    await panel.getByRole('button',{name:'Clear',exact:true}).click();
+    await panel.getByRole('button',{name:'Start live dictation'}).click();
+    await page.waitForFunction(()=>document.querySelector('#voice-transcript').value.includes('১০০'));
+    await panel.getByRole('button',{name:'Stop dictation'}).click();
+    assert.match(await panel.getByLabel('What you said (you can correct it)').inputValue(),/৫০[\s\S]*১০০/);
+    console.log('PASS dictation restarted after disconnection and retained both phrases');
+
+    await page.locator('nav [data-tour="Assistant"]').click();
+    await page.getByRole('button',{name:'Talk to Capzoryx'}).click();
+    const assistant=page.locator('.chat-panel');
+    const voice=assistant.locator('.voice-note');
+    await voice.getByRole('button',{name:'Record a voice note',exact:true}).click();
+    await voice.getByRole('button',{name:'Stop (0:02)',exact:true}).waitFor();
+    await voice.getByRole('button',{name:/^Stop \(/}).click();
+    await voice.getByText(/models gave different results/i).waitFor();
+    await voice.getByText('Compare transcript from whisper-large-v3-turbo').click();
+    await voice.getByText('আজ ভাড়া ৳৬০০ দিলাম।').waitFor();
+    const candidate=voice.locator('.batch-list input[type=checkbox]');
+    await candidate.waitFor();
+    assert.equal(await candidate.isChecked(),false);
+    const workspace=()=>page.evaluate(async()=>(await (await fetch('/api/workspace',{headers:{'X-SafeLedger-Client':'web'}})).json()).snapshot);
+    assert.equal((await workspace()).expenses_minor,snap.expenses_minor);
+    await candidate.check();
+    await voice.getByRole('button',{name:'Save 1 records'}).click();
+    await voice.getByText(/1 records added/).waitFor();
+    assert.equal((await workspace()).expenses_minor,snap.expenses_minor+50000);
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=392));
+    console.log('PASS voice survives a pause, previews model disagreement, and saves only after confirmation');
+
+    await voice.getByRole('button',{name:'Record a voice note',exact:true}).click();
+    await voice.getByRole('button',{name:/^Stop \(/}).click();
+    await assistant.locator('.chat-message.user').getByText(question,{exact:true}).waitFor();
+    const answer=assistant.locator('.chat-message.assistant').last();
+    await answer.getByText(/৳[৪4],?[৩3][০0][০0]/u).waitFor();
+    assert.equal(await voice.locator('.batch-list>li').count(),0);
+    assert.equal((await workspace()).expenses_minor,snap.expenses_minor+50000);
+    assert.equal(compared,2);
+    console.log('PASS spoken balance question uses current workspace without creating a draft');
   }finally{await browser?.close();server.kill('SIGTERM');}
 })().catch(error=>{console.error(error);process.exit(1);});

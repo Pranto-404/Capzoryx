@@ -36,6 +36,8 @@ Built by **Team Capzoryx** · project start **21 November 2026**.
 
 The public demo uses fictional records. To record your own voice note, open a workspace, enable **Settings → Smart assist** and choose **Add records → Voice note**. You can replay the recording, request a second transcription, edit the text, review each draft and save the selected records together. [Competition brief and verification](docs/COMPETITION.md)
 
+For a voice conversation, open **Assistant → Talk to Capzoryx**, record a turn and press **Stop**. Ask about balances or invoices, or describe money that moved to preview drafts. Available speech models transcribe the same audio and Capzoryx compares the transaction amounts and dates it can verify. You can correct the transcript, and selected entries are saved only after you confirm them. Spoken replies use the device's installed voices.
+
 ## Why it is different
 
 - **It talks like a person.** "cash kto ase vai?", "হাতে কত টাকা আছে?", "Kindly share my cash position" all get a

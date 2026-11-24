@@ -129,6 +129,27 @@ def test_uncertain_bangla_audio_uses_a_second_provider_and_preserves_audio_forma
     assert calls == ['generativelanguage.googleapis.com']
 
 
+@pytest.mark.parametrize('variant,expected', [
+    ('আজ ভাড়া পাঁচশো টাকা দিলাম।', 'agree'),
+    ('আজ ভাড়া ছয়শো টাকা দিলাম।', 'review'),
+    ('আজ ভাড়ার কথা বললাম।', 'review'),
+])
+def test_voice_assistant_compares_grounded_drafts_across_transcribers(monkeypatch, variant, expected):
+    def recognize(audio, mime, language, hint, deadline, models):
+        text = 'আজ ভাড়া ৳৫০০ দিলাম।' if models == vb.WHISPER_MODELS[:1] else variant
+        return text, models[0], False
+
+    monkeypatch.setattr(vb, 'whisper', recognize)
+    monkeypatch.setattr(vb, '_gemini_speech_key', lambda: '')
+    text, model, alternatives, agreement = vb.compare_transcriptions(
+        b'test audio', 'audio/wav', 'bn', 'বাংলা', 'BDT', TODAY
+    )
+    assert text == 'আজ ভাড়া ৳৫০০ দিলাম।'
+    assert model == vb.WHISPER_MODELS[0]
+    assert alternatives == [{'transcript': variant, 'model': vb.WHISPER_MODELS[1]}]
+    assert agreement == expected
+
+
 def test_dedicated_speech_capability_does_not_require_cloud_chat(world, monkeypatch):  # noqa: F811
     c, _ = world
     monkeypatch.setattr('api.app.gateway.disclosure', lambda: [])

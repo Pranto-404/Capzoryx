@@ -11,6 +11,8 @@ type Draft={title?:string;needs_review?:boolean;entry_type:EntryType;amount_mino
 type Split={drafts:Draft[];dropped:{evidence:string;reason:string;count?:number}[];method:'ai'|'rules'};
 type Row={id:string;title:string;include:boolean;type:EntryType;amount:string;date:string;note:string;party:string;warnings:string[];evidence:string;due:string};
 type Status={speech:boolean;cloud_allowed:boolean;max_seconds:number};
+type TranscriptVariant={transcript:string;model:string};
+type SpeechResult={transcript:string;truncated?:boolean;alternatives?:TranscriptVariant[];agreement?:'agree'|'review'|'single'};
 type Recognition={lang:string;continuous:boolean;interimResults:boolean;start():void;stop():void;onresult:((e:{resultIndex:number;results:ArrayLike<{isFinal:boolean;0:{transcript:string}}>})=>void)|null;onend:(()=>void)|null;onerror:((e:{error:string})=>void)|null};
 
 const TYPE:Record<EntryType,string>={expense:T('Money paid'),income:T('Money received'),bill:T('Bill still to pay')};
@@ -36,6 +38,13 @@ const MIME=['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/mp4','audio/
 const shown=(text:string,currency:string)=>{try{return money(parseMinor(text,currency),currency);}catch{return `${text} ${currency}`;}};
 const major=(minor:number,currency:string)=>{const d=currencyDigits(currency);return (minor/10**d).toFixed(d);};
 const errorText=(e:unknown)=>e instanceof Error?e.message:t('Something went wrong. Please try again.');
+const soundsLikeQuestion=(text:string)=>{
+  const phrase=text.trim().replace(/[।.!?？]+$/u,'');
+  // A conversation tag at the end of a multi-sentence note does not turn the whole note into a question.
+  if (/[।!?？\n]|\.(?!\d)/u.test(phrase)) return false;
+  return /[?？]\s*$/u.test(text)
+    || /^(?:আমার\s+)?(?:কত|কবে|কোন|what\b|how\b|when\b|which\b|show\b)|(?:কত\s+(?:টাকা\s+)?আছে|(?:কত|কোথায়|কেমন|কি|কী|দেখাও|বলো)\s*$)|\b(?:koto|kobe|kon|kemon)\b/iu.test(phrase);
+};
 
 /** Monday of this week or of last week, as YYYY-MM-DD in local time. */
 function weekStart(which:'this'|'last'){
@@ -50,9 +59,10 @@ function toBase64(blob:Blob):Promise<string>{
 }
 
 /** Challenge 1: say a whole week of spending in one note; every entry becomes its own draft to check and save. */
-export function VoiceNote({request,revision,currency,onSaved}:{request:Request;revision:string;currency:string;onSaved:()=>Promise<void>|void}){
+export function VoiceNote({request,revision,currency,onSaved,onQuestion,questionBusy=false}:{request:Request;revision:string;currency:string;onSaved:()=>Promise<void>|void;onQuestion?:(text:string)=>void;questionBusy?:boolean}){
   const {code}=useI18n();
   const [status,setStatus]=useState<Status|null>(null);
+  const [statusError,setStatusError]=useState(false);
   const [language,setLanguage]=useState<'bn'|'en'>(currency==='BDT'||code==='bn'?'bn':'en');
   const [stage,setStage]=useState<'idle'|'opening'|'recording'|'listening'|'hearing'|'splitting'|'review'|'saving'|'saved'>('idle');
   const [seconds,setSeconds]=useState(0);
@@ -68,23 +78,43 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
   const [clip,setClip]=useState<Blob|null>(null);
   const [clipUrl,setClipUrl]=useState('');
   const [alternate,setAlternate]=useState('');
+  const [variants,setVariants]=useState<TranscriptVariant[]>([]);
+  const [agreement,setAgreement]=useState<SpeechResult['agreement']>();
   const [truncated,setTruncated]=useState(false);
   const [source,setSource]=useState<'typed'|'speech'>('typed');
   const dictationText=useRef('');
   const wantDictation=useRef(false);
+  const sendDictation=useRef(false);
   const recorder=useRef<MediaRecorder|null>(null);
   const live=useRef<Recognition|null>(null);
   const timer=useRef<number|undefined>(undefined);
+  const restart=useRef<number|undefined>(undefined);
+  const operation=useRef(false);
   const alive=useRef(true);
   const browser=window as unknown as {SpeechRecognition?:new()=>Recognition;webkitSpeechRecognition?:new()=>Recognition};
   const Dictation=browser.SpeechRecognition||browser.webkitSpeechRecognition;
   const maxSeconds=status?.max_seconds||180;
   const canRecord=!!status?.speech&&!!status.cloud_allowed&&typeof MediaRecorder!=='undefined'&&!!navigator.mediaDevices?.getUserMedia;
 
+  async function checkStatus(){
+    setStatusError(false);
+    try{
+      const available=await request<Status>('/assist/voice-note');
+      if(alive.current)setStatus(available);
+    }catch{if(alive.current)setStatusError(true);}
+  }
+
   useEffect(()=>{
     alive.current=true;
-    void request<Status>('/assist/voice-note').then(s=>{if(alive.current)setStatus(s);}).catch(()=>{if(alive.current)setStatus({speech:false,cloud_allowed:false,max_seconds:180});});
-    return ()=>{alive.current=false;wantDictation.current=false;clearInterval(timer.current);recorder.current?.stream.getTracks().forEach(x=>x.stop());live.current?.stop();};
+    void checkStatus();
+    return ()=>{
+      alive.current=false;wantDictation.current=false;
+      clearInterval(timer.current);clearTimeout(restart.current);
+      const rec=recorder.current;
+      if(rec){rec.onstop=null;rec.stream.getTracks().forEach(track=>track.stop());}
+      const recognition=live.current;
+      if(recognition){recognition.onend=null;try{recognition.stop();}catch{/* Already disconnected. */}}
+    };
   },[]);// eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{
     if(!clip){setClipUrl('');return;}
@@ -104,36 +134,46 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
   }
 
   async function record(){
+    if(operation.current)return;
+    if(onQuestion)window.speechSynthesis?.cancel();
+    operation.current=true;
     setError('');setResult('');setStage('opening');
     let stream:MediaStream;
     try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});}
-    catch{if(alive.current){setStage('idle');setError(t('Microphone permission is off. Allow the microphone, or type the note.'));}return;}
+    catch{operation.current=false;if(alive.current){setStage('idle');setError(t('Microphone permission is off. Allow the microphone, or type the note.'));}return;}
     if(!alive.current){stream.getTracks().forEach(track=>track.stop());return;}
     const mimeType=MIME.find(m=>MediaRecorder.isTypeSupported(m))||'';
     let rec:MediaRecorder;
     try{rec=new MediaRecorder(stream,{...(mimeType?{mimeType}:{}),audioBitsPerSecond:32000});}
     catch{
       stream.getTracks().forEach(track=>track.stop());
+      operation.current=false;
       setStage('idle');
       setError(t('You can also type the note, or use live dictation.'));
       return;
     }
     const chunks:Blob[]=[];
+    let interrupted=false;
     rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
     rec.onstop=()=>{
+      operation.current=false;
       stream.getTracks().forEach(x=>x.stop());clearInterval(timer.current);
       if(!alive.current)return;
       const blob=new Blob(chunks,{type:rec.mimeType||mimeType||'audio/webm'});
       setClip(blob);
       setAlternate('');
-      void hear(blob,'primary');
+      setVariants([]);
+      setAgreement(undefined);
+      if(interrupted){
+        setStage('idle');setError(t('The microphone disconnected. Play or transcribe the part that was recorded.'));
+        return;
+      }
+      void hear(blob,onQuestion?'compare':'primary');
     };
     rec.onerror=()=>{
-      rec.onstop=null;
-      stream.getTracks().forEach(track=>track.stop());
-      clearInterval(timer.current);
-      if(alive.current){setStage('idle');setError(t('The recording stopped unexpectedly. Try recording again or type the note.'));}
+      interrupted=true;
     };
+    stream.getAudioTracks?.().forEach(track=>track.addEventListener('ended',()=>{interrupted=true;},{once:true}));
     // A live sound-level bar shows the phone is hearing the owner the whole time.
     try{
       const audio=new AudioContext();const source=audio.createMediaStreamSource(stream);const meter=audio.createAnalyser();
@@ -145,6 +185,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     }catch{/* the meter is optional */}
     recorder.current=rec;
     try{rec.start(1000);}catch{
+      operation.current=false;
       stream.getTracks().forEach(track=>track.stop());
       setStage('idle');setError(t('The recording could not start. You can use live dictation or type the note.'));
       return;
@@ -153,12 +194,14 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     const started=Date.now();
     timer.current=window.setInterval(()=>{const s=Math.floor((Date.now()-started)/1000);setSeconds(s);if(s>=maxSeconds&&rec.state==='recording')rec.stop();},250);
   }
-  async function hear(blob:Blob,mode:'primary'|'alternate'){
+  async function hear(blob:Blob,mode:'primary'|'alternate'|'compare'){
+    if(operation.current)return;
     if(blob.size<1000){setStage('idle');setError(t('The recording was too short. Hold the button a little longer.'));return;}
+    operation.current=true;
     setError('');setStage('hearing');
     try{
       const mime=(blob.type||'audio/webm').toLowerCase().replace(/\s+/g,'');
-      const data=await request<{transcript:string;truncated?:boolean}>('/assist/voice-note',{audio_b64:await toBase64(blob),mime,language,consent:true,mode});
+      const data=await request<SpeechResult>('/assist/voice-note',{audio_b64:await toBase64(blob),mime,language,consent:true,mode});
       if(!alive.current)return;
       setTruncated(!!data.truncated);
       if(mode==='alternate'&&transcript.trim()){
@@ -166,17 +209,31 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       }else{
         setSource('speech');
         changeTranscript(data.transcript);
+        setVariants(data.alternatives??[]);
+        setAgreement(data.agreement);
+        if(onQuestion&&!data.truncated){
+          operation.current=false;
+          await handleVoiceTurn(data.transcript);
+        }
       }
     }catch(e){if(alive.current){setStage('idle');setError(errorText(e)+' '+t('The recording is still available to replay or retry.'));}}
+    finally{operation.current=false;}
   }
   function dictate(){
-    if(!Dictation)return;
-    setError('');setRows([]);setDropped([]);setResult('');wantDictation.current=true;
-    dictationText.current=transcript.trim();
+    if(!Dictation||operation.current)return;
+    if(onQuestion)window.speechSynthesis?.cancel();
+    operation.current=true;
+    setError('');setRows([]);setDropped([]);setResult('');wantDictation.current=true;sendDictation.current=false;
+    dictationText.current=onQuestion?'':transcript.trim();
+    if(onQuestion){
+      setClip(null);setTranscript('');setAlternate('');setVariants([]);setAgreement(undefined);setTruncated(false);
+    }
+    let failures=0;
     const run=()=>{
       const engine=new Dictation();engine.lang=language==='bn'?'bn-BD':'en-US';engine.continuous=true;engine.interimResults=true;
       engine.onresult=e=>{let said='',draft='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i][0].transcript;if(e.results[i].isFinal)said+=x+' ';else draft+=x;}
         if(said.trim()){
+          failures=0;
           setSource('speech');
           const copy=(dictationText.current?dictationText.current+'\n':'')+said.trim();
           if(copy.length>4000)setTruncated(true);
@@ -185,40 +242,97 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
         }
         setInterim(draft);};
       engine.onerror=e=>{
-        if(e.error==='no-speech'||(e.error==='aborted'&&!wantDictation.current))return;
-        wantDictation.current=false;
-        if(alive.current)setError(t('Live dictation is unavailable. You can type or paste the note.'));
+        if(!wantDictation.current||e.error==='no-speech')return;
+        if(['not-allowed','service-not-allowed','audio-capture','language-not-supported'].includes(e.error)){
+          wantDictation.current=false;
+          if(alive.current)setError(t('Live dictation is unavailable. You can type or paste the note.'));
+        }else failures++;
       };
-      // Android ends a session after each pause; keep listening until the owner presses Stop.
-      engine.onend=()=>{setInterim('');if(alive.current&&wantDictation.current){try{run();return;}catch{/* give up below */}}clearInterval(timer.current);if(alive.current)setStage(s=>s==='listening'?'idle':s);};
+      engine.onend=()=>{
+        if(!alive.current||live.current!==engine)return;
+        setInterim('');
+        live.current=null;
+        if(wantDictation.current&&failures<5){
+          restart.current=window.setTimeout(resume,220*(1+failures));
+        }else if(wantDictation.current){
+          stopDictation();
+          setError(t('Dictation disconnected. The words already heard are still in the transcript.'));
+        }else finishDictation();
+      };
       live.current=engine;engine.start();
     };
+    function resume(){
+      if(!wantDictation.current||!alive.current)return;
+      try{run();}catch{
+        if(++failures<5)restart.current=window.setTimeout(resume,220*(1+failures));
+        else{
+          stopDictation();
+          setError(t('Dictation disconnected. The words already heard are still in the transcript.'));
+        }
+      }
+    }
     try{run();}catch{
       wantDictation.current=false;
+      operation.current=false;
       setError(t('Live dictation is unavailable. You can type or paste the note.'));
       return;
     }
     setStage('listening');
     const started=Date.now();setSeconds(0);
-    timer.current=window.setInterval(()=>{const sec=Math.floor((Date.now()-started)/1000);setSeconds(sec);if(sec>=maxSeconds)stopDictation();},500);
+    timer.current=window.setInterval(()=>{const sec=Math.floor((Date.now()-started)/1000);setSeconds(sec);if(sec>=maxSeconds)stopDictation(true);},500);
   }
-  function stopDictation(){wantDictation.current=false;clearInterval(timer.current);live.current?.stop();setInterim('');setStage('idle');}
-  async function split(useOnline=false){
+  function finishDictation(){
+    operation.current=false;
+    clearInterval(timer.current);clearTimeout(restart.current);
+    setInterim('');setStage(s=>s==='listening'?'idle':s);
+    if(onQuestion&&sendDictation.current&&dictationText.current.length>=3&&dictationText.current.length<4000){
+      sendDictation.current=false;
+      void handleVoiceTurn(dictationText.current);
+    }
+  }
+  function stopDictation(submit=false){
+    sendDictation.current=submit;
+    wantDictation.current=false;
+    clearTimeout(restart.current);
+    try{
+      if(live.current){
+        restart.current=window.setTimeout(finishDictation,1200);
+        live.current.stop();return;
+      }
+    }catch{/* The browser may have disconnected. */}
+    finishDictation();
+  }
+  async function handleVoiceTurn(text:string){
+    if(onQuestion&&soundsLikeQuestion(text)){
+      if(!questionBusy)onQuestion(text);
+      return;
+    }
+    await split(false,text,'speech');
+  }
+  async function split(useOnline=false,text=transcript,origin=source){
+    if(operation.current||text.trim().length<3)return;
+    operation.current=true;
     setError('');setResult('');setStage('splitting');
     try{
-      const data=await request<Split>('/assist/batch-drafts',{transcript:transcript.trim(),consent:useOnline,source,...(week!=='recent'?{week_start:weekStart(week)}:{})});
+      const data=await request<Split>('/assist/batch-drafts',{transcript:text.trim(),consent:useOnline,source:origin,...(week!=='recent'?{week_start:weekStart(week)}:{})});
       if(!alive.current)return;
       setRows(data.drafts.map(d=>({id:crypto.randomUUID(),title:d.title||d.category||'',include:!d.needs_review,type:d.entry_type,amount:d.amount_minor?major(d.amount_minor,currency):'',date:d.effective_on,
         note:d.memo,party:d.party,warnings:d.warnings,evidence:d.evidence,due:d.due_on||d.effective_on})));
       setDropped(data.dropped);setMethod(data.method);
       setStage(data.drafts.length?'review':'idle');
-      if(!data.drafts.length&&!data.dropped.length)setError(t('No amounts were found in the note. Say or type each payment with its amount, for example “Shombar bhara 5000 taka”.'));
-    }catch(e){if(alive.current){setStage('idle');setError(errorText(e));}}
+      if(!data.drafts.length){
+        setError(data.dropped.some(item=>item.reason==='BALANCE_ONLY')
+          ?t('You mentioned cash on hand. To add a record, say what was received or paid and when.')
+          :t('No payment draft was made. Review the transcript or describe each payment with its amount.'));
+      }
+    }catch(e){if(alive.current){setStage('idle');setError(errorText(e)+' '+t('Your transcript is still here. Try making drafts again.'));}}
+    finally{operation.current=false;}
   }
   const update=(id:string,patch:Partial<Row>)=>setRows(cur=>cur.map(r=>r.id===id?{...r,...patch}:r));
   const chosen=rows.filter(r=>r.include);
   const total=(type:EntryType)=>chosen.filter(r=>r.type===type).reduce((sum,r)=>{try{return sum+parseMinor(r.amount,currency);}catch{return sum;}},0);
   async function save(){
+    if(operation.current)return;
     setError('');
     const today=todayIso();
     let records;
@@ -234,39 +348,55 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
         return {request_id:r.id,kind:'cash',amount_minor:minor,effective_on:r.date,direction:r.type==='income'?'inflow':'outflow',status:r.date>today?'scheduled':'cleared',memo:r.note.slice(0,2000)};
       });
     }catch(e){setError(errorText(e));return;}
-    setStage('saving');
+    operation.current=true;setStage('saving');
     try{
       const done=await request<{saved:number;replayed?:boolean}>('/workspace/records/batch',{expected_revision:revision,records});
       if(!alive.current)return;
+      // Keep controls busy until the new workspace revision is available for the next turn.
+      try{await onSaved();}catch{if(alive.current)setError(t('Records were saved. Refresh the workspace if its balance has not updated.'));}
+      if(!alive.current)return;
       setResult(t('{count} records added. Your balance, forecast and activity are updated.',{count:done.replayed?records.length:done.saved}));
-      setStage('saved');setRows([]);setTranscript('');setDropped([]);setClip(null);setAlternate('');setTruncated(false);setSource('typed');
-      await onSaved();
+      setStage('saved');setRows([]);setTranscript('');setDropped([]);setClip(null);setAlternate('');setTruncated(false);setSource('typed');setVariants([]);setAgreement(undefined);
     }catch(e){if(alive.current){setStage('review');setError(errorText(e));}}
+    finally{operation.current=false;}
   }
 
   const busy=['opening','recording','listening','hearing','splitting','saving'].includes(stage);
   return <section className="panel voice-note" aria-labelledby="voice-note-title">
     <p className="eyebrow">{t('Voice note')}</p>
-    <h2 id="voice-note-title">{t('Say a whole week of spending at once')}</h2>
-    <p className="muted">{t('Talk naturally, for example: “Shombar dokan bhara 5000 dilam, tarpor transport 300. Budhbar Rahim theke 12 hajar pelam.” Each payment becomes its own draft. You check them, then save them all together.')}</p>
+    <h2 id="voice-note-title">{onQuestion?t('Talk to your workspace'):t('Say a whole week of spending at once')}</h2>
+    {onQuestion?<p className="muted">{t('Ask about your cash or say what you paid or received. Record a turn, then review the answer or drafts.')}</p>:<p className="muted">{t('Talk naturally, for example: “Shombar dokan bhara 5000 dilam, tarpor transport 300. Budhbar Rahim theke 12 hajar pelam.” Each payment becomes its own draft. You check them, then save them all together.')}</p>}
     <div className="voice-controls">
       <label className="voice-lang">{t('I will speak')}<select value={language} disabled={busy} onChange={e=>setLanguage(e.target.value as 'bn'|'en')}><option value="bn">{t('Bangla or Banglish')}</option><option value="en">English</option></select></label>
       {stage==='recording'
         ?<button className="voice-record recording" onClick={()=>{if(recorder.current?.state==='recording')recorder.current.stop();}}><span className="rec-dot" aria-hidden="true"/>{t('Stop ({time})',{time:`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`})}</button>
         :stage==='listening'
-        ?<button className="voice-record recording" onClick={stopDictation}><span className="rec-dot" aria-hidden="true"/>{t('Stop dictation')}</button>
-        :<>{canRecord&&<button className="voice-record" disabled={busy} onClick={()=>void record()}><Icon name="spark"/>{stage==='hearing'?t('Transcribing your recording…'):t('Record a voice note')}</button>}
-          {Dictation&&<button className="secondary" disabled={busy} onClick={dictate}><Icon name="spark"/>{t('Start live dictation')}</button>}</>}
+        ?<button className="voice-record recording" onClick={()=>stopDictation(true)}><span className="rec-dot" aria-hidden="true"/>{t('Stop dictation')}</button>
+        :<>{canRecord&&<button className="voice-record" disabled={busy||questionBusy} onClick={()=>void record()}><Icon name="spark"/>{stage==='hearing'?t('Transcribing your recording…'):t('Record a voice note')}</button>}
+          {Dictation&&<button className="secondary" disabled={busy||questionBusy} onClick={dictate}><Icon name="spark"/>{t('Start live dictation')}</button>}</>}
     </div>
     {stage==='recording'&&<div className="voice-level" aria-hidden="true"><span style={{width:`${Math.round(8+level*92)}%`}}/></div>}
+    {stage==='listening'&&<p className="small muted" role="status">{t('Listening until you press Stop. Pauses are okay.')}</p>}
     {stage==='listening'&&interim&&<p className="voice-interim" aria-live="polite">{interim}…</p>}
     {stage==='recording'&&<p className="small muted" role="status">{t('Up to {minutes} minutes. Say the day, what it was for and the amount for each payment.',{minutes:Math.round(maxSeconds/60)})}</p>}
+    {status===null&&!statusError&&<p className="small muted" role="status">{t('Checking recording availability…')}</p>}
+    {statusError&&<button className="secondary" type="button" onClick={()=>void checkStatus()}>{t('Check microphone access again')}</button>}
     {status&&!status.cloud_allowed&&<p className="small muted">{t('Enable Smart assist in Settings to send recordings for transcription. You can also use live dictation or type the note.')}</p>}
+    {status?.cloud_allowed&&!status.speech&&<p className="small muted">{t('Speech services are unavailable. Use live dictation or type the note.')}</p>}
     {canRecord&&<p className="small muted">{t('The recording is sent to the speech service to be written down and is not stored by Capzoryx.')}</p>}
     {clipUrl&&<div className="voice-clip">
       <audio controls preload="metadata" src={clipUrl} aria-label={t('Replay your recording')}/>
+      {canRecord&&clip&&onQuestion&&!variants.length&&!agreement&&<button className="secondary" disabled={busy} onClick={()=>void hear(clip,'compare')}>{t('Retry model comparison')}</button>}
       {canRecord&&clip&&<button className="secondary" disabled={busy} onClick={()=>void hear(clip,'alternate')}>{t('Try another transcription')}</button>}
     </div>}
+    {agreement==='agree'&&<p className="notice small">{t('The models matched on the transaction amounts and dates. Verify each draft before saving.')}</p>}
+    {agreement==='review'&&!soundsLikeQuestion(transcript)&&<p className="notice">{t('The models gave different results or could not verify an amount. Compare the recording and transcriptions before saving.')}</p>}
+    {agreement==='single'&&onQuestion&&<p className="muted small">{t('One speech model responded. Check its transcript against the recording.')}</p>}
+    {variants.map(variant=><details key={variant.model} className="voice-alternate">
+      <summary>{t('Compare transcript from {model}',{model:variant.model})}</summary>
+      <p>{variant.transcript}</p>
+      <button className="secondary" disabled={busy} onClick={()=>{setSource('speech');changeTranscript(variant.transcript);void handleVoiceTurn(variant.transcript);}}>{t('Use this transcription')}</button>
+    </details>)}
     {alternate&&<div className="voice-alternate">
       <label htmlFor="alternate-transcript">{t('Alternative transcription')}</label>
       <textarea id="alternate-transcript" rows={4} value={alternate} dir="auto" readOnly/>
@@ -279,9 +409,11 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       <option value="recent">{t('The last 7 days')}</option><option value="this">{t('This week (from {date})',{date:formatDate(weekStart('this'))})}</option>
       <option value="last">{t('Last week ({from} to {to})',{from:formatDate(weekStart('last')),to:formatDate(plusDays(weekStart('last'),6))})}</option></select></label>
     <div className="actions"><button disabled={busy||transcript.trim().length<3} onClick={()=>void split()}>{stage==='splitting'?t('Making drafts…'):t('Make drafts')}</button>
+      {onQuestion&&<button className="secondary" disabled={busy||questionBusy||!transcript.trim()} onClick={()=>onQuestion(transcript.trim())}>{t('Ask the workspace assistant')}</button>}
       {status?.cloud_allowed&&method==='rules'&&(dropped.some(item=>item.reason==='AMBIGUOUS_AMOUNT')||rows.length===0)&&<button className="secondary" disabled={busy} onClick={()=>void split(true)}>{t('Try online help for these drafts')}</button>}
-      {(transcript||clip)&&!busy&&<button className="secondary" onClick={()=>{changeTranscript('');setClip(null);setAlternate('');setTruncated(false);setSource('typed');}}>{t('Clear')}</button>}</div>
+      {(transcript||clip)&&!busy&&<button className="secondary" onClick={()=>{changeTranscript('');setClip(null);setAlternate('');setTruncated(false);setSource('typed');setVariants([]);setAgreement(undefined);}}>{t('Clear')}</button>}</div>
     {error&&<p className="error" role="alert">{error}</p>}
+    {stage==='review'&&<p className="notice small" role="status">{t('{count} drafts ready for review below.',{count:rows.length})}</p>}
     {result&&<p className="success" role="status">{result}</p>}
     {dropped.length>0&&<details className="batch-dropped" open={rows.length===0}>
       <summary>{t('{count} parts were not turned into drafts',{count:dropped.reduce((sum,d)=>sum+(d.count||1),0)})}</summary>
