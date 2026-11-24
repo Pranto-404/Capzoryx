@@ -104,6 +104,42 @@ def test_speech_uses_whisper_then_gemini(monkeypatch):
     assert calls[:2] == ['api.groq.com/openai/v1/audio/transcriptions'] * 2  # large-v3, then turbo
 
 
+def test_dedicated_speech_capability_does_not_require_cloud_chat(world, monkeypatch):  # noqa: F811
+    c, _ = world
+    monkeypatch.setattr('api.app.gateway.disclosure', lambda: [])
+    monkeypatch.setattr(vb, 'speech_available', lambda: True)
+    capabilities = c.get('/api/auth/capabilities').json()
+    assert capabilities['voice_note_speech'] is True
+    assert capabilities['cloud_assist'] is False
+
+
+def test_speech_fallback_stops_starting_requests_after_deadline(monkeypatch):
+    calls = []
+    clock = [0]
+
+    def handle(request):
+        calls.append(request.url.host)
+        clock[0] = vb.TRANSCRIPTION_BUDGET_SECONDS
+        return httpx.Response(503)
+
+    monkeypatch.setattr(vb, 'TRANSPORT', httpx.MockTransport(handle))
+    monkeypatch.setattr(vb.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setenv('CAPZORYX_CHAT_GROQ_KEY', 'gsk_test')
+    monkeypatch.setenv('CAPZORYX_CHAT_GEMINI_KEY', 'gm_test')
+    monkeypatch.setenv('CAPZORYX_HISAB_HF_TOKEN', 'hf_test')
+    assert vb.transcribe(b'x' * 2000, 'audio/webm', 'bn', 'taka') == (None, None)
+    assert calls == ['api.groq.com']
+
+
+def test_voice_gemini_uses_a_generic_gateway_key_only_for_the_gemini_host(monkeypatch):
+    monkeypatch.delenv('CAPZORYX_CHAT_GEMINI_KEY', raising=False)
+    monkeypatch.setenv('SAFELEDGER_LLM_API_KEY', 'test-gateway-key')
+    monkeypatch.setenv('SAFELEDGER_LLM_BASE_URL', 'https://other.example.invalid/v1')
+    assert not vb._gemini_speech_key()
+    monkeypatch.setenv('SAFELEDGER_LLM_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai')
+    assert vb._gemini_speech_key() == 'test-gateway-key'
+
+
 def test_voice_note_routes_end_to_end(world, monkeypatch):  # noqa: F811
     c, _ = world
     signup(c, 'voice_owner')
@@ -178,6 +214,53 @@ def test_two_equal_amounts_are_two_entries(monkeypatch):
     _ai(monkeypatch, [{'evidence': 'Shombar transport 500 dilam', 'amount': 500, 'type': 'expense'}])
     drafts, _, _ = vb.split_note(note, TODAY, 'BDT', 2)
     assert [(d['amount_minor'], d['effective_on']) for d in drafts] == [(50000, '2026-11-23'), (50000, '2026-11-18')]
+
+
+def test_rule_fallback_uses_corrected_amount_and_preserves_relative_dates():
+    note = '3 din age transport 500 dilam. Yesterday rent 5000 taka dilam, na na 4500 taka.'
+    drafts, dropped, method = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)
+    assert [(d['amount_minor'], d['effective_on']) for d in drafts] == [(50000, '2026-11-21'), (450000, '2026-11-23')]
+    assert drafts[1]['needs_review'] and not dropped and method == 'rules'
+
+
+def test_model_quote_keeps_negation_and_rejects_foreign_currency(monkeypatch):
+    note = 'I did not pay the 3000 rent. Aj software 10 USD dilam.'
+    _ai(monkeypatch, [{'evidence': 'pay the 3000 rent', 'amount': 3000, 'type': 'expense'},
+                      {'evidence': 'software 10', 'amount': 10, 'type': 'expense'}])
+    drafts, dropped, _ = vb.split_note(note, TODAY, 'BDT', 2)
+    assert not drafts
+    assert {d['reason'] for d in dropped} == {'NOT_PAID', 'CURRENCY_MISMATCH'}
+
+
+def test_rule_fallback_keeps_conjoined_and_repeated_payments():
+    note = 'Aj dokan bhara 5000 taka dilam ar transport 300 taka dilam. Transport 300 taka dilam.'
+    drafts, dropped, _ = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)
+    assert not dropped
+    assert [d['amount_minor'] for d in drafts] == [500000, 30000, 30000]
+
+
+def test_synthetic_voice_bills_have_unique_numbers_even_in_separate_batches():
+    def bill(amount):
+        note = f'Aj stationery {amount} taka baki'
+        return vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)[0][0]
+
+    assert bill(600)['invoice_number'] != bill(650)['invoice_number']
+
+
+def test_public_competition_demo_runs_engines_without_an_account(world):
+    c, _ = world
+    assert c.get('/api/session').status_code == 401
+    response = c.get('/api/competition/demo')
+    assert response.status_code == 200
+    data = response.json()
+    assert data['voice']['method'] == 'rules'
+    assert [d['amount_minor'] for d in data['voice']['drafts']] == [500000, 30000, 1200000, 185000]
+    assert [d['reason'] for d in data['voice']['dropped']] == ['NOT_PAID']
+    assert data['radar']['habit']['level'] == 'alert'
+    assert data['radar']['habit']['receivables'][0]['habit_days'] == 8
+    assert data['radar']['habit']['outlooks']['on_time']['first_shortfall_on'] is None
+    assert data['radar']['overdue']['level'] == 'watch'
+    assert c.get('/api/session').status_code == 401
 
 
 def test_too_many_entries_are_reported_not_silently_dropped():

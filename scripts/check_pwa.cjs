@@ -52,7 +52,7 @@ async function poll(check){
     // The quick tour no longer opens by itself; close it only if an older build shows it.
     {const skip=page.locator('dialog[open]').getByRole('button',{name:/skip/i});if(await skip.isVisible({timeout:1500}).catch(()=>false))await skip.click();}
     // New owners are offered business setup first; this check skips it (it is covered by check_business_browser.cjs).
-    {const later=page.getByRole('dialog',{name:'Set up your business'}).getByRole('button',{name:'Not now'});if(await later.isVisible({timeout:5000}).catch(()=>false))await later.click();}
+    await page.getByRole('dialog',{name:'Set up your business'}).getByRole('button',{name:'Not now'}).click();
 
     await context.setOffline(true);
     await page.reload();

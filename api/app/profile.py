@@ -105,8 +105,10 @@ def spend_code(db, purpose, subject):
 @router.get('/auth/capabilities')
 def capabilities():
     from api.app.hisab_hosted import configured as hisab_configured
+    from api.app.voice_batch import speech_available
     return dict(hisab_lm=hisab_configured(), email_codes=mailer.configured(),
                 cloud_assist=any('question' in p['allowed'] for p in gateway.disclosure()),
+                voice_note_speech=speech_available(),
                 record_api_fallback=gateway.record_backup_configured(), simulation_only=True)
 
 

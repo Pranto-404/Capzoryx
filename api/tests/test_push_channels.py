@@ -14,6 +14,7 @@ from api.app import security as sec
 from api.app.accounts import today_bd
 from api.app.notifications import push, push_transport as wire
 from api.app.notifications.service import enqueue
+from api.app.services.radar import should_alert
 from api.tests.test_accounts import signup, world
 from api.tests.test_notification_inbox import local
 
@@ -65,6 +66,7 @@ def test_private_push_subscription_limits_quiet_and_revoke(world,vapid,monkeypat
     with sqlite3.connect(path) as db:
         assert endpoint not in str(db.execute('SELECT * FROM push_subscriptions').fetchone())
         with sec.transaction(db):
+            assert should_alert(db, business, dict(level='alert', breach_on=str(today_bd()), shortfall_minor=100), at)
             for ref in ['a','a','b','c','d','e']:
                 enqueue(db,business,'cash_breach',ref,at=at)
         assert db.execute("SELECT count(*) FROM notification_jobs WHERE channel='webpush'").fetchone()[0]==3

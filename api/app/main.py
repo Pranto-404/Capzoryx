@@ -18,7 +18,7 @@ from api.app import market
 from api.app import insights
 from api.app import monitor
 from api.app import advisor
-from api.app import voice_batch
+from api.app import competition, voice_batch
 from api.app.services import radar
 from api.app.chat import routes as chat_routes
 from api.app.notifications import email_alerts, push
@@ -44,6 +44,8 @@ def _cors_origins() -> list[str]:
                    "http://127.0.0.1:4173", "http://localhost:4173"]
     app_host=os.environ.get("CAPZORYX_APP_WEB_ORIGIN","").strip().rstrip("/")
     if app_host:origins.append(app_host)
+    fallback_host=os.environ.get("CAPZORYX_FALLBACK_WEB_ORIGIN","").strip().rstrip("/")
+    if fallback_host:origins.append(fallback_host)
     return [*origins,app_sessions.ORIGIN]
 
 SCHEMA_VERSION = 1
@@ -129,6 +131,7 @@ app.include_router(hisab_hosted.router)
 app.include_router(books.router)
 app.include_router(voice.router)
 app.include_router(voice_batch.router)
+app.include_router(competition.router)
 app.include_router(i18n.router)
 app.include_router(passport.router)
 app.include_router(plans.router)

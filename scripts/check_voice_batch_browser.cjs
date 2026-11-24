@@ -20,6 +20,16 @@ const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar
     await context.route(/^https?:\/\//,r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());
     const page=await context.newPage();page.setDefaultTimeout(15000);
     await page.goto(origin);
+    await page.getByRole('link',{name:'Try the sample demo'}).click();
+    await page.getByRole('button',{name:'Make drafts'}).click();
+    assert.equal(await page.locator('.competition-demo .batch-list>li').count(),4);
+    await page.getByRole('button',{name:'Confirm sample drafts'}).click();
+    await page.getByText(/4 sample drafts reviewed/).waitFor();
+    await page.getByText('Alert',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'Overdue payment may still arrive'}).click();
+    await page.getByText('Watch',{exact:true}).waitFor();
+    await page.getByRole('link',{name:'Open workspace'}).click();
+    console.log('PASS public competition walkthrough: confirmed sample drafts and switched radar scenarios without an account');
     await page.getByRole('button',{name:'Create account',exact:true}).click();
     await page.locator('#username').fill('voice_week');await page.locator('#password').fill('Fictional voice business 57!');
     await page.getByRole('button',{name:'Create my workspace'}).click();

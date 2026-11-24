@@ -7,13 +7,24 @@ import {t,T,useI18n} from './i18n';
 
 type Request=<R,>(path:string,body?:unknown)=>Promise<R>;
 type EntryType='expense'|'income'|'bill';
-type Draft={title?:string;needs_review?:boolean;entry_type:EntryType;amount_minor:number;effective_on:string;memo:string;warnings:string[];evidence:string;party:string;category:string;confidence:number;due_on?:string;vendor_name?:string;invoice_number?:string};
-type Split={drafts:Draft[];dropped:{evidence:string;reason:string}[];method:'ai'|'rules'};
-type Row={id:string;title:string;include:boolean;type:EntryType;amount:string;date:string;note:string;party:string;warnings:string[];evidence:string;due:string;invoice:string};
+type Draft={title?:string;needs_review?:boolean;entry_type:EntryType;amount_minor:number;effective_on:string;memo:string;warnings:string[];evidence:string;party:string;category:string;due_on?:string};
+type Split={drafts:Draft[];dropped:{evidence:string;reason:string;count?:number}[];method:'ai'|'rules'};
+type Row={id:string;title:string;include:boolean;type:EntryType;amount:string;date:string;note:string;party:string;warnings:string[];evidence:string;due:string};
 type Status={speech:boolean;cloud_allowed:boolean;max_seconds:number};
-type Recognition={lang:string;continuous:boolean;interimResults:boolean;start():void;stop():void;onresult:((e:{resultIndex:number;results:ArrayLike<{isFinal:boolean;0:{transcript:string}}>})=>void)|null;onend:(()=>void)|null;onerror:(()=>void)|null};
+type Recognition={lang:string;continuous:boolean;interimResults:boolean;start():void;stop():void;onresult:((e:{resultIndex:number;results:ArrayLike<{isFinal:boolean;0:{transcript:string}}>})=>void)|null;onend:(()=>void)|null;onerror:((e:{error:string})=>void)|null};
 
 const TYPE:Record<EntryType,string>={expense:T('Money paid'),income:T('Money received'),bill:T('Bill still to pay')};
+const DROPPED:Record<string,string>={
+  AMOUNT_NOT_SAID:T('The amount was not clearly said.'),
+  AMBIGUOUS_AMOUNT:T('Say each payment and its amount in a separate sentence.'),
+  AMOUNT_OUT_OF_RANGE:T('This amount is outside the supported range.'),
+  CURRENCY_MISMATCH:T('Record this payment in a workspace for its currency.'),
+  NOT_IN_NOTE:T('These words do not appear together in the note.'),
+  NOT_PAID:T('The note says the payment did not happen.'),
+  PLANNED:T('The note describes a future payment.'),
+  QUESTION:T('The note asks a question.'),
+  TOO_MANY_ENTRIES:T('Split the note into smaller batches of up to 40 entries.'),
+};
 // Server warnings, listed so they are translated with the rest of the page.
 export const SERVER_WARNINGS=[T('No day was said, so today is used. Change it if needed.'),T('Check the date.'),
   T('Two numbers were said here. Check that this is the right amount.'),T('Found by the backup reader. Check it, or untick it if it is not a payment.'),
@@ -72,8 +83,15 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     let stream:MediaStream;
     try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});}
     catch{setError(t('Microphone permission is off. Allow the microphone, or type the note.'));return;}
+    if(!alive.current){stream.getTracks().forEach(track=>track.stop());return;}
     const mimeType=MIME.find(m=>MediaRecorder.isTypeSupported(m))||'';
-    const rec=new MediaRecorder(stream,{...(mimeType?{mimeType}:{}),audioBitsPerSecond:32000});
+    let rec:MediaRecorder;
+    try{rec=new MediaRecorder(stream,{...(mimeType?{mimeType}:{}),audioBitsPerSecond:32000});}
+    catch{
+      stream.getTracks().forEach(track=>track.stop());
+      setError(t('You can also type the note, or use live dictation.'));
+      return;
+    }
     const chunks:Blob[]=[];
     rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
     rec.onstop=()=>{
@@ -112,12 +130,21 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       const engine=new Dictation();engine.lang=language==='bn'?'bn-BD':'en-US';engine.continuous=true;engine.interimResults=true;
       engine.onresult=e=>{let said='',draft='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i][0].transcript;if(e.results[i].isFinal)said+=x+' ';else draft+=x;}
         if(said.trim())setTranscript(cur=>(cur.trim()?cur.trim()+' ':'')+said.trim());setInterim(draft);};
-      engine.onerror=()=>{/* a pause or a network blip: onend restarts while the owner has not pressed Stop */};
+      engine.onerror=e=>{
+        if(e.error==='no-speech'||(e.error==='aborted'&&!wantDictation.current))return;
+        wantDictation.current=false;
+        if(alive.current)setError(t('Live dictation is unavailable. You can type or paste the note.'));
+      };
       // Android ends a session after each pause; keep listening until the owner presses Stop.
-      engine.onend=()=>{setInterim('');if(alive.current&&wantDictation.current){try{run();return;}catch{/* give up below */}}if(alive.current)setStage(s=>s==='listening'?'idle':s);};
+      engine.onend=()=>{setInterim('');if(alive.current&&wantDictation.current){try{run();return;}catch{/* give up below */}}clearInterval(timer.current);if(alive.current)setStage(s=>s==='listening'?'idle':s);};
       live.current=engine;engine.start();
     };
-    run();setStage('listening');
+    try{run();}catch{
+      wantDictation.current=false;
+      setError(t('Live dictation is unavailable. You can type or paste the note.'));
+      return;
+    }
+    setStage('listening');
     const started=Date.now();setSeconds(0);
     timer.current=window.setInterval(()=>{const sec=Math.floor((Date.now()-started)/1000);setSeconds(sec);if(sec>=maxSeconds)stopDictation();},500);
   }
@@ -128,10 +155,10 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       const data=await request<Split>('/assist/batch-drafts',{transcript:transcript.trim(),consent:!!status?.cloud_allowed,...(week!=='recent'?{week_start:weekStart(week)}:{})});
       if(!alive.current)return;
       setRows(data.drafts.map(d=>({id:crypto.randomUUID(),title:d.title||d.category||'',include:!d.needs_review,type:d.entry_type,amount:major(d.amount_minor,currency),date:d.effective_on,
-        note:d.memo,party:d.party,warnings:d.warnings,evidence:d.evidence,due:d.due_on||d.effective_on,invoice:d.invoice_number||''})));
+        note:d.memo,party:d.party,warnings:d.warnings,evidence:d.evidence,due:d.due_on||d.effective_on})));
       setDropped(data.dropped);setMethod(data.method);
       setStage(data.drafts.length?'review':'idle');
-      if(!data.drafts.length)setError(t('No amounts were found in the note. Say or type each payment with its amount, for example “Shombar bhara 5000 taka”.'));
+      if(!data.drafts.length&&!data.dropped.length)setError(t('No amounts were found in the note. Say or type each payment with its amount, for example “Shombar bhara 5000 taka”.'));
     }catch(e){if(alive.current){setStage('idle');setError(errorText(e));}}
   }
   const update=(id:string,patch:Partial<Row>)=>setRows(cur=>cur.map(r=>r.id===id?{...r,...patch}:r));
@@ -148,7 +175,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
         if(r.type==='bill'){
           const vendor=slug(r.party)||'voice-supplier';
           if(r.date>today)throw new Error(t('Entry {n}: a bill date cannot be in the future.',{n:i+1}));
-          return {request_id:r.id,kind:'invoice',amount_minor:minor,effective_on:r.date,vendor_id:vendor,invoice_number:r.invoice||`VOICE-${r.date.replaceAll('-','')}-${i+1}`,due_on:r.due<r.date?r.date:r.due,memo:r.note.slice(0,2000)};
+          return {request_id:r.id,kind:'invoice',amount_minor:minor,effective_on:r.date,vendor_id:vendor,invoice_number:`VOICE-${r.id}`,due_on:r.due<r.date?r.date:r.due,memo:r.note.slice(0,2000)};
         }
         return {request_id:r.id,kind:'cash',amount_minor:minor,effective_on:r.date,direction:r.type==='income'?'inflow':'outflow',status:r.date>today?'scheduled':'cleared',memo:r.note.slice(0,2000)};
       });
@@ -175,12 +202,12 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
         :stage==='listening'
         ?<button className="voice-record recording" onClick={stopDictation}><span className="rec-dot" aria-hidden="true"/>{t('Stop dictation')}</button>
         :<>{canRecord&&<button className="voice-record" disabled={busy} onClick={()=>void record()}><Icon name="spark"/>{stage==='hearing'?t('Listening to your note…'):t('Record a voice note')}</button>}
-          {!canRecord&&Dictation&&<button className="voice-record" disabled={busy} onClick={dictate}><Icon name="spark"/>{t('Start live dictation')}</button>}</>}
+          {Dictation&&<button className="secondary" disabled={busy} onClick={dictate}><Icon name="spark"/>{t('Start live dictation')}</button>}</>}
     </div>
     {stage==='recording'&&<div className="voice-level" aria-hidden="true"><span style={{width:`${Math.round(8+level*92)}%`}}/></div>}
     {stage==='listening'&&interim&&<p className="voice-interim" aria-live="polite">{interim}…</p>}
     {stage==='recording'&&<p className="small muted" role="status">{t('Up to {minutes} minutes. Say the day, what it was for and the amount for each payment.',{minutes:Math.round(maxSeconds/60)})}</p>}
-    {status&&!status.cloud_allowed&&<p className="small muted">{t('Smart assist is off, so recordings are not sent for transcription. Use live dictation or type the note; it is split on this server without AI.')}</p>}
+    {status&&!status.cloud_allowed&&<p className="small muted">{t('Enable Smart assist in Settings to send recordings for transcription. You can also use live dictation or type the note.')}</p>}
     {canRecord&&<p className="small muted">{t('The recording is sent to the speech service to be written down and is not stored by Capzoryx.')}</p>}
     <label htmlFor="voice-transcript">{t('What you said (you can correct it)')}</label>
     <textarea id="voice-transcript" rows={4} maxLength={4000} value={transcript} disabled={busy} onChange={e=>setTranscript(e.target.value)} placeholder={t('Your words appear here. You can also type or paste a whole week of spending.')}/>
@@ -191,6 +218,10 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       {transcript&&!busy&&<button className="secondary" onClick={()=>{setTranscript('');setRows([]);setDropped([]);setStage('idle');}}>{t('Clear')}</button>}</div>
     {error&&<p className="error" role="alert">{error}</p>}
     {result&&<p className="success" role="status">{result}</p>}
+    {dropped.length>0&&<details className="batch-dropped" open={rows.length===0}>
+      <summary>{t('{count} parts were not turned into drafts',{count:dropped.reduce((sum,d)=>sum+(d.count||1),0)})}</summary>
+      <ul>{dropped.map((d,i)=><li key={i}>{d.evidence&&<>“{d.evidence}” · </>}{t(DROPPED[d.reason]||T('Check the note and try again.'))}</li>)}</ul>
+    </details>}
 
     {(stage==='review'||stage==='saving')&&<div className="batch-review">
       <h3>{t('{count} drafts from your note',{count:rows.length})}</h3>
@@ -219,8 +250,6 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
         </div>
         {r.warnings.map((w,j)=><p className="notice small" key={j}>{t(w)}</p>)}
       </li>)}</ol>
-      {dropped.length>0&&<details className="batch-dropped"><summary>{t('{count} parts were not turned into drafts',{count:dropped.length})}</summary>
-        <ul>{dropped.map((d,i)=><li key={i}>“{d.evidence}” · {d.reason==='AMOUNT_NOT_SAID'?t('the amount was not clearly said'):t('these words are not in the note')}</li>)}</ul></details>}
       <p className="batch-total"><span>{t('Paid {amount}',{amount:major(total('expense'),currency)+' '+currency})}</span><span>{t('Received {amount}',{amount:major(total('income'),currency)+' '+currency})}</span>{total('bill')>0&&<span>{t('Bills {amount}',{amount:major(total('bill'),currency)+' '+currency})}</span>}</p>
       <div className="actions"><button disabled={stage==='saving'||!chosen.length} onClick={()=>void save()}>{stage==='saving'?t('Saving…'):t('Save {count} records',{count:chosen.length})}</button>
         <button className="secondary" disabled={stage==='saving'} onClick={()=>{setRows([]);setStage('idle');}}>{t('Discard all')}</button></div>

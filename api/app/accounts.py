@@ -92,6 +92,8 @@ def browser_origin(request):
     allowed = {o.strip().rstrip('/') for o in os.environ.get('SAFELEDGER_CORS_ORIGINS','').split(',') if o.strip()}
     app_host = os.environ.get('CAPZORYX_APP_WEB_ORIGIN','').strip().rstrip('/')
     if app_host:allowed.add(app_host)
+    fallback_host = os.environ.get('CAPZORYX_FALLBACK_WEB_ORIGIN','').strip().rstrip('/')
+    if fallback_host:allowed.add(fallback_host)
     if not os.environ.get('RENDER') and not os.environ.get('VERCEL'):
         allowed.update({'http://127.0.0.1:5173','http://localhost:5173','http://127.0.0.1:4173','http://127.0.0.1:8000','http://localhost:8000','http://testserver'})
     if origin not in allowed or request.headers.get('X-SafeLedger-Client') != 'web':

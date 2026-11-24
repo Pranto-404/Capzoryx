@@ -11,7 +11,7 @@ const audiences:{icon:string;title:string;text:string}[]=[
  {icon:'Approvals',title:T('Accountants and partners'),text:T('Invite a teammate to review or approve, with clear roles.')},
 ];
 const trust:{icon:string;title:string;text:string}[]=[
- {icon:'Approvals',title:T('Two people for every payment'),text:T('The person who prepares a payment can never approve it.')},
+ {icon:'Approvals',title:T('Review before posting'),text:T('Review the supplier and amount. Workspaces with an approver require a separate approval.')},
  {icon:'Audit',title:T('History nobody can quietly change'),text:T('Each entry is signed and linked, so edits show up.')},
  {icon:'Settings',title:T('Two-step sign-in'),text:T('Add an authenticator app and backup codes in a minute.')},
  {icon:'check',title:T('Private by default'),text:T('Only people you invite can see your records. You can clear them any time.')},
@@ -31,7 +31,7 @@ const recordTools:{icon:string;title:string;text:string}[]=[
  {icon:'Audit',title:T('Cash-flow passport'),text:T('In Activity, create a signed summary of your figures and revoke its public link when you choose.')},
 ];
 const stats:{n:number;suffix:string;label:string}[]=[
- {n:37,suffix:'',label:T('languages')},{n:150,suffix:'+',label:T('currencies with live rates')},{n:2,suffix:'',label:T('people on every payment')},{n:30,suffix:'',label:T('days to undo clearing data')},
+ {n:37,suffix:'',label:T('languages')},{n:150,suffix:'+',label:T('currencies with live rates')},{n:30,suffix:'',label:T('days to undo clearing data')},
 ];
 const story:{title:string;text:string}[]=[
  {title:T('Add'),text:T('Photograph a bill or type what happened. Check it, then confirm.')},
@@ -137,7 +137,7 @@ export function Landing({onStart}:{onStart:()=>void}){
         <article className="tile tile-wide spot" data-reveal onPointerMove={spot}><div><span className="feature-icon"><Icon name="camera"/></span><h3>{t('Photo to record')}</h3><p>{t('Snap a bill or receipt and we read the supplier, date, amount and due date for you.')}</p></div><ScanIllustration/></article>
         <article className="tile spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name="pen"/></span><h3>{t('Just say it')}</h3><p>{t('Type what you paid or received, like a message, and it becomes a record.')}</p></article>
         <article className="tile spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name="Invoices"/></span><h3>{t('Bills and due dates')}</h3><p>{t('Every unpaid bill in one list, so nothing is paid late or twice.')}</p></article>
-        <article className="tile tile-wide spot" data-reveal onPointerMove={spot}><div><span className="feature-icon"><Icon name="Approvals"/></span><h3>{t('Safe payments')}</h3><p>{t('A second person approves each payment before it is recorded.')}</p></div><ApprovalMock/></article>
+        <article className="tile tile-wide spot" data-reveal onPointerMove={spot}><div><span className="feature-icon"><Icon name="Approvals"/></span><h3>{t('Safe payments')}</h3><p>{t('Review the supplier and amount. Workspaces with an approver require a separate approval.')}</p></div><ApprovalMock/></article>
         <article className="tile spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name="Financing"/></span><h3>{t('Compare loan offers')}</h3><p>{t('Find the true yearly cost and the offer your cash flow can carry.')}</p></article>
         <article className="tile spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name="globe"/></span><h3>{t('Your language, any currency')}</h3><p>{t('Use it in your language and see amounts at live exchange rates.')}</p></article>
         <article className="tile tile-half spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name="Audit"/></span><h3>{t('Reports and history')}</h3><p>{t('Download a PDF report and see a clear, tamper-evident history.')}</p></article><article className="tile tile-half spot" data-reveal onPointerMove={spot}><span className="feature-icon"><Icon name="Settings"/></span><h3>{t('Work with your team')}</h3><p>{t('Invite your accountant or a partner and choose what they can do.')}</p></article>

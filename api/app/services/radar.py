@@ -87,7 +87,10 @@ def _first_breach(forecast, today, window):
 
 def outlook(ds, reserve_minor, today, items, horizon=30):
     """Three outlooks with the same bills and the alert level that follows from them."""
-    scenario = ScenarioRequest(as_of=ds.as_of, horizon_days=horizon, reserve_minor=reserve_minor)
+    today = max(today, ds.as_of)
+    if ds.as_of != today:
+        ds = ds.model_copy(update={'as_of': today})
+    scenario = ScenarioRequest(as_of=today, horizon_days=horizon, reserve_minor=reserve_minor)
     on_time = project_cashflow(ds, scenario, _receipts(items, lambda i: i['due_on']))
     realistic = project_cashflow(ds, scenario, _receipts([i for i in items if i['status'] != 'doubtful'], lambda i: i['expected_on']))
     reliable = [i for i in items if i['status'] in ('on_time', 'usually_late') and i['overdue_days'] == 0]
@@ -113,17 +116,22 @@ def outlook(ds, reserve_minor, today, items, horizon=30):
 def expected(db, business, ds, today):
     """Every open customer invoice in this workspace with its realistic date (reads payments and open invoices)."""
     paid_on = {e.source_record_id: e.effective_on for e in ds.events}
-    payments = [(customer, date.fromisoformat(due), paid_on[cash]) for customer, due, cash in db.execute(
-        """SELECT r.customer_id, r.due_on, s.cash_record_id FROM receivable_settlements s
-           JOIN receivables r ON r.business_id=s.business_id AND r.id=s.receivable_id WHERE s.business_id=?""",
-        (business,)).fetchall() if cash in paid_on]
-    per_customer, overall = habits_from(payments)
+    settled = {}
+    for identity, customer, due, cash in db.execute(
+        """SELECT r.id, r.customer_id, r.due_on, s.cash_record_id FROM receivable_settlements s
+           JOIN receivable_balances r ON r.business_id=s.business_id AND r.id=s.receivable_id
+           WHERE s.business_id=? AND r.open_minor=0""", (business,)).fetchall():
+        if cash in paid_on:
+            key = (identity, customer, date.fromisoformat(due))
+            settled[key] = max(settled.get(key, date.min), paid_on[cash])
+    per_customer, overall = habits_from((customer, due, paid) for (_, customer, due), paid in settled.items())
     rows = db.execute("""SELECT id, customer_id, due_on, open_minor FROM receivable_balances
                          WHERE business_id=? AND open_minor>0 ORDER BY due_on, id""", (business,)).fetchall()
     return expectations([(i, c, date.fromisoformat(d), a) for i, c, d, a in rows], per_customer, overall, today)
 
 
 def radar(db, business, ds, reserve_minor, today, horizon=30):
+    today = max(today, ds.as_of)
     return outlook(ds, reserve_minor, today, expected(db, business, ds, today), horizon)
 
 
@@ -141,9 +149,13 @@ def should_alert(db, business, view, at):
             grew = view['shortfall_minor'] >= max(1, row[2]) * RESEND_GROWTH
             stale = at - row[3] >= RESEND_AFTER_DAYS * 86400
             send = bool(earlier or grew or stale)
-    alerted = at if send else (row[3] if row and view['level'] == 'alert' else None)
+    breach, shortfall = view['breach_on'], view['shortfall_minor']
+    alerted = at if send else None
+    if not send and row and view['level'] == 'alert':
+        # Measure deterioration against the last alert the owner was offered.
+        breach, shortfall, alerted = row[1:]
     db.execute("""INSERT INTO radar_state(business_id,level,breach_on,shortfall_minor,alerted_at,updated_at) VALUES (?,?,?,?,?,?)
                   ON CONFLICT(business_id) DO UPDATE SET level=excluded.level,breach_on=excluded.breach_on,
                   shortfall_minor=excluded.shortfall_minor,alerted_at=excluded.alerted_at,updated_at=excluded.updated_at""",
-               (business, view['level'], view['breach_on'], view['shortfall_minor'], alerted, at))
+               (business, view['level'], breach, shortfall, alerted, at))
     return send

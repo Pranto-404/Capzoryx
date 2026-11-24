@@ -36,7 +36,7 @@ export function InstallControl(){
     return ()=>controller.abort();
   },[]);
   const apple=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-  return <>{androidPhone&&<a className="button secondary" href={ANDROID_APP_URL} rel="noopener">{t('Get the Android app (reads payment SMS)')}</a>}{available&&<button className="secondary" onClick={async()=>{const event=installEvent;if(!event)return;
+  return <>{androidPhone&&ANDROID_APP_URL&&<a className="button secondary" href={ANDROID_APP_URL} rel="noopener">{t('Get the Android app (reads payment SMS)')}</a>}{available&&<button className="secondary" onClick={async()=>{const event=installEvent;if(!event)return;
     installEvent=null;setAvailable(false);await event.prompt();await event.userChoice;
   }}>{t('Install Capzoryx')}</button>}
   {apple&&!window.matchMedia('(display-mode: standalone)').matches&&<p>{t('On iPhone, open Share and choose Add to Home Screen.')}</p>}

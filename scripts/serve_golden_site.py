@@ -44,6 +44,8 @@ def main():
         def public_key():return FileResponse(keys)
         @app.get('/verify/{pid}')
         def passport_page(pid:str):return FileResponse(dist/"index.html")
+        @app.get('/demo')
+        def competition_page():return FileResponse(dist/"index.html")
         config_path=ROOT/"web/vercel.json"
         if not config_path.exists():config_path=ROOT/"vercel.json"
         headers=json.loads(config_path.read_text())["headers"]
