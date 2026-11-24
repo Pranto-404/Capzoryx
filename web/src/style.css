@@ -836,3 +836,6 @@ main.welcome > .welcome-story > .competition-cta { order: 5; justify-self: start
 .voice-clip audio { width: min(100%, 360px); }
 .voice-alternate { margin-block: 12px; }
 .voice-alternate textarea { margin-block-end: 8px; }
+.chat-panel-with-voice { overflow-y: auto; }
+.chat-panel-with-voice .chat-log { flex: 0 0 min(32dvh, 280px); }
+.chat-panel-with-voice .voice-note { flex: 0 0 auto; margin: 0; min-width: 0; }
