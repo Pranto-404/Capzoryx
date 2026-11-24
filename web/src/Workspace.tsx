@@ -1,4 +1,4 @@
-import {apiFetch,nativeBuild} from './apiBase';
+import {ANDROID_APP_URL,androidPhone,apiFetch,installedApp,nativeBuild} from './apiBase';
 import {CaptureSync,InstallControl} from './Pwa';
 import {PassportManager} from './Passport';
 import {NotificationInbox} from './NotificationInbox';
@@ -25,7 +25,7 @@ import {DataEntry} from './DataEntry';
 import {Financing} from './Financing';
 import {QuickAdd} from './QuickAdd';
 import {TelegramLink} from './TelegramLink';
-import {SmsInbox,PhoneSms} from './SmsInbox';
+import {SmsInbox,PhoneSms,GetAndroidApp} from './SmsInbox';
 import {Avatar} from './Avatar';
 import {formatDate,formatTime,prettyVendor,roleLabel,workspaceLabel} from './format';
 import {t,T,LanguagePicker,useI18n,hasChosenLanguage} from './i18n';
@@ -91,6 +91,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const focusTarget=useRef<string|null>(null);
   const [moreOpen,setMoreOpen]=useState(false);
   const [sheet,setSheet]=useState(false);  // the app's "More" sheet
+  const [secondPerson,setSecondPerson]=useState(true);  // an approver exists, so the owner cannot approve alone
   useEffect(()=>{
     if(!sheet)return;
     const key=(e:globalThis.KeyboardEvent)=>{if(e.key==='Escape')setSheet(false);};
@@ -100,7 +101,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   },[sheet]);
   const [offlineAt,setOfflineAt]=useState(0);  // the app is showing data saved on the phone at this time
   useEffect(()=>{
-    if(!nativeBuild)return;
+    if(!installedApp)return;
     const saved=(e:Event)=>setOfflineAt((e as CustomEvent<number>).detail);const live=()=>setOfflineAt(0);
     window.addEventListener('capzoryx:offline-data',saved);window.addEventListener('capzoryx:live-data',live);
     return ()=>{window.removeEventListener('capzoryx:offline-data',saved);window.removeEventListener('capzoryx:live-data',live);};
@@ -181,10 +182,10 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   async function refresh(){
     const mine=scope.current;  // this call belongs to one mount: a newer mount must not make an aborted call look current
     try{
-      const data=await request<{next_collection?:NextCollection|null;dataset_revision:string;snapshot:Snapshot;invoices:Invoice[];events:CashEvent[];proposals:Proposal[];audit:Audit;week:Forecast;month:Forecast;policy:{reserve_minor:number;payment_limit_minor:number}}>('/workspace');
+      const data=await request<{next_collection?:NextCollection|null;dataset_revision:string;snapshot:Snapshot;invoices:Invoice[];events:CashEvent[];proposals:Proposal[];audit:Audit;week:Forecast;month:Forecast;policy:{reserve_minor:number;payment_limit_minor:number;second_person?:boolean}}>('/workspace');
       if(mine.signal.aborted)return;
       setNextCollection(data.next_collection??null);setRevision(data.dataset_revision);setSnapshot(data.snapshot);setCurrency(data.snapshot.currency);setInvoices(data.invoices);setEvents(data.events);setProposals(data.proposals);setAudit(data.audit);
-      setWeek(data.week);setForecast(data.month);setBaselineMonth(data.month);
+      setWeek(data.week);setForecast(data.month);setBaselineMonth(data.month);setSecondPerson(data.policy.second_person!==false);
       setReserve(String(data.policy.reserve_minor/10**currencyDigits(data.snapshot.currency)));setDelay('0');setMissing(false);
     }catch(e){
       if(mine.signal.aborted)return;
@@ -212,7 +213,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
     setSelected(proposal);await refresh();setTab('Approvals');setMessage(t('Payment prepared. Nothing is paid yet: a second person must approve it.'));
   }
   async function decide(proposal:Proposal,decision:'approve'|'reject'){
-    const result=await request<{state:string}>(`/proposals/${proposal.proposal_id}/approve`,{proposal_hash:proposal.action_hash,decision});
+    const result=await request<{state:string}>(`/proposals/${proposal.proposal_id}/approve`,{proposal_hash:proposal.action_hash,decision,...(soloOwner?{solo_confirmed:true}:{})});
     setSelected(null);await refresh();
     setMessage(result.state==='EXECUTED'?t('Payment recorded in your books. Your balance and activity are updated.'):t('Payment rejected. Nothing was recorded.'));
   }
@@ -231,6 +232,8 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
     await run(async()=>{changeSession(await request<Session>('/account/switch',{business_id:id}));});
   }
   const canPropose=session.role==='owner';
+  const soloOwner=session.role==='owner'&&!secondPerson;  // no approver in this workspace: the owner decides alone
+  const canDecide=session.role==='approver'||soloOwner;
   // A new owner's own analysis (market, advice, numbers) comes first; once records exist, cash leads.
   const noRecords=!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0;
   const businessPanels=setup&&setup.step>0?<>
@@ -304,12 +307,14 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
           <div className="table-wrap" tabIndex={0} role="region" aria-label={t('Scrollable table')}><table><caption>{t('Next 30 days')}</caption><thead><tr><th>{t('Date')}</th><th>{t('In')}</th><th>{t('Out')}</th><th>{t('Balance')}</th></tr></thead><tbody>{forecast.days.map(d=><tr key={d.date}><td>{formatDate(d.date)}</td><td>{money(d.inflow_minor)}</td><td>{money(d.outflow_minor)}</td><td className={d.projected_balance_minor<0?'negative':''}>{money(d.projected_balance_minor)}</td></tr>)}</tbody></table></div></Panel>}</>}
       {tab==='Financing'&&<Financing snapshot={snapshot} forecast={baselineMonth} session={session} request={request}/>}
       {tab==='Approvals'&&<Panel title={t('Approve payments')}>
-        <p>{t('A second person approves each payment you prepare. Approving records the payment in your books; no money moves from a bank. Proposals expire after 15 minutes.')}</p>
+        <p>{t('Approving records the payment in your books; no money moves from a bank. A prepared payment waits 15 minutes for a decision.')}</p>
+        {soloOwner&&<p className="notice">{t('You are the only person in this workspace, so you approve your own payments. Want a second person to check each payment? Invite an approver in Settings → Sharing; after that, only they can approve.')} <button className="link" onClick={()=>{try{sessionStorage.setItem('capzoryx-settings-tab','Sharing');}catch{/* optional */}setTab('Settings');}}>{t('Invite an approver')}</button></p>}
+        {session.role==='owner'&&secondPerson&&<p className="notice">{t('Your workspace has an approver, so every payment you prepare waits for them. Ask them to open Approvals in their account and choose Review and decide.')}</p>}
         {selected&&<ProposalDetails proposal={selected} number={number(selected.details.invoice_id)}/>}
         {!proposals.length&&<p>{t('Nothing to approve yet. Open')} <button className="link" onClick={()=>setTab('Invoices')}>{t('Invoices')}</button> {t('and choose Prepare payment.')}</p>}
         <div className="proposal-list">{proposals.map(p=><article id={'payment-'+p.proposal_id} tabIndex={-1} key={p.proposal_id} className="proposal"><div><span className="badge">{p.state==='AWAITING_APPROVAL'?t('Waiting'):p.state==='EXECUTED'?'Paid':p.state==='REJECTED'?t('Rejected'):p.state==='EXPIRED'?t('Expired'):p.state}</span><h3>{prettyVendor(p.details.vendor_id)} · {nativeMoney(p.details.amount_minor)}</h3><p>{number(p.details.invoice_id)&&`Invoice ${number(p.details.invoice_id)} · `}{t('Prepared by')} {p.details.proposer_id===session.user_id?t('you'):'a teammate'}</p>{p.state==='AWAITING_APPROVAL'&&<small>{t('Expires {time}',{time:formatTime(p.details.expires_at)})}</small>}</div>
-          <button className="secondary" onClick={()=>setSelected(p)}>{t('Details')}</button>{p.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<button disabled={busy} onClick={()=>setSelected(p)}>{t('Review and decide')}</button>}</article>)}</div>
-        {selected&&selected.state==='AWAITING_APPROVAL'&&session.role==='approver'&&<ApprovalDialog proposal={selected} number={number(selected.details.invoice_id)} error={error} balance={snapshot?.balance_minor} busy={busy} onClose={()=>setSelected(null)} onDecision={d=>void run(()=>decide(selected,d))}/>}</Panel>}
+          <button className="secondary" onClick={()=>setSelected(p)}>{t('Details')}</button>{p.state==='AWAITING_APPROVAL'&&canDecide&&<button disabled={busy} onClick={()=>setSelected(p)}>{t('Review and decide')}</button>}</article>)}</div>
+        {selected&&selected.state==='AWAITING_APPROVAL'&&canDecide&&<ApprovalDialog solo={soloOwner} proposal={selected} number={number(selected.details.invoice_id)} error={error} balance={snapshot?.balance_minor} busy={busy} onClose={()=>setSelected(null)} onDecision={d=>void run(()=>decide(selected,d))}/>}</Panel>}
       {tab==='Business'&&session.role==='owner'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Loading…')}</section>}>
         <BusinessData request={request}/>
         <BusinessSetup request={request} mode="edit" onDone={v=>setSetup(x=>x&&{...x,step:v.step,completed:v.completed})}/>
@@ -327,7 +332,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
           {!audit.events.length&&<p>{t('No activity yet.')}</p>}
           <ol className="audit-list">{audit.events.slice().reverse().map(event=>{const p=(event.payload||{}) as Record<string,unknown>;const who=event.actor_id===session.user_id?'You':t('A teammate');return <li key={event.event_id}><strong>{t(AUDIT_TEXT[event.kind]||'')||event.kind.replaceAll('_',' ').toLowerCase()}</strong><small>{formatTime(event.created_at)} · {who}{typeof p.note==='string'&&p.note?` · ${p.note}`:''}{event.kind==='EXECUTED'&&typeof p.cash_delta_minor==='number'?` · ${nativeMoney(Math.abs(p.cash_delta_minor))}`:''}{event.kind==='DENIED'?' · blocked by a safety rule':''}</small>{event.kind==='CASH_CORRECTED'&&<CorrectionSummary payload={p}/>}</li>;})}</ol>
           <details className="advanced"><summary>{t('For auditors')}</summary><p className="muted small">{t('Each entry is linked to the one before it and signed by the server, so any later change is detectable.')} {t('This is not a claim of protection from the system administrator.')}</p><button className="secondary" onClick={()=>save(new Blob([JSON.stringify(audit,null,2)],{type:'application/json'}),'capzoryx-activity-log.json')}>{t('Download the full signed log')}</button></details></>:<p>{t('Activity is unavailable. Refresh to try again.')}</p>}</Panel>}
-      {tab==='Data'&&nativeBuild&&session.role==='owner'&&snapshot?.currency==='BDT'&&<PhoneSms request={request} scope={session} onAdded={()=>void refresh()}/>}
+      {tab==='Data'&&session.role==='owner'&&snapshot?.currency==='BDT'&&(nativeBuild?<PhoneSms request={request} scope={session} onAdded={()=>void refresh()}/>:androidPhone&&<GetAndroidApp/>)}
       {tab==='Data'&&<>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><KhataPage request={request} session={session} onSaved={refresh}/></Suspense></LazyBoundary>}
         {canAddRecords&&<QuickAdd request={request} revision={revision} profile={profile} owner={session.role==='owner'} cloudAvailable={cloudAvailable} hisabAvailable={hisabAvailable} onSaved={async()=>{await refresh();}}/>}
@@ -335,9 +340,9 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><CashCorrections session={session} events={events} request={request} onSaved={refresh}/></Suspense></LazyBoundary>}
         {session.role==='owner'&&snapshot&&<div id="statement-review" tabIndex={-1}><LazyBoundary><Suspense fallback={null}><StatementImport initiallyOpen={openStatement} request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary></div>}
         {session.role==='owner'&&<ImportEvidence busy={busy} enabled={!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0} upload={importRaw}/>}</>}
-      {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings connections={session.role==='owner'?<><TelegramLink request={request}/>{nativeBuild&&snapshot?.currency==='BDT'&&<PhoneSms request={request} scope={session}/>}<SmsInbox request={request}/><ReadOnlyTokens request={request}/></>:undefined} onBusinessSaved={v=>setSetup(x=>x&&{...x,step:v.step,completed:v.completed})} session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
+      {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings connections={session.role==='owner'?<><TelegramLink request={request}/>{snapshot?.currency==='BDT'&&(nativeBuild?<PhoneSms request={request} scope={session}/>:<GetAndroidApp/>)}<SmsInbox request={request}/><ReadOnlyTokens request={request}/></>:undefined} onBusinessSaved={v=>setSetup(x=>x&&{...x,step:v.step,completed:v.completed})} session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
       {chatLoaded&&<div id="workspace-assistant" hidden={tab!=='Assistant'&&!chatOpen} className={tab==='Assistant'?'assistant-page':'chat-float'} onKeyDown={(e:KeyboardEvent)=>{if(e.key==='Escape'&&tab!=='Assistant')closeChat();}}><LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening assistant…')}</section>}><Assistant visible={tab==='Assistant'||chatOpen} snapshot={snapshot} forecast={baselineMonth} week={week} events={events} invoices={invoices} session={session} profile={profile} cloudAvailable={cloudAvailable} hisabAvailable={hisabAvailable} revision={revision} request={request} onSaved={refresh} onNavigate={action=>{setTab(action);closeChat();}} onProposal={async()=>{await refresh();setTab('Approvals');closeChat();}} onClose={tab==='Assistant'?undefined:closeChat}/></Suspense></LazyBoundary></div>}
-      {tab!=='Assistant'&&!nativeBuild&&<button ref={chatButton} className="chat-launcher" aria-label={chatOpen?t('Close assistant'):t('Open assistant')} aria-expanded={chatOpen} aria-controls="workspace-assistant" onClick={()=>{setChatLoaded(true);setChatOpen(!chatOpen);}}><Icon name="spark"/> <span>{chatOpen?t('Close'):t('Assistant')}</span></button>}
+      {tab!=='Assistant'&&!installedApp&&<button ref={chatButton} className="chat-launcher" aria-label={chatOpen?t('Close assistant'):t('Open assistant')} aria-expanded={chatOpen} aria-controls="workspace-assistant" onClick={()=>{setChatLoaded(true);setChatOpen(!chatOpen);}}><Icon name="spark"/> <span>{chatOpen?t('Close'):t('Assistant')}</span></button>}
       {tab==='Audit'&&nativeBuild&&<LazyBoundary><Suspense fallback={null}><AndroidReminders scope={notificationScope}/></Suspense></LazyBoundary>}
       {snapshot&&<CaptureSync session={session} currency={snapshot.currency} request={request} onSaved={refresh} onInvoices={()=>setTab('Invoices')}/>}
 </>;
@@ -346,7 +351,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const appTabs:Tab[]=(['Overview','Business','Data','Assistant'] as Tab[]).filter(tb=>(tb!=='Business'||session.role==='owner')&&(tb!=='Data'||canAddRecords));
   const sheetTabs=tabs.filter(tb=>!appTabs.includes(tb)&&((tb!=='Payroll'&&tb!=='Business')||session.role==='owner'));
   const switcher=lists.workspaces.length>1&&<><label htmlFor="workspace-switch" className="sr-only">{t('Switch workspace')}</label><select id="workspace-switch" value={session.business_id} disabled={busy} onChange={e=>void switchTo(e.target.value)}>{lists.workspaces.map(w=><option key={w.business_id} value={w.business_id}>{workspaceLabel(w.name)}{w.currency?` · ${w.currency}`:''}{w.role!=='owner'?' · '+t('shared'):''}</option>)}</select></>;
-  if(nativeBuild)return <div className="app-shell">
+  if(installedApp)return <div className="app-shell">
     <header className="app-bar"><button className="app-avatar" onClick={()=>setSheet(true)} aria-label={t('Open your profile and settings')}><Avatar profile={profile} name={name}/></button>
       <div className="app-bar-title"><h1 tabIndex={-1} id="workspace-title">{t(tabLabel[tab])}</h1><small>{workspaceLabel(session.workspace_name||'My workspace')}{snapshot?' · '+currency:''}</small></div>
       <button className="app-icon" aria-label={t('Refresh')} disabled={busy} onClick={()=>void run(refresh)}><span className={busy?'spin':undefined}><Icon name="refresh"/></span></button></header>
@@ -357,7 +362,8 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       <span className="app-sheet-handle" aria-hidden="true"/>
       <button className="app-sheet-user" onClick={()=>go('Settings')}><Avatar profile={profile} name={name}/><span><strong>{name}</strong><small>{roleLabel(session.role)} · {workspaceLabel(session.workspace_name||'My workspace')}</small></span><Icon name="arrow"/></button>
       <div className="app-sheet-grid">{sheetTabs.map(tb=><button key={tb} className="secondary" aria-current={tab===tb?'page':undefined} onClick={()=>go(tb)}><Icon name={tb}/><span>{t(tabLabel[tb])}</span></button>)}
-        <button className="secondary" disabled={!snapshot||exporting} onClick={()=>{setSheet(false);void exportPdf();}}><Icon name="download"/><span>{exporting?t('Preparing PDF…'):t('Download PDF')}</span></button></div>
+        <button className="secondary" disabled={!snapshot||exporting} onClick={()=>{setSheet(false);void exportPdf();}}><Icon name="download"/><span>{exporting?t('Preparing PDF…'):t('Download PDF')}</span></button>
+        {!nativeBuild&&androidPhone&&<a className="button secondary" href={ANDROID_APP_URL} rel="noopener"><Icon name="download"/><span>{t('Android app')}</span></a>}</div>
       <div className="app-sheet-row">{switcher}<LanguagePicker compact id="language-sheet" onPicked={code=>{void request('/account/profile',{language:code}).catch(()=>{});}}/><ThemeButton/></div>
       <button className="secondary app-sheet-signout" onClick={logout}>{t('Sign out')}</button>
     </section></div>}
@@ -382,7 +388,7 @@ function ProposalDetails({proposal:p,number}:{proposal:Proposal;number:string}){
   const {nativeMoney:money}=useCurrency();
   return <article className="proposal-detail"><h3>{t('Payment details')}</h3><dl><div><dt>{t('Supplier')}</dt><dd>{prettyVendor(p.details.vendor_id)}</dd></div>{number&&<div><dt>{t('Invoice')}</dt><dd>{number}</dd></div>}<div><dt>{t('Amount')}</dt><dd>{money(p.details.amount_minor)}</dd></div></dl>{p.preview&&<p>You have {money(p.preview.available_minor)} now; after this payment {money(p.preview.after_payment_minor)}. Safety reserve: {money(p.preview.reserve_minor)}. Payment limit: {money(p.preview.payment_limit_minor)}.</p>}<p className="muted">{t('The amount, supplier and your balance are checked again when this is approved.')}</p></article>;
 }
-function ApprovalDialog({proposal,number,error,balance,busy,onClose,onDecision}:{proposal:Proposal;number:string;error:string;balance?:number;busy:boolean;onClose:()=>void;onDecision:(decision:'approve'|'reject')=>void}){
+function ApprovalDialog({solo,proposal,number,error,balance,busy,onClose,onDecision}:{solo?:boolean;proposal:Proposal;number:string;error:string;balance?:number;busy:boolean;onClose:()=>void;onDecision:(decision:'approve'|'reject')=>void}){
   const {nativeMoney:money}=useCurrency();
   const dialog=useRef<HTMLDialogElement>(null);const [confirmed,setConfirmed]=useState(false);
   useEffect(()=>{const current=dialog.current;const opener=document.activeElement as HTMLElement|null;current?.showModal();return()=>{current?.close();opener?.focus();};},[]);
@@ -394,5 +400,5 @@ function ApprovalDialog({proposal,number,error,balance,busy,onClose,onDecision}:
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
   }
-  return <dialog ref={dialog} onKeyDown={containFocus} aria-labelledby="approval-title" onCancel={e=>{if(busy)e.preventDefault();else onClose();}}><h2 id="approval-title">{t('Approve this payment?')}</h2><ProposalDetails proposal={proposal} number={number}/>{balance!==undefined&&<p>{t('Your balance now: {amount}.',{amount:money(balance)})}</p>}{error&&<p className="error" role="alert">{error}</p>}<p>{t('Approving records this payment in your books. No bank transfer is made.')}</p><label className="check"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} disabled={busy}/>{t('I checked the supplier and the amount.')}</label><div className="actions"><button disabled={busy||!confirmed} onClick={()=>onDecision('approve')}>{busy?t('Working…'):t('Approve and record')}</button><button className="danger" disabled={busy||!confirmed} onClick={()=>onDecision('reject')}>{t('Reject')}</button><button className="secondary" disabled={busy} onClick={onClose}>{t('Cancel')}</button></div></dialog>;
+  return <dialog ref={dialog} onKeyDown={containFocus} aria-labelledby="approval-title" onCancel={e=>{if(busy)e.preventDefault();else onClose();}}><h2 id="approval-title">{t('Approve this payment?')}</h2><ProposalDetails proposal={proposal} number={number}/>{balance!==undefined&&<p>{t('Your balance now: {amount}.',{amount:money(balance)})}</p>}{error&&<p className="error" role="alert">{error}</p>}<p>{t('Approving records this payment in your books. No bank transfer is made.')}</p><label className="check"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} disabled={busy}/>{solo?t('I checked the supplier and the amount myself.'):t('I checked the supplier and the amount.')}</label><div className="actions"><button disabled={busy||!confirmed} onClick={()=>onDecision('approve')}>{busy?t('Working…'):t('Approve and record')}</button><button className="danger" disabled={busy||!confirmed} onClick={()=>onDecision('reject')}>{t('Reject')}</button><button className="secondary" disabled={busy} onClick={onClose}>{t('Cancel')}</button></div></dialog>;
 }

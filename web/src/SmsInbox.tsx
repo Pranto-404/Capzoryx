@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import {t} from './i18n';
 import {formatDate} from './format';
+import {ANDROID_APP_URL} from './apiBase';
 
 const taka=(minor:number)=>'৳'+(minor/100).toLocaleString('en-IN',{maximumFractionDigits:2});
 
@@ -70,5 +71,14 @@ export function PhoneSms({request,scope,onAdded}:{request:Request;scope:{busines
     <div className="actions">{on?<button className="ghost" onClick={()=>void turnOff()}>{t('Turn off')}</button>
       :<button disabled={busy||on===null} onClick={()=>void turnOn()}>{busy?t('Reading SMS…'):t('Turn on SMS reading')}</button>}</div>
     {message&&<p role="status">{message}</p>}
+  </section>;
+}
+
+/** Browsers cannot read SMS. On the website (also when installed), payment SMS reading comes from the Android app. */
+export function GetAndroidApp(){
+  return <section className="panel channel phone-sms"><h2>{t('Read payment SMS automatically')}</h2>
+    <p className="muted">{t('A website cannot read your SMS, even when installed. The Capzoryx Android app can: it finds bKash, Nagad, Rocket and bank payments on your phone and adds them for review, with your permission.')}</p>
+    <ol className="steps"><li>{t('Download the app and open the file.')}</li><li>{t('If Android asks, allow installing apps from this source.')}</li><li>{t('Sign in with the same account, open Add, and turn on SMS reading.')}</li></ol>
+    <div className="actions"><a className="button" href={ANDROID_APP_URL} rel="noopener">{t('Download the Android app')}</a></div>
   </section>;
 }

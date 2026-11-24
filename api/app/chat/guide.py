@@ -33,9 +33,9 @@ GUIDE = {
         'bl': 'Invoices page-e shob baki supplier bill ar tar tarikh ache. Notun bill Add records theke jog korun; dite chaile bill khule Prepare payment chapun.',
         'bn': 'Invoices পেজে সব বাকি সাপ্লায়ার বিল আর তার তারিখ আছে। নতুন বিল Add records থেকে যোগ করুন; দিতে চাইলে বিল খুলে Prepare payment চাপুন।'}),
     'approval': (('approve', 'approval', 'approver', 'onumodon', 'অনুমোদন'), 'Approvals', {
-        'en': 'Every payment needs a second person with the approver role, so no one can pay alone by mistake. Approving records the payment; it never sends money.',
-        'bl': 'Proti payment-e approver role-er ekjon alada manusher onumodon lage, jate keu ekai bhul kore dite na pare. Approve korle shudhu hisab-e lekha hoy, taka jay na.',
-        'bn': 'প্রতিটি পেমেন্টে approver ভূমিকার আলাদা একজনের অনুমোদন লাগে, যাতে কেউ একা ভুল করে দিতে না পারে। অনুমোদনে শুধু হিসাবে লেখা হয়, টাকা যায় না।'}),
+        'en': 'Open Approvals and choose Review and decide. If you work alone you approve your own payments after ticking that you checked them; once you invite an approver (Settings → Sharing), only they can approve. Approving records the payment; it never sends money.',
+        'bl': 'Approvals-e giye Review and decide chapun. Apni eka kaj korle nije check kore tick diye approve korte parben; Settings → Sharing theke approver invite korle tokhon shudhu tini approve korben. Approve korle shudhu hisab-e lekha hoy, taka jay na.',
+        'bn': 'Approvals-এ গিয়ে Review and decide চাপুন। আপনি একা কাজ করলে নিজে যাচাই করে টিক দিয়ে অনুমোদন করতে পারবেন; Settings → Sharing থেকে approver আমন্ত্রণ করলে তখন শুধু তিনিই অনুমোদন করবেন। অনুমোদনে শুধু হিসাবে লেখা হয়, টাকা যায় না।'}),
     'loans': (('loan', 'loans', 'rin', 'murabaha', 'lender', 'interest', 'sud', 'ঋণ', 'লোন', 'সুদ'), 'Financing', {
         'en': 'Open Loans and enter each offer you received. Capzoryx shows the true yearly cost with fees and whether your cash flow can carry the instalments.',
         'bl': 'Loans page-e pawa offer-gula likhun. Fee shoho ashol bochhorik khoroch ar apnar cash-flow kisti tante parbe kina, Capzoryx dekhabe.',

@@ -1,4 +1,4 @@
-import {nativeBuild} from './apiBase';
+import {installedApp,nativeBuild} from './apiBase';
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
@@ -16,7 +16,7 @@ if (!nativeBuild && import.meta.env.PROD && 'serviceWorker' in navigator) {
   });
 }
 
+if(installedApp)document.documentElement.classList.add('native-app');
 if(nativeBuild){
-  document.documentElement.classList.add('native-app');
   void import('./nativeLinks').then(module=>module.listenToNativeLinks());
 }

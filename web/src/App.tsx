@@ -1,4 +1,4 @@
-import {apiFetch,nativeBuild} from './apiBase';
+import {apiFetch,installedApp,nativeBuild} from './apiBase';
 import {OfflineCapture,InstallControl} from './Pwa';
 import {t,useI18n} from './i18n';
 import {LazyBoundary} from './LazyBoundary';
@@ -29,7 +29,7 @@ export default function App() {
   const [online,setOnline]=useState(navigator.onLine && !document.querySelector('meta[name="capzoryx-offline"]'));
   const [capture,setCapture]=useState(false);
   useEffect(()=>{
-    const connected=()=>{if(!nativeBuild)setAuth(null);setOnline(true);setCapture(false);}, disconnected=()=>setOnline(false);  // back online: return to the app, which syncs queued records
+    const connected=()=>{if(!installedApp)setAuth(null);setOnline(true);setCapture(false);}, disconnected=()=>setOnline(false);  // back online: return to the app, which syncs queued records
     window.addEventListener('online',connected);window.addEventListener('offline',disconnected);
     return ()=>{window.removeEventListener('online',connected);window.removeEventListener('offline',disconnected);};
   },[]);
@@ -62,7 +62,7 @@ export default function App() {
         try{
           const response=await apiFetch('/api/health',{cache:'no-store',signal:AbortSignal.any([abort.signal,AbortSignal.timeout(8000)])});
           if(response.ok && (await response.json()).status==='ok' && !abort.signal.aborted){
-            if(!nativeBuild)setAuth(null);setOnline(true);setCapture(false);return;
+            if(!installedApp)setAuth(null);setOnline(true);setCapture(false);return;
           }
         }catch{/* Offline or a sleeping service. Keep the draft available locally. */}
       }
