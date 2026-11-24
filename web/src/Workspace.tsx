@@ -43,6 +43,8 @@ const AdvisorPanel=lazy(()=>import('./AdvisorPanel').then(m=>({default:m.Advisor
 const InsightsPanel=lazy(()=>import('./InsightsPanel').then(m=>({default:m.InsightsPanel})));
 const MarketPanel=lazy(()=>import('./MarketPanel').then(m=>({default:m.MarketPanel})));
 const BusinessSetup=lazy(()=>import('./BusinessSetup').then(m=>({default:m.BusinessSetup})));
+const CashRadar=lazy(()=>import('./CashRadar').then(m=>({default:m.CashRadar})));
+const VoiceNote=lazy(()=>import('./VoiceNote').then(m=>({default:m.VoiceNote})));
 const BusinessData=lazy(()=>import('./BusinessData').then(m=>({default:m.BusinessData})));
 const tabs=['Overview','Business','Data','Invoices','Cash flow','Financing','Assistant','Approvals','Payroll','Audit','Settings'] as const;
 type Tab=typeof tabs[number];
@@ -281,6 +283,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {tab==='Overview'&&<Dashboard role={session.role} nextCollection={nextCollection} snapshot={snapshot} week={week} month={baselineMonth} invoices={invoices} events={events} proposals={proposals} audit={audit} navigate={showDashboardDestination} openAssistant={()=>{setChatLoaded(true);setChatOpen(true);}} onSample={session.role==='owner'&&!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0?()=>void importRaw(sampleBusiness(snapshot.currency)).catch(e=>report(e)):undefined}/>}
       {tab==='Overview'&&snapshot&&session.role==='owner'&&<AgentReview initiallyOpen={focusTarget.current==='agent-mode'} key={'agent-'+revision} request={request} invoices={invoices} forecast={baselineMonth} navigate={showDashboardDestination}/>}
       {tab==='Overview'&&!noRecords&&<>{businessPanels}</>}
+      {tab==='Overview'&&snapshot&&<LazyBoundary><Suspense fallback={null}><CashRadar request={request} revision={revision}/></Suspense></LazyBoundary>}
       {tab==='Overview'&&snapshot&&<CashBriefing key={revision} request={request} initiallyOpen={focusTarget.current==='cash-briefing'}/>}
       {tab==='Invoices'&&session.role==='owner'&&<Receivables key={revision} request={request} onSaved={refresh}/>}
       {tab==='Invoices'&&session.role==='owner'&&snapshot?.currency==='BDT'&&<div id="wallet-review" tabIndex={-1}><LazyBoundary><Suspense fallback={null}><WalletPayments request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary></div>}
@@ -294,6 +297,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
               {i.status==='open'&&session.role==='approver'&&<small className="muted">{t('Approvers review payments the owner prepares.')}</small>}
               {i.status==='open'&&canPropose&&<button className="small" disabled={busy} onClick={()=>void run(()=>propose(i.invoice_id))} aria-label={`Prepare payment for ${i.invoice_number}`}>{t('Prepare payment')}</button>}</td></tr>)}</tbody></table></div>
         {!visible.length&&<p>{t('No invoices match. Add a bill on the')} <button className="link" onClick={()=>setTab('Data')}>{t('Add records')}</button> {t('page, or photograph one.')}</p>}</Panel>}
+      {tab==='Cash flow'&&snapshot&&<div id="cash-radar"><LazyBoundary><Suspense fallback={null}><CashRadar request={request} revision={revision}/></Suspense></LazyBoundary></div>}
       {tab==='Cash flow'&&<><Panel title={t('Where your cash is heading')}>
         <form className="form-row" onSubmit={e=>{e.preventDefault();void run(async()=>{if(!snapshot)throw new Error(t('Add a record first.'));const result=await request<Forecast>('/cashflow/scenarios',{as_of:snapshot.as_of,horizon_days:30,reserve_minor:parseMinor(reserve),delay_inflows_days:Number(delay)});setForecast(result);});}}>
           <label>{t('Cash you want to keep as a safety reserve ({currency})',{currency})}<input value={reserve} onChange={e=>setReserve(e.target.value)} inputMode="decimal" required/></label>
@@ -335,6 +339,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
       {tab==='Data'&&session.role==='owner'&&snapshot?.currency==='BDT'&&(nativeBuild?<PhoneSms request={request} scope={session} onAdded={()=>void refresh()}/>:androidPhone&&<GetAndroidApp/>)}
       {tab==='Data'&&<>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><KhataPage request={request} session={session} onSaved={refresh}/></Suspense></LazyBoundary>}
+        {canAddRecords&&snapshot&&<LazyBoundary><Suspense fallback={null}><VoiceNote request={request} revision={revision} currency={snapshot.currency} onSaved={async()=>{await refresh();}}/></Suspense></LazyBoundary>}
         {canAddRecords&&<QuickAdd request={request} revision={revision} profile={profile} owner={session.role==='owner'} cloudAvailable={cloudAvailable} hisabAvailable={hisabAvailable} onSaved={async()=>{await refresh();}}/>}
         <DataEntry events={events} session={session} revision={revision} snapshot={snapshot} busy={busy} submit={async body=>{let saved=false;await run(async()=>{await request('/workspace/records',body);saved=true;await refresh();setMessage(t('Record saved. Your balance, forecast and activity are updated.'));});if(!saved)throw new Error(t('The record was not saved. Check the message above and try again.'));}}/>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><CashCorrections session={session} events={events} request={request} onSaved={refresh}/></Suspense></LazyBoundary>}

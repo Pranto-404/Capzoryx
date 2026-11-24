@@ -114,6 +114,39 @@ def append_record(db, current, body, *, manual_entry=False):
     return dict(source_id=record_id,replayed=False,simulation_only=True)
 
 
+class RecordBatch(Contract):
+    expected_revision: str = Field(pattern=r'^[a-f0-9]{64}$')
+    records: list[RecordFields] = Field(min_length=1, max_length=40)
+
+
+@router.post('/workspace/records/batch',status_code=201)
+def add_records(body:RecordBatch,actor=Depends(principal),db=Depends(db_connection)):
+    """Save many confirmed drafts (for example a week of spending from one voice note) all at once or not at all."""
+    if actor.role not in ('owner', 'bookkeeper'):sec.fail(403,'RECORDKEEPER_REQUIRED')
+    if not db.execute('SELECT 1 FROM account_members WHERE user_id=?',(actor.user_id,)).fetchone():sec.fail(403,'ACCOUNT_REQUIRED')
+    if len({r.request_id for r in body.records})!=len(body.records):sec.fail(422,'DUPLICATE_REQUEST_IDS')
+    with sec.transaction(db):
+        current=sec.recheck(db,actor)
+        if current.role not in ('owner', 'bookkeeper'):sec.fail(403,'RECORDKEEPER_REQUIRED')
+        if any(r.trust_vendor for r in body.records) and current.role != 'owner':sec.fail(403,'OWNER_REQUIRED')
+        sec.verify_audit_head(db,current.business_id)
+        ids=[r.request_id for r in body.records]
+        known=db.execute(f"SELECT COUNT(*) FROM workspace_input_requests WHERE business_id=? AND request_id IN ({','.join('?'*len(ids))})",  # noqa: S608
+                         (current.business_id,*ids)).fetchone()[0]
+        if known==len(ids):  # the same batch sent again (for example after a dropped connection): already saved
+            return dict(saved=0,replayed=True,source_ids=['manual-'+i for i in ids],
+                        dataset_revision=fingerprint(sec.original_dataset(db,current.business_id)),simulation_only=True)
+        if known:sec.fail(409,'INPUT_REQUEST_CONFLICT')
+        revision=body.expected_revision
+        saved=[]
+        for record in body.records:
+            # Each record extends the revision the previous one produced, inside one transaction.
+            result=append_record(db,current,InputRecord(**record.model_dump(),expected_revision=revision),manual_entry=True)
+            saved.append(result.get('source_id'))
+            revision=fingerprint(sec.original_dataset(db,current.business_id))
+        return dict(saved=len(saved),source_ids=saved,dataset_revision=revision,simulation_only=True)
+
+
 from api.app.services.finance import Dataset
 
 def has_financial_activity(db, business, dataset):

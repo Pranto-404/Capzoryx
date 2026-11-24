@@ -106,6 +106,30 @@ def cashflow(body: ScenarioRequest,actor=Depends(principal),db=Depends(db_connec
         return dict(project_cashflow(ds,body,open_receipts(db,actor.business_id)),simulation_only=True)
 
 
+@router.get('/radar')
+def cash_radar(actor=Depends(principal),db=Depends(db_connection)):
+    """The realistic cash outlook: customer payment habits, late and doubtful money, and the alert level."""
+    if actor.role not in {'owner', 'approver', 'viewer', 'bookkeeper'}:
+        sec.fail(403, 'MEMBER_REQUIRED')
+    from api.app.accounts import today_bd
+    from api.app.services.radar import radar
+    from api.app.receivables import customer_book
+    with sec.transaction(db):
+        current = sec.recheck(db, actor)
+        ds = sec.runtime_dataset(db, current.business_id)
+        policy = db.execute('SELECT reserve_minor FROM security_policies WHERE business_id=?', (current.business_id,)).fetchone()
+        view = radar(db, current.business_id, ds, policy[0] if policy else 0, max(today_bd(), ds.as_of))
+        names = {}
+        if current.role == 'owner':
+            try:
+                names = {c['id']: c['name'] for c in customer_book(db, current.business_id)['customers']}
+            except Exception:  # noqa: BLE001 - names are a convenience; ids still identify each customer
+                names = {}
+        for item in view['receivables'] + view['depends_on']:
+            item['customer'] = names.get(item['customer_id'], '')
+        return dict(view, simulation_only=True)
+
+
 @router.post('/copilot/gap-fix')
 def gap_fix(body: ScenarioRequest, actor=Depends(principal), db=Depends(db_connection)):
     if actor.role not in {'owner', 'approver', 'viewer', 'bookkeeper'}:
