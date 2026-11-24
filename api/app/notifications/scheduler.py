@@ -77,8 +77,14 @@ def run_workspace(db, business, at):
             # falls short, once per episode, and again only when it gets clearly worse. See services/radar.py.
             from api.app.services.radar import radar, should_alert
             view = radar(db, business, ds, reserve[0], max(today, ds.as_of))
-            if should_alert(db, business, view, at):
-                enqueue(db, business, 'cash_breach', view['breach_on'], at=at, period=str(today))
+            new_alert = should_alert(db, business, view, at)
+            if new_alert or view['level'] != 'alert':
+                # Keep at most one pending reminder per channel across quiet hours, even when severity moves.
+                db.execute("""UPDATE notification_jobs SET status='cancelled',claimed_until=NULL
+                              WHERE business_id=? AND status='queued' AND json_extract(payload_json,'$.kind')='cash_breach'""",
+                           (business,))
+            if new_alert:
+                enqueue(db, business, 'cash_breach', view['breach_on'], at=at, period=str(at // 1800))
     from api.app.notifications import telegram
     telegram.queue(db,business,at,has_due_bills=bool(email_alerts.due_count(ds,today)))
     # Dispatch once a deferred reminder can be shown. The transaction rechecks open balances and membership.

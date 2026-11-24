@@ -93,8 +93,13 @@ def outlook(ds, reserve_minor, today, items, horizon=30):
     scenario = ScenarioRequest(as_of=today, horizon_days=horizon, reserve_minor=reserve_minor)
     on_time = project_cashflow(ds, scenario, _receipts(items, lambda i: i['due_on']))
     realistic = project_cashflow(ds, scenario, _receipts([i for i in items if i['status'] != 'doubtful'], lambda i: i['expected_on']))
-    reliable = [i for i in items if i['status'] in ('on_time', 'usually_late') and i['overdue_days'] == 0]
+    reliable = [i for i in items if i['status'] == 'on_time' and i['overdue_days'] == 0]
     stress = project_cashflow(ds, scenario, _receipts(reliable, lambda i: i['expected_on']))
+    # Start with cleared cash and include known bills and scheduled expenses. Future money contributes only
+    # to the projected collection scenarios.
+    cleared_cash = ds.model_copy(update={'events': [event for event in ds.events
+                                                  if event.status == 'cleared' or event.direction == 'outflow']})
+    confirmed = project_cashflow(cleared_cash, scenario)
     hit, worst = _first_breach(realistic, today, ALERT_WINDOW_DAYS), _first_breach(stress, today, ALERT_WINDOW_DAYS)
     level = 'alert' if hit else 'watch' if worst else 'clear'
     breach = hit or worst
@@ -108,6 +113,7 @@ def outlook(ds, reserve_minor, today, items, horizon=30):
     return dict(level=level, breach_on=breach['date'] if breach else None, shortfall_minor=breach['shortfall_minor'] if breach else 0,
                 reserve_minor=reserve_minor, currency=ds.currency, as_of=today.isoformat(),
                 outlooks=dict(on_time=summary(on_time), realistic=summary(realistic), stress=summary(stress)),
+                confirmed=summary(confirmed), available_cash_minor=confirmed['opening_balance_minor'],
                 receivables=items, depends_on=depends[:12],
                 doubtful_minor=sum(i['amount_minor'] for i in items if i['status'] == 'doubtful'),
                 late_minor=sum(i['amount_minor'] for i in items if i['status'] == 'later_than_usual'))
