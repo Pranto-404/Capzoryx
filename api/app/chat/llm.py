@@ -19,7 +19,7 @@ from api.app.chat.prompts import CHAT_SYSTEM as SYSTEM, FACTS_HEADER, NO_FACTS  
 TRANSPORT = None  # tests inject an httpx.MockTransport
 MAX_TOKENS = int(os.getenv('CAPZORYX_CHAT_MAX_TOKENS', '500'))
 PER_CALL_SECONDS = 15
-OWN_CALL_SECONDS = 25  # a GPU Space may queue briefly; it is tried first, so it gets longer
+OWN_CALL_SECONDS = 12  # the own model is tried first; if its Space is cold or busy a free API answers instead
 TOTAL_SECONDS = 40  # GPU own model, then the free CPU copy, then free APIs
 CPU_CALL_SECONDS = 30
 CPU_FACTS_CHARS = 1800  # a 2-core CPU reads a long prompt slowly; it gets the most important part of the facts

@@ -7,6 +7,10 @@ type Industry={key:string;label:string;niches:string[];words:string};
 type Catalog={industries:Industry[];business_types:string[];channels:string[];goals:string[];units:string[]};
 type Product={id:string;name:string;category:string;variant:string;brand:string;unit:string;quantity:string|null;cost_minor:number|null;price_minor:number|null;expense_minor?:number|null;market_key:string|null};
 type Profile={identity?:Record<string,unknown>;operations?:Record<string,unknown>;goals?:Record<string,unknown>;consent?:Record<string,unknown>};
+// Server sentences shown in the list of missing details, listed so they are translated.
+export const GAP_REASONS=[T('Business name, industry and location are needed before anything else.'),
+  T('Add the products or services you sell so market prices can be matched to them.'),T('Name a few competitors you know so they can be compared first.'),
+  T('Monthly revenue and expenses are needed for the profit and growth estimates.'),T('Choose your goals so recommendations are ranked for you.')];
 export type BusinessView={profile:Profile;step:number;completed:boolean;products:Product[];gaps:{field:string;why:string}[];currency:string;niche_category:string|null};
 
 const STEPS=[T('Business'),T('Products'),T('Operations'),T('Goals'),T('Permissions')];
@@ -87,7 +91,7 @@ export function BusinessSetup({request,mode,onDone,onLater}:{request:Request;mod
     {mode==='edit'&&!view.completed&&!!view.profile.identity&&<button type="button" className="secondary" disabled={busy} onClick={()=>void (async()=>{setBusy(true);setError('');
       try{const done=await request<BusinessView>('/business/complete',{});setView(done);setSaved(t('Your business profile is saved.'));onDone(done);}catch(e){setError(errorText(e));}finally{setBusy(false);}})()}>{t('Finish setup')}</button>}
     {mode==='edit'&&!!view.gaps.length&&<details className="biz-gaps"><summary>{t('{n} things would make the analysis more accurate',{n:view.gaps.length})}</summary>
-      <ul>{view.gaps.map(g=><li key={g.field}>{g.why}</li>)}</ul></details>}
+      <ul>{view.gaps.map(g=><li key={g.field}>{t(g.why)}</li>)}</ul></details>}
   </>;
   return mode==='setup'?<div ref={overlay} className="biz-setup-overlay" role="dialog" aria-modal="true" aria-label={t('Set up your business')}><section className="panel biz-setup">{body}</section></div>
     :<section className="panel biz-setup biz-edit">{body}</section>;

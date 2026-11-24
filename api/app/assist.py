@@ -1,6 +1,7 @@
 """Smart assistance: general finance answers, sentences to draft records, and photos to draft records.
 Everything returned here is a suggestion. Saving still goes through the owner-only, idempotent, validated records API."""
 import base64
+import logging
 import json
 import time
 import re
@@ -92,7 +93,8 @@ def ask(body: AskBody, actor=Depends(principal), db=Depends(db_connection)):
     from api.app.chat import llm
     if llm.configured():
         try:
-            answer, _ = llm.reply(body.question, [(t.role, t.text) for t in body.history], facts, share_facts=True)
+            answer, provider = llm.reply(body.question, [(t.role, t.text) for t in body.history], facts, share_facts=True)
+            logging.getLogger('uvicorn.error').info('assist answer: provider=%s', provider or 'none')
         except Exception:  # noqa: BLE001 - provider failures fall back to the gateway below
             answer = None
         if answer:
