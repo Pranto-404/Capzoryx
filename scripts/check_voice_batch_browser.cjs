@@ -95,6 +95,7 @@ const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar
     await panel.getByRole('button',{name:'Make drafts'}).click();
     await panel.getByLabel(/^Amount/).waitFor();
     assert.equal(await panel.getByLabel(/^Amount/).inputValue(),'50.00');
+    assert.equal(await panel.locator('.batch-list input[type=checkbox]').isChecked(),false);
     assert.equal(primary,1);
     assert.equal(alternate,1);
     console.log('PASS Bangla recording retained after provider failure and retried without recording again');
