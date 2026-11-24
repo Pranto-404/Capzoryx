@@ -88,6 +88,15 @@ def ask(body: AskBody, actor=Depends(principal), db=Depends(db_connection)):
     with db:
         from api.app.chat.context import text as business_context
         facts = business_context(db, actor.business_id, actor.role)
+    # The same chain as chat: the own model (polished by a free API), then the free APIs; the gateway is the last resort.
+    from api.app.chat import llm
+    if llm.configured():
+        try:
+            answer, _ = llm.reply(body.question, [(t.role, t.text) for t in body.history], facts, share_facts=True)
+        except Exception:  # noqa: BLE001 - provider failures fall back to the gateway below
+            answer = None
+        if answer:
+            return dict(answer=answer[:2500], simulation_only=True)
     messages = [{'role': 'system', 'content': SYSTEM_ASK + facts}]
     messages += [{'role': t.role, 'content': t.text} for t in body.history]
     messages.append({'role': 'user', 'content': body.question})

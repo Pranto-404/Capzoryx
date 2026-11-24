@@ -89,3 +89,41 @@ def test_own_model_reuses_the_hugging_face_token(monkeypatch):
     assert own.key == 'hf_test'
     monkeypatch.setenv('CAPZORYX_CHAT_HISAB_KEY', 'hf_own')
     assert own.key == 'hf_own'
+
+
+def _space_and_groq(monkeypatch, groq_text, seen):
+    def handle(request):
+        if request.url.host == 'api.groq.com':
+            seen.append(json.loads(request.content)['messages'][1]['content'])
+            return httpx.Response(200, json={'choices': [{'message': {'content': groq_text}}]})
+        if request.method == 'POST':
+            return httpx.Response(200, json={'event_id': 'abc'})
+        return httpx.Response(200, text='event: complete\ndata: ["Saree dam BDT 1,700.00. stock baran."]\n\n')
+    monkeypatch.setattr(llm, 'TRANSPORT', httpx.MockTransport(handle))
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_URL', 'https://owner-hisab-chat-zero.hf.space')
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_MODE', 'zerogpu')
+    monkeypatch.setenv('CAPZORYX_CHAT_GROQ_KEY', 'gsk_test')
+    monkeypatch.setenv('CAPZORYX_CHAT_GROQ_MODEL', 'llama-3.3-70b-versatile')
+    llm._cooldown.clear()
+
+
+def test_own_answer_is_polished_by_a_free_api_when_cloud_is_allowed(monkeypatch):
+    seen = []
+    _space_and_groq(monkeypatch, 'Ekhon saree-r dam BDT 1,700.00.\n- Stock ektu baran.', seen)
+    answer, provider = llm.reply('bajar kemon?', facts='Saree market price: BDT 1,700.00.', share_facts=True)
+    assert provider == 'hisab' and answer == 'Ekhon saree-r dam BDT 1,700.00.\n- Stock ektu baran.'
+    assert 'Saree dam BDT 1,700.00' in seen[0]
+
+
+def test_polish_that_invents_an_amount_keeps_the_draft(monkeypatch):
+    seen = []
+    _space_and_groq(monkeypatch, 'Saree-r dam BDT 2,500.00, stock baran.', seen)
+    answer, _ = llm.reply('bajar kemon?', facts='Saree market price: BDT 1,700.00.', share_facts=True)
+    assert answer == 'Saree dam BDT 1,700.00. stock baran.'
+
+
+def test_owner_figures_never_reach_the_editor_without_cloud_consent(monkeypatch):
+    seen = []
+    _space_and_groq(monkeypatch, 'unused', seen)
+    answer, _ = llm.reply('bajar kemon?', facts='Saree market price: BDT 1,700.00.', share_facts=False)
+    assert seen == [] and answer == 'Saree dam BDT 1,700.00. stock baran.'
