@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');
 const esbuild=require('../web/node_modules/esbuild');
 const vm=require('node:vm');
-const built=esbuild.buildSync({entryPoints:['web/src/api.ts'],bundle:true,write:false,platform:'node',format:'cjs',target:'es2022'}).outputFiles[0].text;
+const built=esbuild.buildSync({entryPoints:['web/src/money.ts'],bundle:true,write:false,platform:'node',format:'cjs',target:'es2022'}).outputFiles[0].text;
 const sandbox={module:{exports:{}},exports:{},Intl,AbortSignal,Error};sandbox.exports=sandbox.module.exports;vm.runInNewContext(built,sandbox);
 const {parseMinor,money,currencyDigits}=sandbox.module.exports;
 for(const [code,input,expected,digits] of [['JPY','12345',12345,0],['USD','123.45',12345,2],['KWD','12.345',12345,3],['CLF','1.2345',12345,4]]){

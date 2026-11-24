@@ -1,4 +1,4 @@
-import {currencyDigits} from './api';
+import {currencyDigits} from './money';
 import {currencies} from './currencies';
 
 export type CurrencyView = {base:string;currency:string;rate:string;updatedAt:string;source?:'live'|'manual';provider?:string;stale?:boolean};
