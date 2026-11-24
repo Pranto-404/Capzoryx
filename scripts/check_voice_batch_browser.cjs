@@ -31,7 +31,7 @@ const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar
       if(capture.mode==='compare'){
         compared++;
         if(compared===1)return route.fulfill({json:{
-          transcript:'আজ ভাড়া ৳৫০০ দিলাম।',engine:'whisper',agreement:'review',simulation_only:true,
+          transcript:'আজ ভাড়া ৳৫০০ দিলাম। ঠিক আছে?',engine:'whisper',agreement:'review',simulation_only:true,
           alternatives:[{transcript:'আজ ভাড়া ৳৬০০ দিলাম।',model:'whisper-large-v3-turbo'}]
         }});
         return route.fulfill({json:{transcript:question,engine:'whisper',agreement:'single',simulation_only:true}});

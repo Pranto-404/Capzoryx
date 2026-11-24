@@ -40,6 +40,8 @@ const major=(minor:number,currency:string)=>{const d=currencyDigits(currency);re
 const errorText=(e:unknown)=>e instanceof Error?e.message:t('Something went wrong. Please try again.');
 const soundsLikeQuestion=(text:string)=>{
   const phrase=text.trim().replace(/[।.!?？]+$/u,'');
+  // A conversation tag at the end of a multi-sentence note does not turn the whole note into a question.
+  if (/[।!?？\n]|\.(?!\d)/u.test(phrase)) return false;
   return /[?？]\s*$/u.test(text)
     || /^(?:আমার\s+)?(?:কত|কবে|কোন|what\b|how\b|when\b|which\b|show\b)|(?:কত\s+(?:টাকা\s+)?আছে|(?:কত|কোথায়|কেমন|কি|কী|দেখাও|বলো)\s*$)|\b(?:koto|kobe|kon|kemon)\b/iu.test(phrase);
 };
@@ -350,9 +352,11 @@ export function VoiceNote({request,revision,currency,onSaved,onQuestion,question
     try{
       const done=await request<{saved:number;replayed?:boolean}>('/workspace/records/batch',{expected_revision:revision,records});
       if(!alive.current)return;
+      // Keep controls busy until the new workspace revision is available for the next turn.
+      try{await onSaved();}catch{if(alive.current)setError(t('Records were saved. Refresh the workspace if its balance has not updated.'));}
+      if(!alive.current)return;
       setResult(t('{count} records added. Your balance, forecast and activity are updated.',{count:done.replayed?records.length:done.saved}));
       setStage('saved');setRows([]);setTranscript('');setDropped([]);setClip(null);setAlternate('');setTruncated(false);setSource('typed');setVariants([]);setAgreement(undefined);
-      try{await onSaved();}catch{if(alive.current)setError(t('Records were saved. Refresh the workspace if its balance has not updated.'));}
     }catch(e){if(alive.current){setStage('review');setError(errorText(e));}}
     finally{operation.current=false;}
   }

@@ -113,7 +113,14 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
       }
       if(editableHisabError)setTask(q);
       add({role:'assistant',kind:useHisab?'hisab':'device',text,retry:editableHisabError?undefined:q});
-    }finally{pending.current=false;if(mounted.current){setBusy(false);input.current?.focus();}}
+    }finally{
+      pending.current=false;
+      if(mounted.current){
+        setBusy(false);
+        if(mode==='voice')log.current?.scrollIntoView({block:'nearest'});
+        else input.current?.focus();
+      }
+    }
   }
   async function prepare(){
     if(!target||pending.current)return;pending.current=true;setBusy(true);setPicking(false);
