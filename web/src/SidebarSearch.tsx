@@ -93,7 +93,7 @@ export function SidebarSearch({go,actions,hidden=[]}:{go:(page:SearchPage)=>void
   };
   return <div className="side-search" role="search">
     <label className="side-search-box"><Icon name="search"/>
-      <input ref={input} value={query} placeholder={t('Search')} aria-label={t('Search pages and settings')} aria-expanded={!!results.length}
+      <input ref={input} role="combobox" aria-autocomplete="list" value={query} placeholder={t('Search')} aria-label={t('Search pages and settings')} aria-expanded={!!results.length}
         aria-controls="side-search-results" onChange={e=>{setQuery(e.target.value);setActive(0);}} onKeyDown={onKey}/>
       {!query&&<kbd>Ctrl K</kbd>}</label>
     {!!query.trim()&&<ul id="side-search-results" className="side-search-results" role="listbox">
