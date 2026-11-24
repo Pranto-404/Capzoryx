@@ -726,7 +726,8 @@ def ask_llm(db, ctx, question, lang):
             facts = context.text(db, ctx.business, ctx.role)  # the whole business, not only the cash books
             history = load_history(db, ctx)
             share = owner_allows_cloud(db, ctx.business)
-        answer, _ = llm.reply(question, history, facts, share_facts=share)
+        answer, provider = llm.reply(question, history, facts, share_facts=share)
+        log.info('chat answer: provider=%s', provider or 'none')  # which model answered; never the content
         if answer:
             with sec.transaction(db):
                 remember(db, ctx, question, answer)
