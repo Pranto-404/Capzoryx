@@ -38,6 +38,9 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
   const [method,setMethod]=useState<Split['method']|null>(null);
   const [error,setError]=useState('');
   const [result,setResult]=useState('');
+  const [interim,setInterim]=useState('');
+  const [level,setLevel]=useState(0);
+  const wantDictation=useRef(false);
   const recorder=useRef<MediaRecorder|null>(null);
   const live=useRef<Recognition|null>(null);
   const timer=useRef<number|undefined>(undefined);
@@ -50,7 +53,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
   useEffect(()=>{
     alive.current=true;
     void request<Status>('/assist/voice-note').then(s=>{if(alive.current)setStatus(s);}).catch(()=>{if(alive.current)setStatus({speech:false,cloud_allowed:false,max_seconds:180});});
-    return ()=>{alive.current=false;clearInterval(timer.current);recorder.current?.stream.getTracks().forEach(x=>x.stop());live.current?.stop();};
+    return ()=>{alive.current=false;wantDictation.current=false;clearInterval(timer.current);recorder.current?.stream.getTracks().forEach(x=>x.stop());live.current?.stop();};
   },[]);// eslint-disable-line react-hooks/exhaustive-deps
 
   async function record(){
@@ -68,6 +71,15 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       const blob=new Blob(chunks,{type:rec.mimeType||mimeType||'audio/webm'});
       void hear(blob);
     };
+    // A live sound-level bar shows the phone is hearing the owner the whole time.
+    try{
+      const audio=new AudioContext();const source=audio.createMediaStreamSource(stream);const meter=audio.createAnalyser();
+      meter.fftSize=512;source.connect(meter);const buf=new Uint8Array(meter.fftSize);
+      const tick=()=>{if(rec.state!=='recording'){void audio.close().catch(()=>{});setLevel(0);return;}
+        meter.getByteTimeDomainData(buf);let peak=0;for(const v of buf)peak=Math.max(peak,Math.abs(v-128));
+        setLevel(Math.min(1,peak/64));requestAnimationFrame(tick);};
+      requestAnimationFrame(tick);
+    }catch{/* the meter is optional */}
     recorder.current=rec;rec.start(1000);setSeconds(0);setStage('recording');
     const started=Date.now();
     timer.current=window.setInterval(()=>{const s=Math.floor((Date.now()-started)/1000);setSeconds(s);if(s>=maxSeconds)rec.stop();},250);
@@ -84,14 +96,21 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
   }
   function dictate(){
     if(!Dictation)return;
-    setError('');
-    const engine=new Dictation();engine.lang=language==='bn'?'bn-BD':'en-US';engine.continuous=true;engine.interimResults=false;
-    engine.onresult=e=>{let said='';for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)said+=e.results[i][0].transcript+' ';
-      if(said.trim())setTranscript(cur=>(cur.trim()?cur.trim()+' ':'')+said.trim());};
-    engine.onerror=()=>{if(alive.current)setError(t('Live dictation stopped. Check the microphone and the connection.'));};
-    engine.onend=()=>{if(alive.current)setStage(s=>s==='listening'?'idle':s);};
-    live.current=engine;engine.start();setStage('listening');
+    setError('');wantDictation.current=true;
+    const run=()=>{
+      const engine=new Dictation();engine.lang=language==='bn'?'bn-BD':'en-US';engine.continuous=true;engine.interimResults=true;
+      engine.onresult=e=>{let said='',draft='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i][0].transcript;if(e.results[i].isFinal)said+=x+' ';else draft+=x;}
+        if(said.trim())setTranscript(cur=>(cur.trim()?cur.trim()+' ':'')+said.trim());setInterim(draft);};
+      engine.onerror=()=>{/* a pause or a network blip: onend restarts while the owner has not pressed Stop */};
+      // Android ends a session after each pause; keep listening until the owner presses Stop.
+      engine.onend=()=>{setInterim('');if(alive.current&&wantDictation.current){try{run();return;}catch{/* give up below */}}if(alive.current)setStage(s=>s==='listening'?'idle':s);};
+      live.current=engine;engine.start();
+    };
+    run();setStage('listening');
+    const started=Date.now();setSeconds(0);
+    timer.current=window.setInterval(()=>{const sec=Math.floor((Date.now()-started)/1000);setSeconds(sec);if(sec>=maxSeconds)stopDictation();},500);
   }
+  function stopDictation(){wantDictation.current=false;clearInterval(timer.current);live.current?.stop();setInterim('');setStage('idle');}
   async function split(){
     setError('');setResult('');setStage('splitting');
     try{
@@ -143,10 +162,12 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       {stage==='recording'
         ?<button className="voice-record recording" onClick={()=>recorder.current?.stop()}><span className="rec-dot" aria-hidden="true"/>{t('Stop ({time})',{time:`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`})}</button>
         :stage==='listening'
-        ?<button className="voice-record recording" onClick={()=>{live.current?.stop();setStage('idle');}}><span className="rec-dot" aria-hidden="true"/>{t('Stop dictation')}</button>
+        ?<button className="voice-record recording" onClick={stopDictation}><span className="rec-dot" aria-hidden="true"/>{t('Stop dictation')}</button>
         :<>{canRecord&&<button className="voice-record" disabled={busy} onClick={()=>void record()}><Icon name="spark"/>{stage==='hearing'?t('Listening to your note…'):t('Record a voice note')}</button>}
           {!canRecord&&Dictation&&<button className="voice-record" disabled={busy} onClick={dictate}><Icon name="spark"/>{t('Start live dictation')}</button>}</>}
     </div>
+    {stage==='recording'&&<div className="voice-level" aria-hidden="true"><span style={{width:`${Math.round(8+level*92)}%`}}/></div>}
+    {stage==='listening'&&interim&&<p className="voice-interim" aria-live="polite">{interim}…</p>}
     {stage==='recording'&&<p className="small muted" role="status">{t('Up to {minutes} minutes. Say the day, what it was for and the amount for each payment.',{minutes:Math.round(maxSeconds/60)})}</p>}
     {status&&!status.cloud_allowed&&<p className="small muted">{t('Smart assist is off, so recordings are not sent for transcription. Use live dictation or type the note; it is split on this server without AI.')}</p>}
     {canRecord&&<p className="small muted">{t('The recording is sent to the speech service to be written down and is not stored by Capzoryx.')}</p>}

@@ -78,13 +78,21 @@ export function LocalVoice({onText}:{onText:(text:string)=>void}){
           const available=await SpeechRecognition.available(options);
           if(generation.current!==epoch)return;
           if(available==='available'){
+            // Keep listening until Stop: Android ends a session after each pause, so restart it and keep every phrase.
             native.current=engine;
-            engine.processLocally=true;engine.lang=options.langs[0];engine.continuous=false;engine.interimResults=false;
-            engine.onresult=e=>heard(e.results[0]?.[0]?.transcript||'');
-            engine.onerror=()=>setNotice(t('Could not hear the record. Try again or type it.'));
-            engine.onend=()=>{clearTimeout(timer.current);native.current=null;stop.current=null;setStage('idle');};
-            engine.start();stop.current=()=>engine.stop();setStage('recording');
-            timer.current=window.setTimeout(stop.current,30000);return;
+            engine.processLocally=true;engine.lang=options.langs[0];engine.continuous=true;engine.interimResults=false;
+            let said='',stopped=false;
+            engine.onresult=e=>{const r=e.results as unknown as ArrayLike<{isFinal?:boolean;0:{transcript:string}}>;
+              said=Array.from(r).map(x=>x[0]?.transcript||'').join(' ').trim()||said;};
+            let kept='';
+            engine.onerror=()=>{if(!said&&!kept)setNotice(t('Could not hear the record. Try again or type it.'));};
+            engine.onend=()=>{
+              kept=(kept+' '+said).trim();said='';
+              if(!stopped&&native.current===engine){try{engine.start();return;}catch{/* fall through and finish */}}
+              clearTimeout(timer.current);native.current=null;stop.current=null;setStage('idle');heard(kept);
+            };
+            engine.start();stop.current=()=>{stopped=true;engine.stop();};setStage('recording');
+            timer.current=window.setTimeout(()=>stop.current?.(),180000);return;
           }
           if((available==='downloadable'||available==='downloading')&&SpeechRecognition.install){
             setStage('native-install');return;

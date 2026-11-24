@@ -422,6 +422,25 @@ def gemini_transcript(audio, mime, language, hint):
     return None, '; '.join(reasons)
 
 
+def hf_transcript(audio, mime, language, hint):
+    """Whisper large-v3 on Hugging Face's free inference, with the HF token Render already has."""
+    import os
+    key = (os.getenv('CAPZORYX_HISAB_HF_TOKEN') or os.getenv('HF_TOKEN') or '').strip()
+    if not key:
+        return None, 'hf: no key'
+    try:
+        with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=90) as client:
+            response = client.post('https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3',
+                                   headers={'Authorization': 'Bearer ' + key, 'Content-Type': mime.split(';')[0]}, content=audio)
+        if response.status_code == 200:
+            text = str(response.json().get('text') or '').strip()
+            if text:
+                return text, 'hf-whisper-large-v3'
+        return None, f'hf {response.status_code}'
+    except (httpx.HTTPError, ValueError, AttributeError) as error:
+        return None, f'hf {type(error).__name__}'
+
+
 def transcribe(audio, mime, language, hint):
     text, used = whisper(audio, mime, language, hint)
     if text:
@@ -431,12 +450,17 @@ def transcribe(audio, mime, language, hint):
     if text:
         return text, used2
     log.warning('voice note: gemini unavailable (%s)', used2)
+    text, used3 = hf_transcript(audio, mime, language, hint)
+    if text:
+        return text, used3
+    log.warning('voice note: hugging face unavailable (%s)', used3)
     return None, None
 
 
 def speech_available():
+    import os
     from api.app.market import gemini_key, groq_key
-    return bool(groq_key() or gemini_key())
+    return bool(groq_key() or gemini_key() or os.getenv('CAPZORYX_HISAB_HF_TOKEN') or os.getenv('HF_TOKEN'))
 
 
 # ---------- routes ----------
@@ -485,7 +509,7 @@ def voice_note(body: VoiceNote, actor=Depends(principal), db=Depends(db_connecti
     text, model = transcribe(audio, body.mime, body.language, hint)
     if not text:
         sec.fail(503, 'SPEECH_SERVICE_BUSY')
-    return dict(transcript=text[:MAX_TRANSCRIPT], engine='whisper' if model and 'whisper' in model else 'gemini', simulation_only=True)
+    return dict(transcript=text[:MAX_TRANSCRIPT], engine='whisper' if 'whisper' in model else 'gemini', simulation_only=True)
 
 
 @router.post('/batch-drafts')
