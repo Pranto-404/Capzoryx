@@ -180,3 +180,17 @@ def test_reauthenticated_profile_and_member_notice(world):
         notices=[raw for raw, in rows if 'payment_profile_changed' in raw]
         assert len(notices)==2
         assert all('01700000000' not in raw and qr not in raw for raw in notices)
+
+
+def test_android_app_marks_payments_it_read_from_sms(world):
+    c, _ = world
+    signup(c, 'sms_reader')
+    text = f'bKash: You received Tk 750 from Meghna. TrxID SMS9A1B2C3. {today_bd()}'
+    assert c.post('/api/payments/share', json={'text': text, 'source': 'telepathy'}).status_code == 422
+    added = c.post('/api/payments/share', json={'text': text, 'source': 'sms'})
+    assert added.status_code == 201 and added.json()['amount_minor'] == 75_000
+    assert c.post('/api/payments/share', json={'text': text, 'source': 'sms'}).status_code == 409  # read again: skipped
+    from contextlib import closing
+    from api.app.database import connect
+    with closing(connect()) as db:
+        assert db.execute("SELECT source FROM payment_events WHERE txn_id='SMS9A1B2C3'").fetchone()[0] == 'sms'

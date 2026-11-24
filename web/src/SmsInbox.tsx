@@ -45,3 +45,30 @@ export function SmsInbox({request}:{request:Request}){
     {message&&<p role="status">{message}</p>}
   </section>;
 }
+
+/** Android app: read bKash, Nagad, Rocket and bank SMS on this phone, with the owner's permission. */
+export function PhoneSms({request,scope,onAdded}:{request:Request;scope:{business_id:string;user_id:string};onAdded?:(count:number)=>void}){
+  const [on,setOn]=useState<boolean|null>(null);
+  const [busy,setBusy]=useState(false);
+  const [message,setMessage]=useState('');
+  useEffect(()=>{void import('./nativeSms').then(async m=>setOn(m.smsSettings(scope).enabled&&await m.smsAccess()));},[scope.business_id,scope.user_id]);// eslint-disable-line react-hooks/exhaustive-deps
+  async function turnOn(){
+    setBusy(true);setMessage('');
+    try{
+      const m=await import('./nativeSms');
+      if(!await m.enableSms(scope)){setMessage(t('SMS permission was not given. You can allow it later in Android Settings → Apps → Capzoryx → Permissions.'));return;}
+      setOn(true);
+      const added=await m.syncSms(request,scope);
+      setMessage(added?t('{count} payments found in your SMS. Review them under Invoices.',{count:added}):t('Done. New bKash, Nagad and bank payments will appear for review by themselves.'));
+      if(added)onAdded?.(added);
+    }catch(e){setMessage(e instanceof Error?e.message:t('Request failed.'));}finally{setBusy(false);}
+  }
+  async function turnOff(){(await import('./nativeSms')).disableSms(scope);setOn(false);setMessage(t('SMS reading is off. Nothing more is read.'));}
+  return <section className="panel channel phone-sms"><h2>{t('Read payment SMS on this phone')}</h2>
+    <p className="muted">{t('Capzoryx finds bKash, Nagad, Rocket and bank payment messages on this phone and adds them for you to review. Other messages are skipped, and OTP or PIN messages are never saved.')}</p>
+    {on?<p className="channel-state"><span className="dot on" aria-hidden="true"/>{t('On: new payment SMS are added for review')}</p>:null}
+    <div className="actions">{on?<button className="ghost" onClick={()=>void turnOff()}>{t('Turn off')}</button>
+      :<button disabled={busy||on===null} onClick={()=>void turnOn()}>{busy?t('Reading SMS…'):t('Turn on SMS reading')}</button>}</div>
+    {message&&<p role="status">{message}</p>}
+  </section>;
+}

@@ -1,5 +1,6 @@
+import {recall,remember} from './offlineCache';
 import {t,T} from './i18n';
-import {apiFetch} from './apiBase';
+import {apiFetch,nativeBuild} from './apiBase';
 import {currencies} from './currencies';
 const messages:Record<string,string> = {
   HISAB_NOT_AVAILABLE:'Hisab-LM is temporarily unavailable. Use Read it or enter the record manually.',
@@ -36,6 +37,8 @@ export function client(token: string, signal: AbortSignal, onUnauthorized: () =>
       response = await apiFetch(`/api${path}`, { method: body === undefined ? 'GET' : 'POST', credentials:'same-origin', headers: { ...(token?{Authorization: `Bearer ${token}`} : {}), 'X-SafeLedger-Client':'web', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.any([signal, AbortSignal.timeout(90000)]), cache: 'no-store' });
     } catch (error) {
       if (signal.aborted) throw error;
+      const saved = body === undefined ? recall<T>(path) : null;  // Android app offline: the last data this screen loaded
+      if (saved) { window.dispatchEvent(new CustomEvent('capzoryx:offline-data', {detail: saved.at})); return saved.data; }
       throw new ApiError('CONNECTION_FAILED', 0, 'Could not reach the server. Check the connection and retry. A timed-out action may have completed; refresh before retrying.');
     }
     const data = await response.json().catch(() => null);
@@ -47,6 +50,7 @@ export function client(token: string, signal: AbortSignal, onUnauthorized: () =>
       throw new ApiError(data?.error?.code || 'SERVER_ERROR', response.status, fields ? fields.map(x => `${String(x.field).split('.').pop()?.replaceAll('_', ' ')}: ${x.message}`).join('; ') : undefined,typeof data?.provider_http_status==='number'?data.provider_http_status:undefined);
     }
     if (!data || data.simulation_only !== true) throw new ApiError('INVALID_SERVER_RESPONSE', 502);
+    if (body === undefined) { remember(path, data); if (nativeBuild) window.dispatchEvent(new Event('capzoryx:live-data')); }
     return data as T;
   };
 }
