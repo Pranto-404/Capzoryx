@@ -1,5 +1,5 @@
 import {localModel} from './localModel';
-import {money} from './api';
+import {money} from './money';
 import type {Snapshot,Forecast,Invoice,CashEvent} from './types';
 export type AssistantAction='Data'|'Invoices'|'Cash flow'|'Financing'|'Approvals'|'Audit'|'Settings';
 export type LocalContext={snapshot:Snapshot|null;forecast:Forecast|null;week:Forecast|null;invoices:Invoice[];events:CashEvent[]};
