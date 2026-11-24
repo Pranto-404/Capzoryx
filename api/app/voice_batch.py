@@ -15,10 +15,12 @@ import binascii
 import json
 import logging
 import math
+import os
 import re
 import time
 import unicodedata
 from datetime import date, timedelta
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
@@ -547,9 +549,22 @@ def whisper(audio, mime, language, hint, deadline):
     return None, '; '.join(reasons)
 
 
+def _gemini_speech_key():
+    direct = os.getenv('CAPZORYX_CHAT_GEMINI_KEY', '').strip()
+    if direct:
+        return direct
+    try:
+        endpoint = urlsplit(os.getenv('SAFELEDGER_LLM_BASE_URL', ''))
+    except ValueError:
+        return ''
+    if endpoint.scheme == 'https' and endpoint.hostname == 'generativelanguage.googleapis.com':
+        return os.getenv('SAFELEDGER_LLM_API_KEY', '').strip()
+    return ''
+
+
 def gemini_transcript(audio, mime, language, hint, deadline):
-    from api.app.market import GEMINI_MODELS, gemini_key
-    key = gemini_key()
+    from api.app.market import GEMINI_MODELS
+    key = _gemini_speech_key()
     if not key:
         return None, 'gemini: no key'
     ask = ('Transcribe this voice note exactly as spoken, in the language spoken ('
@@ -580,7 +595,6 @@ def gemini_transcript(audio, mime, language, hint, deadline):
 
 def hf_transcript(audio, mime, language, hint, deadline):
     """Whisper large-v3 on Hugging Face's free inference, with the HF token Render already has."""
-    import os
     key = (os.getenv('CAPZORYX_HISAB_HF_TOKEN') or os.getenv('HF_TOKEN') or '').strip()
     if not key:
         return None, 'hf: no key'
@@ -618,9 +632,8 @@ def transcribe(audio, mime, language, hint):
 
 
 def speech_available():
-    import os
-    from api.app.market import gemini_key, groq_key
-    return bool(groq_key() or gemini_key() or os.getenv('CAPZORYX_HISAB_HF_TOKEN') or os.getenv('HF_TOKEN'))
+    from api.app.market import groq_key
+    return bool(groq_key() or _gemini_speech_key() or os.getenv('CAPZORYX_HISAB_HF_TOKEN') or os.getenv('HF_TOKEN'))
 
 
 # ---------- routes ----------

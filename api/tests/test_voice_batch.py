@@ -131,6 +131,15 @@ def test_speech_fallback_stops_starting_requests_after_deadline(monkeypatch):
     assert calls == ['api.groq.com']
 
 
+def test_voice_gemini_uses_a_generic_gateway_key_only_for_the_gemini_host(monkeypatch):
+    monkeypatch.delenv('CAPZORYX_CHAT_GEMINI_KEY', raising=False)
+    monkeypatch.setenv('SAFELEDGER_LLM_API_KEY', 'test-gateway-key')
+    monkeypatch.setenv('SAFELEDGER_LLM_BASE_URL', 'https://other.example.invalid/v1')
+    assert not vb._gemini_speech_key()
+    monkeypatch.setenv('SAFELEDGER_LLM_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai')
+    assert vb._gemini_speech_key() == 'test-gateway-key'
+
+
 def test_voice_note_routes_end_to_end(world, monkeypatch):  # noqa: F811
     c, _ = world
     signup(c, 'voice_owner')
