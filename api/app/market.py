@@ -240,7 +240,7 @@ def gemini_key():
     return (os.getenv('CAPZORYX_CHAT_GEMINI_KEY') or os.getenv('SAFELEDGER_LLM_API_KEY') or '').strip()
 
 
-def research_prompt(profile, products, currency):
+def research_prompt(profile, products, currency, notes=()):
     ident = profile.get('identity') or {}
     ops = profile.get('operations') or {}
     label = cat.INDUSTRIES.get(ident.get('industry', ''), ('',))[0]
@@ -260,7 +260,16 @@ def research_prompt(profile, products, currency):
             "this country and city, each with the date or period it refers to.\n"
             "COMPETITORS: up to 8 real, currently operating businesses comparable in size and location, as "
             "'COMPETITOR: name | direct, indirect, emerging, leader or benchmark | area | one-line reason'. Do not invent businesses."
-            + price_ask + "\nIf something cannot be found, leave it out. Never estimate revenue or profit of private businesses.")
+            + price_ask + owner_notes(notes) + "\nIf something cannot be found, leave it out. Never estimate revenue or profit of private businesses.")
+
+
+def owner_notes(notes):
+    """What the owner told Capzoryx about the business (only notes they allowed for research), to focus the search."""
+    if not notes:
+        return ''
+    lines = [f"- {n['kind']}: {n['title']}: {' '.join(n['text'].split())[:500]}" for n in notes[:6]]
+    return ("\nThe owner shared these notes about the business. Use them to choose what to search for (products, places, "
+            "competitors, customers); do not repeat their private figures back:\n" + '\n'.join(lines))
 
 
 def call_gemini(prompt):
@@ -442,16 +451,17 @@ def parse_research(body):
 
 def run_research(identity, business):
     """Runs after the response, with its own connection. Stores the result sealed, or the honest reason it failed."""
-    from api.app.business import load_profile, products
+    from api.app.business import load_profile, notes, products
     from api.app.database import connect
     with closing(connect()) as db:
         with sec.transaction(db):
             profile, _, _, _ = load_profile(db, business)
             items = products(db, business)
             currency = sec.original_dataset(db, business).currency
+            shared = notes(db, business, research_only=True, limit=6)
         status, reason, result = 'done', '', None
         try:
-            result = parse_research(call_research(research_prompt(profile, items, currency)))
+            result = parse_research(call_research(research_prompt(profile, items, currency, shared)))
             if not result['findings'] and not result['competitors']:
                 status, reason = 'failed', 'The search returned nothing usable. Try again later.'
         except RuntimeError as error:
@@ -576,12 +586,13 @@ REFRESH_EVERY = 7 * 86400  # background research: weekly, or sooner when the pro
 
 
 def research_inputs(db, business):
-    """A fingerprint of what research sends (industry, area, product and competitor names), never costs or sales."""
-    from api.app.business import load_profile, products
+    """A fingerprint of what research sends (industry, area, product and competitor names, notes the owner shared)."""
+    from api.app.business import load_profile, notes, products
     profile = load_profile(db, business)[0]
     ident, ops = profile.get('identity') or {}, profile.get('operations') or {}
     public = dict(industry=ident.get('industry'), niche=ident.get('niche'), city=ident.get('city'), country=ident.get('country'),
-                  types=ident.get('business_types'), competitors=ops.get('competitors'), products=sorted(p['name'] for p in products(db, business)))
+                  types=ident.get('business_types'), competitors=ops.get('competitors'), products=sorted(p['name'] for p in products(db, business)),
+                  notes=sorted(n['id'] for n in notes(db, business, research_only=True, limit=6)))
     return sec.signature('research-inputs', sec.canonical(public))
 
 

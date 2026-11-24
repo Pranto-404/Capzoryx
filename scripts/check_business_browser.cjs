@@ -150,13 +150,20 @@ async function openPage(page,name){
     assert.equal(await wizard.count(),0);
     assert.equal(await owner.locator('.biz-resume').count(),0);
 
-    // The profile stays editable in Settings → Business.
+    // The profile stays editable on My business, where any business data can also be submitted.
     await owner.getByLabel('Search pages and settings').fill('business');
-    await owner.getByRole('option').getByRole('button',{name:/Business profile/}).click();
-    await owner.locator('.biz-edit').getByLabel('Business name').waitFor().catch(async e=>{console.log('DEBUG',await owner.locator('.settings-tabs [aria-selected=true]').innerText().catch(()=>'none'),'|',await owner.evaluate(()=>sessionStorage.getItem('capzoryx-settings-tab')),'|',await owner.locator('.biz-edit').count(),await owner.locator('.biz-edit').innerText().catch(()=>''));throw e;});
+    await owner.getByRole('option').getByRole('button',{name:/My business/}).click();
+    await owner.locator('.biz-edit').getByLabel('Business name').waitFor();
     assert.equal(await owner.locator('.biz-edit').getByLabel('Business name').inputValue(),'Golden Heritage BD');
+    const data=owner.locator('.business-data');
+    await data.getByLabel('What is it about?').selectOption('competitors');
+    await data.getByLabel('Title').fill('New shop nearby');
+    await data.getByLabel('Details').fill('Swarna Kutir opened near Mirpur 10 and sells 22K at a lower making charge.');
+    await data.getByRole('button',{name:'Save business data'}).click();
+    await data.locator('.business-data-list li').first().waitFor();
+    assert.match(await data.locator('.business-data-list').innerText(),/New shop nearby/);
     await shot(owner,'setup-settings');
-    // Phone: Settings → Business must not scroll sideways, and a new owner's analysis comes before empty cash panels.
+    // Phone: My business must not scroll sideways, and a new owner's analysis comes before empty cash panels.
     await owner.setViewportSize({width:390,height:844});
     await owner.waitForTimeout(300);
     const wide=await owner.evaluate(()=>document.documentElement.scrollWidth);

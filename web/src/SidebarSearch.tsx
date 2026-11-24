@@ -2,7 +2,7 @@ import {useEffect,useMemo,useRef,useState,type KeyboardEvent} from 'react';
 import {Icon} from './Icon';
 import {t,T} from './i18n';
 
-export type SearchPage='Overview'|'Data'|'Invoices'|'Cash flow'|'Financing'|'Assistant'|'Approvals'|'Payroll'|'Audit'|'Settings';
+export type SearchPage='Overview'|'Business'|'Data'|'Invoices'|'Cash flow'|'Financing'|'Assistant'|'Approvals'|'Payroll'|'Audit'|'Settings';
 type Entry={id:string;label:string;where:string;page?:SearchPage;settings?:string;target?:string;action?:string;icon:string;words:string};
 
 // Every page and the features inside them, like a phone's settings search. `words` adds Banglish and Bangla terms.
@@ -27,7 +27,7 @@ const ENTRIES:Entry[]=[
   {id:'telegram',label:'Telegram',where:T('Settings'),page:'Settings',settings:'Connections',target:'telegram',icon:'send',words:'telegram bot chat টেলিগ্রাম'},
   {id:'sms',label:T('Payment SMS'),where:T('Settings'),page:'Settings',settings:'Connections',target:'payment-sms',icon:'send',words:'sms bkash nagad rocket bank forward বিকাশ নগদ এসএমএস'},
   {id:'mcp',label:T('Read-only MCP access'),where:T('Settings'),page:'Settings',settings:'Connections',target:'mcp-access',icon:'Settings',words:'mcp token api ai tool'},
-  {id:'business',label:T('Business profile'),where:T('Settings'),page:'Settings',settings:'Business',icon:'Overview',words:'business profile setup products industry niche competitors goals byabsa bebsa ব্যবসা পণ্য প্রতিযোগী'},
+  {id:'business',label:T('My business'),where:T('My business'),page:'Business',icon:'Business',words:'business data submit upload file notes profile setup products industry niche competitors goals byabsa bebsa ব্যবসা পণ্য প্রতিযোগী'},
   {id:'profile',label:T('Profile and photo'),where:T('Settings'),page:'Settings',settings:'Profile',icon:'Settings',words:'profile name photo picture nam নাম ছবি'},
   {id:'language',label:T('Language'),where:T('Settings'),page:'Settings',settings:'Profile',icon:'globe',words:'language bhasha bangla english ভাষা বাংলা'},
   {id:'email',label:T('Email'),where:T('Settings'),page:'Settings',settings:'Profile',icon:'send',words:'email mail ইমেইল'},

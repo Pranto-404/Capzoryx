@@ -11,7 +11,7 @@ export type BusinessView={profile:Profile;step:number;completed:boolean;products
 
 const STEPS=[T('Business'),T('Products'),T('Operations'),T('Goals'),T('Permissions')];
 const SETUP_STEPS=[0,1,4];
-const CITIES=['Dhaka','Mirpur, Dhaka','Uttara, Dhaka','Dhanmondi, Dhaka','Gulshan, Dhaka','Mohammadpur, Dhaka','Old Dhaka','Savar','Gazipur','Narayanganj','Chattogram','Cumilla','Sylhet','Khulna','Rajshahi','Barishal','Rangpur','Mymensingh','Bogura','Jashore','Cox\'s Bazar','Feni','Noakhali','Tangail','Dinajpur'];  // new owners answer three short steps; operations and goals details live in Settings → Business
+const CITIES=['Dhaka','Mirpur, Dhaka','Uttara, Dhaka','Dhanmondi, Dhaka','Gulshan, Dhaka','Mohammadpur, Dhaka','Old Dhaka','Savar','Gazipur','Narayanganj','Chattogram','Cumilla','Sylhet','Khulna','Rajshahi','Barishal','Rangpur','Mymensingh','Bogura','Jashore','Cox\'s Bazar','Feni','Noakhali','Tangail','Dinajpur'];  // new owners answer three short steps; operations and goals details live on the My business page
 const FINISH=T('What Capzoryx may do');
 const KEYS=['identity','products','operations','goals','consent'];
 const TYPE_LABEL:Record<string,string>={retail:T('Retail'),wholesale:T('Wholesale'),manufacturing:T('Manufacturing'),service:T('Service'),distribution:T('Distribution'),online:T('Online')};
@@ -273,7 +273,7 @@ function ConsentStep({value,goals,busy,mode,submit}:{value:Record<string,unknown
   ];
   return <form onSubmit={e=>{e.preventDefault();submit({...f,warn_cushion_pct:Number(limits.warn_cushion_pct)||5,move_pct:Number(limits.move_pct)||3},chosen);}}>
     {goals&&<fieldset className="biz-field"><legend>{t('What matters most right now? (optional)')}</legend><Chips options={goals} labels={GOAL_LABEL} value={chosen} onChange={setChosen}/></fieldset>}
-    <p className="muted">{t('Your details are stored encrypted in this workspace. You can change these choices any time in Settings → Business.')}</p>
+    <p className="muted">{t('Your details are stored encrypted in this workspace. You can change these choices any time on the My business page.')}</p>
     {rows.map(([k,title,help])=><label key={k} className="switch-row"><input type="checkbox" checked={f[k]} onChange={e=>setF({...f,[k]:e.target.checked})}/>
       <span><b>{t(title)}</b><small>{t(help)}</small></span></label>)}
     {(f.monitoring||f.alerts)&&<div className="form-row biz-limits">

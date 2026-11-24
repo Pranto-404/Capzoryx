@@ -260,7 +260,7 @@ def answer_from(data, ask):
     if ask[0] == 'break_even':
         if not usable:
             return ('I cannot work out a break-even price yet. Add your products with purchase cost (and any selling costs) '
-                    'in Settings → Business, and a current price.')
+                    'on the My business page, and a current price.')
         lines = ['Minimum selling price to avoid a loss (cost + your selling costs):']
         for p in usable:
             cushion = p['cushion_bp']
@@ -276,7 +276,7 @@ def answer_from(data, ask):
     held = [p for p in usable if p.get('quantity') and p['reference']['basis'] == 'market']
     if not held:
         return ('I cannot run this scenario yet: it needs products with a market price, purchase cost and quantity. '
-                'Add them in Settings → Business and a current price on Overview.')
+                'Add them on the My business page, with a current price.')
     worse, better = (move * Decimal('1.5'), move / 2) if move < 0 else (move / 2, move * Decimal('1.5'))
     today = net_at(held, 0)
     exposure = sum(p['exposure_minor'] for p in held)

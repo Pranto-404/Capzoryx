@@ -81,7 +81,7 @@ export function MarketPanel({request,openSettings}:{request:Request;openSettings
         <ul>{a.lines.map((l,i)=><li key={i}>{l}</li>)}</ul><p className="muted">{a.advice}</p></details></li>)}</ul></>}
 
     <h3>{t('Market research')}</h3>
-    {!data.research_allowed?<p className="muted">{t('Online research is off. Turn on “Research my market and competitors online” in Settings → Business → Permissions.')} <button className="link" onClick={openSettings}>{t('Open settings')}</button></p>
+    {!data.research_allowed?<p className="muted">{t('Online research is off. Turn on “Research my market and competitors online” on the My business page, under “What Capzoryx may do”.')} <button className="link" onClick={openSettings}>{t('Open My business')}</button></p>
     :r?.status==='running'?<p role="status" className="muted"><span className="loading-ring small-ring"/> {t('Researching your market with web search… this takes up to a minute.')}</p>
     :<>
       {(r?.status==='unavailable'||r?.status==='failed')&&<p className="notice">{t(r.reason)}</p>}

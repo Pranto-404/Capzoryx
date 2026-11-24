@@ -25,9 +25,9 @@ HEAD = {
     'products': {'en': 'Your products', 'bl': 'Apnar product', 'bn': 'আপনার পণ্য'},
     'risk': {'en': 'Risks right now', 'bl': 'Ekhonkar jhuki', 'bn': 'এখনকার ঝুঁকি'},
 }
-NOT_SET = {'en': 'Your business profile is not set up yet. Add it in Settings → Business (about 3 minutes) and I can answer this.',
-           'bl': 'Apnar business profile ekhono deya hoyni. Settings → Business-e diye din (3 minute), tarpor ami eta bolte parbo.',
-           'bn': 'আপনার ব্যবসার প্রোফাইল এখনও দেওয়া হয়নি। Settings → Business-এ দিন (৩ মিনিট), তারপর আমি এটা বলতে পারব।'}
+NOT_SET = {'en': 'Your business profile is not set up yet. Add it on the My business page (about 3 minutes) and I can answer this.',
+           'bl': 'Apnar business profile ekhono deya hoyni. My business page-e diye din (3 minute), tarpor ami eta bolte parbo.',
+           'bn': 'আপনার ব্যবসার প্রোফাইল এখনও দেওয়া হয়নি। "আমার ব্যবসা" পাতায় দিন (৩ মিনিট), তারপর আমি এটা বলতে পারব।'}
 OWNER_ONLY = {'en': 'Only the owner of this workspace can see the business profile, products and advice.',
               'bl': 'Business profile, product ar poramorsho shudhu ei workspace-er owner dekhte paren.',
               'bn': 'ব্যবসার প্রোফাইল, পণ্য ও পরামর্শ শুধু এই ওয়ার্কস্পেসের মালিক দেখতে পারেন।'}
@@ -93,7 +93,7 @@ def answer(intent, ctx, lang='en'):
         if p['competitors']:
             out.append(f"• You named: {', '.join(p['competitors'])}.")
         if len(out) == 1:
-            out.append('• None known yet. Name a few in Settings → Business, or run research on Overview → Your market.')
+            out.append('• None known yet. Name a few on the My business page, or run research there.')
     elif intent == 'products':
         ranked = sorted((x for x in ctx['positions'] if x['status'] != 'incomplete'), key=lambda x: -(x.get('margin_bp') or 0))
         for x in ranked[:5]:
@@ -102,7 +102,7 @@ def answer(intent, ctx, lang='en'):
         if missing:
             out.append(f"• No profit figure yet (cost or price missing): {', '.join(missing[:5])}.")
         if len(out) == 1:
-            out.append('• No products yet. Add them in Settings → Business.')
+            out.append('• No products yet. Add them on the My business page.')
     elif intent == 'risk':
         risky = [x for x in ctx['positions'] if x['status'] in ('loss', 'thin')]
         for x in risky[:4]:
