@@ -31,10 +31,10 @@ const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar
       if(capture.mode==='compare'){
         compared++;
         if(compared===1)return route.fulfill({json:{
-          transcript:'আজ ভাড়া ৳৫০০ দিলাম।',engine:'whisper',agreement:'review',
+          transcript:'আজ ভাড়া ৳৫০০ দিলাম।',engine:'whisper',agreement:'review',simulation_only:true,
           alternatives:[{transcript:'আজ ভাড়া ৳৬০০ দিলাম।',model:'whisper-large-v3-turbo'}]
         }});
-        return route.fulfill({json:{transcript:question,engine:'whisper',agreement:'single'}});
+        return route.fulfill({json:{transcript:question,engine:'whisper',agreement:'single',simulation_only:true}});
       }
       alternate++;
       return route.fulfill({json:{transcript:'আমি ৳৫০ দিয়ে নাস্তা কিনলাম।',engine:'whisper',simulation_only:true}});
@@ -154,7 +154,7 @@ const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar
     await voice.getByRole('button',{name:/^Stop \(/}).click();
     await assistant.locator('.chat-message.user').getByText(question,{exact:true}).waitFor();
     const answer=assistant.locator('.chat-message.assistant').last();
-    await answer.getByText(/ব্যালেন্স|হাতে আছে|নগদ আছে|balance/i).waitFor();
+    await answer.getByText(/৳[৪4],?[৩3][০0][০0]/u).waitFor();
     assert.equal(await voice.locator('.batch-list>li').count(),0);
     assert.equal((await workspace()).expenses_minor,snap.expenses_minor+50000);
     assert.equal(compared,2);
