@@ -65,6 +65,8 @@ const friendly: Record<string,string> = {
   RESEARCH_RECENT:T('Your market was researched a moment ago. New research runs automatically when your business details change.'),
   RESEARCH_CONSENT_REQUIRED:T('Online research is turned off. Turn it on in My business.'),
   PROFILE_REQUIRED:T('Set up your business first.'),
+  NOTE_LIMIT:T('You have shared the most business notes a workspace can hold. Delete old ones to add more.'),
+  NOTE_NOT_FOUND:T('That business note was already deleted. Refresh the page.'),
   INDICATOR_NOT_WATCHED:T('That price is not followed for this business.'),
   NAME_COLUMN_REQUIRED:T('The file needs a column called Product (or Name).'),
   EMPTY_FILE:T('The file is empty.'),
