@@ -87,7 +87,7 @@ SCALES = {'thousand': 1000, 'হাজার': 1000, 'hajar': 1000, 'hazar': 100
           'million': 1_000_000, 'crore': 10_000_000, 'কোটি': 10_000_000, 'koti': 10_000_000}
 FRACTIONS = {'দেড়': 1.5, 'der': 1.5, 'deŗ': 1.5, 'আড়াই': 2.5, 'arai': 2.5, 'adai': 2.5}
 HALF_MORE = {'সাড়ে', 'sare', 'shade', 'sharhe'}
-TOKEN = re.compile(r'\d+(?:[.,]\d+)*(?:\.\d+)?k?|[\wঀ-৿]+', re.UNICODE)
+TOKEN = re.compile(r'\d+(?:[.,]\d+)*(?:\.\d+)?k?|[^\W\d][\w\u0981-\u0983\u09bc\u09be-\u09cd\u09d7\u09e2\u09e3\u200c\u200d]*', re.UNICODE)
 
 
 def _norm(text):
@@ -203,29 +203,44 @@ def said_day(text, today, week_start=None):
 
 # ---------- what kind of statement a part is ----------
 INCOME = re.compile(r'\b(?:received|got|earned|sold|sale|sales|collected|income|pelam|pailam|peyechi|peyesi|paisi|'
-                    r'bikri|becha|bechlam|joma)\b|পেয়েছি|পেলাম|পাইলাম|বিক্রি|বেচা|বেচলাম|আয়|জমা', re.I)
-BILL = re.compile(r'\b(?:baki|due|owe|bill pending|unpaid)\b|বাকি|পাওনা', re.I)
+                    r'bikri|becha|bechlam|joma|borrowed|nilam|niyechilam)\b|পেয়েছি|পেলাম|পাইলাম|বিক্রি|বেচা|বেচলাম|আয়|জমা|'
+                    r'নিয়েছিলাম|নিয়েছি|নিলাম|পেয়েছিলাম', re.I)
+BILL = re.compile(r'\b(?:baki|due|owe|bill pending|unpaid)\b|(?<!\w)বাকি(?![\w\u0981-\u09cd])|পাওনা', re.I)
 SPENT = re.compile(r'\b(?:paid|pay|spent|bought|buy|gave|dilam|diyechi|disi|dichi|kinlam|kinechi|khoroch|khorch|bhara|vara|'
                    r'rent|transport|bill|salary|beton|mal|bazar|nasta|chaa|cha|lunch|tel|fuel|repair|kharcha|expense)\b|'
-                   r'দিলাম|দিয়েছি|কিনলাম|কিনেছি|খরচ|ভাড়া|বিল|বেতন|মাল|বাজার|নাস্তা|চা|তেল', re.I)
+                   r'দিলাম|দিয়েছি|দিয়েছিলাম|দিতে পেরেছি|কিনলাম|কিনেছি|খরচ|ভাড়া|বিল|বেতন|মাল|বাজার|নাস্তা|চা|তেল', re.I)
+PURCHASE = re.compile(r'(?:৳\s*\d+(?:[.,]\d+)*|টাকা)\s+দিয়ে(?:ই)?\s+|'
+                      r'\b(?:paid for|bought|spent on)\b', re.I)
+REQUESTED = re.compile(r'ধার\s+চে(?:য়ে|ই)ছিল|টাকা\s+চে(?:য়ে|ই)ছিল|'
+                       r'\b(?:asked (?:me )?(?:for|to lend)|wanted to borrow|dhar cheyechilo)\b', re.I)
+BALANCE = re.compile(r'আমার কাছে.{0,80}টাকা (?:আছে|ছিল)|হাতে.{0,60}টাকা (?:আছে|ছিল)|'
+                     r'\b(?:cash on hand|balance|had left|taka ase|taka ache)\b', re.I)
 # "Rahim 5000 taka dey nai", "দেইনি", "pai nai", "didn't pay": nothing moved.
 NEGATED = re.compile(r'\b(?:dey ?nai|dei ?nai|dey ?ni|deini|dini|dei nii|pai ?nai|pay ?nai|paini|hoy ?nai|hoini|'
                      r'not paid|didn\'?t|did not|never|no payment)\b|দেয়নি|দেয়নি|দেইনি|দিইনি|দিনি|পাইনি|পায়নি|পায়নি|হয়নি|হয়নি', re.I)
 # Plans and questions are not money that moved: "kal dibo", "will pay", "koto dibo?".
 PLANNED = re.compile(r'\b(?:dibo|debo|dite hobe|korbo|kinbo|will pay|will buy|going to|plan|planning|next week|'
                      r'agami|porer shoptahe)\b|দিব|দেব|দিতে হবে|কিনব|করব|আগামী|পরের সপ্তাহে', re.I)
+BN_NEGATED = re.compile(r'(?:দেয়|দেই|দিই|পাই|পায়|হয়)\s+নাই|(?:দিতে|পেতে)\s+পারিনি')
 
 
 def intent(text):
     """'income', 'bill', 'expense', or a reason the part is not a money movement ('negated', 'planned', 'question', 'unclear')."""
-    if NEGATED.search(text):
+    text = _norm(text)
+    if NEGATED.search(text) or BN_NEGATED.search(text):
         return 'negated'
     if PLANNED.search(text):
         return 'planned'
     if '?' in text:
         return 'question'
+    if REQUESTED.search(text):
+        return 'requested'
+    if BALANCE.search(text) and not (SPENT.search(text) or PURCHASE.search(text) or INCOME.search(text)):
+        return 'balance'
     if BILL.search(text):
         return 'bill'
+    if PURCHASE.search(text):
+        return 'expense'
     if INCOME.search(text):
         return 'income'
     if SPENT.search(text):
@@ -233,9 +248,12 @@ def intent(text):
     return 'unclear'
 
 
-CORRECTION = r'\b(?:na\s+na|no\s+no|correction|i mean)\b|না\s+না|মানে'
+CORRECTION = r'\b(?:na\s+na|no\s+no|correction|i mean)\b|না\s+না|(?<!\w)মানে(?!\w)'
 SPLIT = re.compile(rf'[.](?!\d)|[।!;\n]+|(?<=\?)|,(?!\d|\s*(?:{CORRECTION}))|'
-                   r'\b(?:tarpor|tarpore|and then|then|arpor|erpor|after that)\b|আর তারপর|তারপর|এরপর', re.I)
+                   r'\b(?:tarpor|tarpore|and then|then|arpor|erpor|after that)\b|'
+                   r'আর তারপর|তারপরে|তারপর|এরপরে|এরপর|(?=\s+(?:ও তো|সে তো|কিন্তু)\s)|'
+                   r'(?<=টাকা আছে)(?=\s)|(?<=টাকা ছিল)(?=\s)', re.I)
+CONTRAST = re.compile(r'^(?:কিন্তু|but)\s+', re.I)
 JOIN = re.compile(r'\b(?:and|ar|r)\b|(?<!\w)আর(?!\w)', re.I)
 CORRECTED = re.compile(CORRECTION, re.I)
 ISO_DAY = re.compile(r'\b20\d\d-\d\d-\d\d\b')
@@ -290,14 +308,31 @@ def _title(part):
     return ' '.join(words[:5])[:40].strip(' ,.-') or ''
 
 
+BN_DRAFT_LABELS = (
+    (r'ক্রিকেট', 'ক্রিকেট', 'sports'),
+    (r'স্ন্যাক্স|স্ন্যাকস|নাশতা|নাস্তা', 'স্ন্যাক্স / নাস্তা', 'food'),
+    (r'ভাড়া', 'ভাড়া', 'transport'),
+    (r'ধার.*(?:নিয়েছি|নিলাম|নিয়েছিলাম)|থেকে.{0,45}টাকা.{0,10}(?:নিয়েছি|নিলাম|নিয়েছিলাম)', 'টাকা নেওয়া', 'other'),
+    (r'ওকে.{0,35}টাকা দিলাম|তাকে.{0,35}টাকা দিলাম|দিতে পেরেছি', 'টাকা দেওয়া', 'other'),
+)
+
+
+def _rule_label(part):
+    for pattern, title, category in BN_DRAFT_LABELS:
+        if re.search(pattern, _norm(part)):
+            return title, category
+    return _title(part), ''
+
+
 def rule_entries(transcript):
     """A sentence-by-sentence reading used without AI, and to catch anything the AI missed."""
     entries = []
     for position, part in enumerate(_note_parts(transcript)):
         amounts = _payment_amounts(part)
         if amounts:
+            title, category = _rule_label(part)
             entries.append(dict(evidence=part, amount=next(iter(amounts)) if len(amounts) == 1 else None,
-                                type=intent(part), title=_title(part), position=position))
+                                type=intent(part), title=title, category=category, position=position))
     return entries
 
 
@@ -367,7 +402,10 @@ def quoted(evidence, transcript):
 
 
 CATEGORY = re.compile(r'^[a-z][a-z /&-]{0,30}$')
-SKIP_REASONS = {'negated': 'NOT_PAID', 'planned': 'PLANNED', 'question': 'QUESTION'}
+SKIP_REASONS = {
+    'negated': 'NOT_PAID', 'planned': 'PLANNED', 'question': 'QUESTION',
+    'requested': 'REQUESTED_ONLY', 'balance': 'BALANCE_ONLY',
+}
 
 
 def _part_dates(parts, today, week_start):
@@ -489,6 +527,22 @@ def split_note(transcript, today, currency, digits, *, use_ai=True, deadline=Non
                     extra['confidence'], extra['needs_review'] = 0.5, True
                 drafts = ai_drafts + extras
     drafts.sort(key=lambda d: d['_position'])
+    # A contrast immediately after a request can repeat a transfer already stated just before it.
+    # Keep every other repeated entry, since two distinct payments may have the same amount.
+    parts = _note_parts(transcript)
+    draft_by_part = {draft['_position']: draft for draft in drafts}
+    repeated = set()
+    for position, part in enumerate(parts):
+        if position < 2 or not CONTRAST.match(part) or intent(parts[position - 1]) != 'requested':
+            continue
+        earlier, current = draft_by_part.get(position - 2), draft_by_part.get(position)
+        if earlier and current and earlier['entry_type'] == current['entry_type'] == 'expense':
+            same_amount = earlier['amount_minor'] == current['amount_minor']
+            shared_recipient = re.search(r'(?:ওকে|তাকে|\bhim\b|\bher\b)', parts[position - 2]) and re.search(
+                r'(?:ওকে|তাকে|\bhim\b|\bher\b)', part)
+            if same_amount and shared_recipient:
+                repeated.add(position)
+    drafts = [draft for draft in drafts if draft['_position'] not in repeated]
     if len(drafts) > MAX_ENTRIES:
         dropped.append(dict(evidence='', reason='TOO_MANY_ENTRIES', count=len(drafts) - MAX_ENTRIES))
     for draft in drafts:

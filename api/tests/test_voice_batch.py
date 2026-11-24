@@ -247,6 +247,28 @@ def test_synthetic_voice_bills_have_unique_numbers_even_in_separate_batches():
     assert bill(600)['invoice_number'] != bill(650)['invoice_number']
 
 
+def test_long_bangla_story_keeps_five_movements_without_registering_the_requested_loan_or_balance():
+    note = (
+        'আমি করিম থেকে পাঁচশো টাকা নিয়েছিলাম এরপর বাজারে যাওয়ার পরে আমার রফিকের সঙ্গে দেখা হয় '
+        'ওকে আমি দুশো টাকা দিলাম ও তো আমার কাছে তিনশো টাকা ধার চেয়েছিল কিন্তু আমি দিতে পেরেছি ওকে দুইশো টাকা '
+        'এরপর আমার কাছে যে তিনশো টাকা আছে ওইটা নিয়ে মাঠে যেখানে একশো টাকা দিয়ে ক্রিকেট খেললাম। '
+        'তো ৳30 দিয়ে যখন আমি স্ন্যাক্স পেলাম তারপর আমি বাকিটাকে দিয়ে ভাড়া খরচ করে ৳৫০ ভাড়া খরচ করলাম। এরপর বাসায় গেলাম।'
+    )
+    drafts, dropped, method = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)
+    assert method == 'rules'
+    assert [(d['entry_type'], d['amount_minor']) for d in drafts] == [
+        ('income', 50000), ('expense', 20000), ('expense', 10000), ('expense', 3000), ('expense', 5000),
+    ]
+    assert {d['reason'] for d in dropped} == {'REQUESTED_ONLY', 'BALANCE_ONLY'}
+    assert sum(d['amount_minor'] for d in drafts if d['entry_type'] == 'expense') == 38000
+
+
+@pytest.mark.parametrize('note', ['রহিম ৫০০০ টাকা দেয় নাই', 'ওকে ২০০ টাকা দিতে পারিনি'])
+def test_bangla_spaced_negations_remain_out_of_the_drafts(note):
+    drafts, dropped, _ = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)
+    assert not drafts and dropped[0]['reason'] == 'NOT_PAID'
+
+
 def test_public_competition_demo_runs_engines_without_an_account(world):
     c, _ = world
     assert c.get('/api/session').status_code == 401
