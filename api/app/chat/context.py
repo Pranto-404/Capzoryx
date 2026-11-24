@@ -50,7 +50,8 @@ def gather(db, business, role='owner'):
         advice=[dict(title=i['title'], what=i['what'], why=i['why'], impact_minor=i['impact_minor'],
                      first=(i['strategies'][0]['title'] + ': ' + i['strategies'][0]['steps'][0]) if i['strategies'] else '')
                 for i in advisor.find(data, profile)][:4],
-        gaps=[g['field'] for g in biz.gaps(profile, biz.products(db, business))])
+        gaps=[g['field'] for g in biz.gaps(profile, biz.products(db, business))],
+        notes=[dict(kind=n['kind'], title=n['title'], text=' '.join(n['text'].split())[:800]) for n in biz.notes(db, business, limit=8)])
     return out
 
 
@@ -61,7 +62,8 @@ def render(ctx):
         return '\n'.join(lines)
     p = ctx.get('profile')
     if not p:
-        lines.insert(0, 'BUSINESS: not set up yet (the owner can add it in Settings → Business).')
+        lines.insert(0, 'BUSINESS: not set up yet (the owner can add it on the My business page).')
+        lines += [f"- Owner's note ({n['kind']}): {n['title']}: {n['text']}" for n in ctx.get('notes') or []]
         return '\n'.join(lines)
     c = ctx['currency']
     head = [f"BUSINESS: {p['name']}, {p['niche']} ({p['industry']}); sells as {', '.join(p['types']) or 'not stated'}; "
@@ -136,6 +138,9 @@ def render(ctx):
         lines += ['', 'ADVISOR FINDINGS (from the owner\'s numbers):']
         for a in ctx['advice']:
             lines.append(f"- {a['title']}. {a['what']}" + (f" First step: {a['first']}" if a['first'] else ''))
+    if ctx.get('notes'):
+        lines += ['', 'BUSINESS DATA THE OWNER SUBMITTED (their own words):']
+        lines += [f"- {n['kind']}: {n['title']}: {n['text']}" for n in ctx['notes']]
     if ctx['gaps']:
         lines.append(f"Missing information: {', '.join(ctx['gaps'])}.")
     return '\n'.join(lines)

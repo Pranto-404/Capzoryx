@@ -147,7 +147,7 @@ Set these on the backend (Render). `.env.example` lists every option.
 | `SAFELEDGER_PUBLIC_URL`, `SAFELEDGER_CORS_ORIGINS` | Public site address and allowed origins. |
 | `SAFELEDGER_TELEGRAM_ENABLED`, `_BOT_TOKEN`, `_BOT_USERNAME`, `_WEBHOOK_SECRET`, `_WEBHOOK_URL` | Telegram bot ([guide](docs/TELEGRAM.md)). |
 | `CAPZORYX_CHAT_HISAB_URL`, `CAPZORYX_CHAT_HISAB_KEY` | Hisab-Chat on its Hugging Face Space. |
-| `CAPZORYX_CHAT_GROQ_KEY`, `_GEMINI_KEY`, `_CEREBRAS_KEY`, `_OPENROUTER_KEY`, `_MISTRAL_KEY`, `_GITHUB_KEY` | Optional free AI fallbacks for open conversation. |
+| `CAPZORYX_CHAT_GROQ_KEY`, `_GEMINI_KEY`, `_CEREBRAS_KEY`, `_OPENROUTER_KEY`, `_MISTRAL_KEY`, `_GITHUB_KEY`, `_SAMBANOVA_KEY` | Optional free AI fallbacks for open conversation, tried in this order after the own model. The first one that answers also rewrites the own model's replies into one voice (`CAPZORYX_CHAT_POLISH=0` turns that off). See docs/AI_KEYS.md. |
 | `SAFELEDGER_MAIL_RELAY_URL`, `SAFELEDGER_MAIL_RELAY_SECRET`, `SAFELEDGER_MAIL_FROM` | Email codes and bill reminders ([guide](docs/EMAIL-REMINDERS.md)). |
 | `SAFELEDGER_VAPID_*`, `SAFELEDGER_FCM_SERVICE_ACCOUNT_JSON` | Web and Android push ([guide](docs/PUSH.md)). |
 | `CAPZORYX_TICK_SECRET` | Signed scheduler calls for reminders. |

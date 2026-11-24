@@ -41,6 +41,9 @@ def schema(db):
       CREATE TABLE IF NOT EXISTS biz_products(id TEXT PRIMARY KEY, business_id TEXT NOT NULL, data_enc TEXT NOT NULL,
         key_tag TEXT NOT NULL, market_key TEXT, dedupe TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
       CREATE UNIQUE INDEX IF NOT EXISTS biz_products_unique ON biz_products(business_id, dedupe);
+      CREATE TABLE IF NOT EXISTS biz_notes(id TEXT PRIMARY KEY, business_id TEXT NOT NULL, data_enc TEXT NOT NULL,
+        key_tag TEXT NOT NULL, kind TEXT NOT NULL, research INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS biz_notes_business ON biz_notes(business_id, created_at);
     """)
 
 
@@ -388,7 +391,85 @@ def import_products(body: Csv, actor=Depends(principal), db=Depends(db_connectio
         return dict(view(db, owner.business_id), added=added, skipped=skipped[:50])
 
 
-BI_TABLES = ('biz_profile', 'biz_products', 'market_watch', 'research_runs', 'biz_alerts', 'biz_alert_state', 'advisor_feedback')
+BI_TABLES = ('biz_profile', 'biz_products', 'biz_notes', 'market_watch', 'research_runs', 'biz_alerts', 'biz_alert_state', 'advisor_feedback')
+
+
+# ---------- business data the owner submits ----------
+NOTE_KINDS = ('sales', 'prices', 'competitors', 'customers', 'suppliers', 'plans', 'other')
+MAX_NOTES = 200
+MAX_NOTE_CHARS = 20000
+
+
+class Note(Contract):
+    kind: Literal['sales', 'prices', 'competitors', 'customers', 'suppliers', 'plans', 'other']
+    title: str = Field(min_length=2, max_length=120)
+    text: str = Field(min_length=2, max_length=MAX_NOTE_CHARS)
+    file_name: str = Field(default='', max_length=120)
+    research: bool = True  # the owner allows this note to guide web research
+
+    @field_validator('title', 'text', 'file_name')
+    @classmethod
+    def printable(cls, value):
+        return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', value)
+
+
+def notes(db, business, research_only=False, limit=MAX_NOTES):
+    """The owner's submitted business data, newest first. Call inside a transaction."""
+    key = customer_key(db, business)
+    if not key:
+        return []
+    where = ' AND research=1' if research_only else ''
+    out = []
+    for identity, box, tag, at in db.execute(f'SELECT id,data_enc,key_tag,created_at FROM biz_notes WHERE business_id=?{where} '  # noqa: S608
+                                            'ORDER BY created_at DESC, rowid DESC LIMIT ?', (business, limit)).fetchall():
+        if key_tag(key) == tag:
+            out.append(dict(json.loads(unseal(key, box, identity + '/note')), id=identity, created_at=at))
+    return out
+
+
+def notes_view(db, business):
+    data = load_profile(db, business)[0]
+    return dict(notes=notes(db, business), kinds=list(NOTE_KINDS),
+                research_allowed=bool((data.get('consent') or {}).get('external_research')), profile_ready=bool(data.get('identity')),
+                simulation_only=True)
+
+
+@router.get('/notes')
+def list_notes(actor=Depends(principal), db=Depends(db_connection)):
+    with owner_transaction(db, actor) as owner:
+        return notes_view(db, owner.business_id)
+
+
+@router.post('/notes', status_code=201)
+def add_note(body: Note, background: BackgroundTasks, actor=Depends(principal), db=Depends(db_connection)):
+    from api.app.market import queue_research, run_research
+    research = None
+    with owner_transaction(db, actor) as owner:
+        business = owner.business_id
+        if db.execute('SELECT COUNT(*) FROM biz_notes WHERE business_id=?', (business,)).fetchone()[0] >= MAX_NOTES:
+            sec.fail(409, 'NOTE_LIMIT')
+        identity = uuid.uuid4().hex
+        key = customer_key(db, business, create=True)
+        box = seal(key, sec.canonical(body.model_dump(mode='json')).encode(), identity + '/note')
+        db.execute('INSERT INTO biz_notes(id,business_id,data_enc,key_tag,kind,research,created_at) VALUES (?,?,?,?,?,?,?)',
+                   (identity, business, box, key_tag(key), body.kind, int(body.research), sec.now()))
+        sec.audit(db, owner, identity, 'BUSINESS_DATA_ADDED', {'kind': body.kind, 'chars': len(body.text)})
+        profile = load_profile(db, business)[0]
+        if body.research and profile.get('identity') and (profile.get('consent') or {}).get('external_research'):
+            research = queue_research(db, business)  # new facts from the owner: study the market again
+        result = notes_view(db, business)
+    if research:
+        background.add_task(run_research, research, business)
+    return dict(result, research_started=bool(research))
+
+
+@router.post('/notes/{identity}/delete')
+def delete_note(identity: str, actor=Depends(principal), db=Depends(db_connection)):
+    with owner_transaction(db, actor) as owner:
+        if not db.execute('DELETE FROM biz_notes WHERE id=? AND business_id=?', (identity, owner.business_id)).rowcount:
+            sec.fail(404, 'NOTE_NOT_FOUND')
+        sec.audit(db, owner, identity, 'BUSINESS_DATA_DELETED', {})
+        return notes_view(db, owner.business_id)
 
 
 def erase(db, business):
@@ -412,7 +493,7 @@ def export(db, business):
             alerts.append(dict(json.loads(unseal(key, box, identity + '/alert')), level=level, created_at=at))
     feedback = db.execute('SELECT insight,tier,response,baseline_json,created_at FROM advisor_feedback WHERE business_id=? ORDER BY created_at',
                           (business,)).fetchall()
-    return dict(profile=data, setup_step=step, completed_at=completed, products=products(db, business),
+    return dict(profile=data, setup_step=step, completed_at=completed, products=products(db, business), business_data=notes(db, business),
                 market_quotes=[dict(zip(('indicator', 'value_minor', 'currency', 'unit', 'source', 'url', 'observed_at', 'kind'), q)) for q in quotes],
                 research=research_view(db, business), alerts=alerts,
                 advisor_feedback=[dict(insight=f[0], tier=f[1], response=f[2], baseline=json.loads(f[3]), created_at=f[4]) for f in feedback])

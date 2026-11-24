@@ -111,7 +111,7 @@ export default function Assistant({snapshot,forecast,week,events,invoices,sessio
     <div className="chat-log" ref={log} role="log" aria-label={t('Conversation')} aria-live="polite">
       {!messages.length&&<div className="chat-welcome"><span aria-hidden="true"><Icon name="spark"/></span><h3>{t('How can I help?')}</h3><p>{t('Ask a question, or tell me what you paid or received. I can add records for you, explain your numbers and compare loan offers.')}</p><div className="chat-suggestions">{hints.filter(h=>canAddRecords||!/^I paid/.test(h)).map(h=><button key={h} className="secondary" onClick={()=>void ask(h)}>{t(h)}</button>)}</div></div>}
       {messages.map(m=><article className={'chat-message '+m.role} key={m.id}>
-        {m.role==='assistant'&&<small>{m.kind==='smart'?t('Smart answer'):'Assistant'}</small>}
+        {m.role==='assistant'&&<small>{t('Assistant')}</small>}
         {m.text.split('\n\n').map((para,i)=><p key={i}>{para}</p>)}
         {m.draft&&canAddRecords&&<DraftCard canTrustVendor={owner} compact draft={m.draft} revision={revision} request={request} onSaved={onSaved} onDiscard={()=>setMessages(cur=>cur.map(x=>x.id===m.id?{...x,draft:undefined,text:t('Discarded. Nothing was added.')}:x))}/>}
         {!!m.quick?.length&&<div className="chat-actions">{m.quick.map(b=><button className="secondary" key={b.payload} disabled={busy} onClick={()=>void quick(b)}>{b.label}</button>)}</div>}

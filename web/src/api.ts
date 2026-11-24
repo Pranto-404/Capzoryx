@@ -68,7 +68,7 @@ const friendly: Record<string,string> = {
   PRODUCT_LIMIT_REACHED:T('You have reached the product limit for this workspace.'),
   IDENTITY_REQUIRED_FIRST:T('Fill in the first step (business name, what you sell and where) first.'),
   RESEARCH_RECENT:T('Your market was researched a moment ago. New research runs automatically when your business details change.'),
-  RESEARCH_CONSENT_REQUIRED:T('Online research is turned off. Turn it on in Settings → Business.'),
+  RESEARCH_CONSENT_REQUIRED:T('Online research is turned off. Turn it on in My business.'),
   PROFILE_REQUIRED:T('Set up your business first.'),
   INDICATOR_NOT_WATCHED:T('That price is not followed for this business.'),
   NAME_COLUMN_REQUIRED:T('The file needs a column called Product (or Name).'),

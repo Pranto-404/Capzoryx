@@ -99,6 +99,8 @@ PROVIDERS = (
                            'mistralai/mistral-small-3.2-24b-instruct:free')),
     Provider('mistral', 'https://api.mistral.ai/v1', 'mistral-small-latest', alternatives=('open-mistral-nemo',)),
     Provider('github', 'https://models.github.ai/inference', 'openai/gpt-4.1-mini', alternatives=('openai/gpt-4o-mini',)),
+    Provider('sambanova', 'https://api.sambanova.ai/v1', 'Meta-Llama-3.3-70B-Instruct',
+             alternatives=('DeepSeek-V3-0324', 'Llama-4-Maverick-17B-128E-Instruct', 'Meta-Llama-3.1-8B-Instruct')),
 )
 
 
@@ -213,6 +215,38 @@ def compact(facts, limit):
     return '\n'.join(kept + ['(More details exist but are not shown here.)'])
 
 
+POLISH = os.getenv('CAPZORYX_CHAT_POLISH', '1') == '1'
+POLISH_SECONDS = 12
+POLISH_SYSTEM = (
+    'You edit a business assistant\'s draft reply before the owner sees it. Rewrite it so it reads naturally and '
+    'warmly, like a helpful local advisor: same language and script as the owner\'s message (Bangla, Banglish or '
+    'English), short sentences, a few short points when there are steps. Keep every number, amount, date, name and '
+    'fact exactly as written; add no new facts or figures and drop nothing important. Do not mention drafts, editing, '
+    'models or AI. Reply with the final text only.')
+
+
+def polish(question, draft, deadline):
+    """The own model's reply, rewritten by the first free API that answers, so every reply has one voice.
+
+    The rewrite may not add an amount that the draft or the owner's message does not already contain; when it does,
+    or no API answers in time, the draft is returned unchanged."""
+    end = min(deadline, time.monotonic() + POLISH_SECONDS)
+    messages = [{'role': 'system', 'content': POLISH_SYSTEM},
+                {'role': 'user', 'content': f'Owner\'s message:\n{question[:400]}\n\nDraft reply:\n{draft}'}]
+    for provider in available():
+        if provider.own:
+            continue
+        try:
+            better = call(provider, messages, end)
+        except (httpx.HTTPError, TimeoutError, RuntimeError, ValueError, KeyError, IndexError, TypeError):
+            if time.monotonic() >= end:
+                break
+            continue
+        if better and len(better) >= min(40, len(draft) // 3) and grounded(better, draft, question):
+            return better
+    return draft
+
+
 def reply(question, history=(), facts='', share_facts=False):
     """Return (answer, provider name), or (None, None) when no provider gave a grounded answer in time."""
     deadline = time.monotonic() + TOTAL_SECONDS
@@ -234,5 +268,8 @@ def reply(question, history=(), facts='', share_facts=False):
                 break
             continue
         if answer and grounded(answer, shown if sees_facts else '', question):
+            # The draft holds the owner's figures, so it goes to a cloud editor only when they allow cloud answers.
+            if provider.own and POLISH and share_facts:
+                answer = polish(question, answer, deadline + POLISH_SECONDS)
             return answer, provider.name
     return None, None
