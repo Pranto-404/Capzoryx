@@ -11,7 +11,7 @@ type Draft={title?:string;needs_review?:boolean;entry_type:EntryType;amount_mino
 type Split={drafts:Draft[];dropped:{evidence:string;reason:string}[];method:'ai'|'rules'};
 type Row={id:string;title:string;include:boolean;type:EntryType;amount:string;date:string;note:string;party:string;warnings:string[];evidence:string;due:string;invoice:string};
 type Status={speech:boolean;cloud_allowed:boolean;max_seconds:number};
-type Recognition={lang:string;continuous:boolean;interimResults:boolean;start():void;stop():void;onresult:((e:{resultIndex:number;results:ArrayLike<{isFinal:boolean;0:{transcript:string}}>})=>void)|null;onend:(()=>void)|null;onerror:(()=>void)|null};
+type Recognition={lang:string;continuous:boolean;interimResults:boolean;start():void;stop():void;onresult:((e:{resultIndex:number;results:ArrayLike<{isFinal:boolean;0:{transcript:string}}>})=>void)|null;onend:(()=>void)|null;onerror:((e:{error:string})=>void)|null};
 
 const TYPE:Record<EntryType,string>={expense:T('Money paid'),income:T('Money received'),bill:T('Bill still to pay')};
 // Server warnings, listed so they are translated with the rest of the page.
@@ -72,8 +72,15 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     let stream:MediaStream;
     try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});}
     catch{setError(t('Microphone permission is off. Allow the microphone, or type the note.'));return;}
+    if(!alive.current){stream.getTracks().forEach(track=>track.stop());return;}
     const mimeType=MIME.find(m=>MediaRecorder.isTypeSupported(m))||'';
-    const rec=new MediaRecorder(stream,{...(mimeType?{mimeType}:{}),audioBitsPerSecond:32000});
+    let rec:MediaRecorder;
+    try{rec=new MediaRecorder(stream,{...(mimeType?{mimeType}:{}),audioBitsPerSecond:32000});}
+    catch{
+      stream.getTracks().forEach(track=>track.stop());
+      setError(t('You can also type the note, or use live dictation.'));
+      return;
+    }
     const chunks:Blob[]=[];
     rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
     rec.onstop=()=>{
@@ -112,12 +119,21 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       const engine=new Dictation();engine.lang=language==='bn'?'bn-BD':'en-US';engine.continuous=true;engine.interimResults=true;
       engine.onresult=e=>{let said='',draft='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i][0].transcript;if(e.results[i].isFinal)said+=x+' ';else draft+=x;}
         if(said.trim())setTranscript(cur=>(cur.trim()?cur.trim()+' ':'')+said.trim());setInterim(draft);};
-      engine.onerror=()=>{/* a pause or a network blip: onend restarts while the owner has not pressed Stop */};
+      engine.onerror=e=>{
+        if(e.error==='no-speech'||(e.error==='aborted'&&!wantDictation.current))return;
+        wantDictation.current=false;
+        if(alive.current)setError(t('Live dictation is unavailable. You can type or paste the note.'));
+      };
       // Android ends a session after each pause; keep listening until the owner presses Stop.
-      engine.onend=()=>{setInterim('');if(alive.current&&wantDictation.current){try{run();return;}catch{/* give up below */}}if(alive.current)setStage(s=>s==='listening'?'idle':s);};
+      engine.onend=()=>{setInterim('');if(alive.current&&wantDictation.current){try{run();return;}catch{/* give up below */}}clearInterval(timer.current);if(alive.current)setStage(s=>s==='listening'?'idle':s);};
       live.current=engine;engine.start();
     };
-    run();setStage('listening');
+    try{run();}catch{
+      wantDictation.current=false;
+      setError(t('Live dictation is unavailable. You can type or paste the note.'));
+      return;
+    }
+    setStage('listening');
     const started=Date.now();setSeconds(0);
     timer.current=window.setInterval(()=>{const sec=Math.floor((Date.now()-started)/1000);setSeconds(sec);if(sec>=maxSeconds)stopDictation();},500);
   }
@@ -175,12 +191,12 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
         :stage==='listening'
         ?<button className="voice-record recording" onClick={stopDictation}><span className="rec-dot" aria-hidden="true"/>{t('Stop dictation')}</button>
         :<>{canRecord&&<button className="voice-record" disabled={busy} onClick={()=>void record()}><Icon name="spark"/>{stage==='hearing'?t('Listening to your note…'):t('Record a voice note')}</button>}
-          {!canRecord&&Dictation&&<button className="voice-record" disabled={busy} onClick={dictate}><Icon name="spark"/>{t('Start live dictation')}</button>}</>}
+          {Dictation&&<button className="secondary" disabled={busy} onClick={dictate}><Icon name="spark"/>{t('Start live dictation')}</button>}</>}
     </div>
     {stage==='recording'&&<div className="voice-level" aria-hidden="true"><span style={{width:`${Math.round(8+level*92)}%`}}/></div>}
     {stage==='listening'&&interim&&<p className="voice-interim" aria-live="polite">{interim}…</p>}
     {stage==='recording'&&<p className="small muted" role="status">{t('Up to {minutes} minutes. Say the day, what it was for and the amount for each payment.',{minutes:Math.round(maxSeconds/60)})}</p>}
-    {status&&!status.cloud_allowed&&<p className="small muted">{t('Smart assist is off, so recordings are not sent for transcription. Use live dictation or type the note; it is split on this server without AI.')}</p>}
+    {status&&!status.cloud_allowed&&<p className="small muted">{t('Enable Smart assist in Settings to send recordings for transcription. You can also use live dictation or type the note.')}</p>}
     {canRecord&&<p className="small muted">{t('The recording is sent to the speech service to be written down and is not stored by Capzoryx.')}</p>}
     <label htmlFor="voice-transcript">{t('What you said (you can correct it)')}</label>
     <textarea id="voice-transcript" rows={4} maxLength={4000} value={transcript} disabled={busy} onChange={e=>setTranscript(e.target.value)} placeholder={t('Your words appear here. You can also type or paste a whole week of spending.')}/>

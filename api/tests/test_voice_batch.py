@@ -104,6 +104,33 @@ def test_speech_uses_whisper_then_gemini(monkeypatch):
     assert calls[:2] == ['api.groq.com/openai/v1/audio/transcriptions'] * 2  # large-v3, then turbo
 
 
+def test_dedicated_speech_capability_does_not_require_cloud_chat(world, monkeypatch):  # noqa: F811
+    c, _ = world
+    monkeypatch.setattr('api.app.gateway.disclosure', lambda: [])
+    monkeypatch.setattr(vb, 'speech_available', lambda: True)
+    capabilities = c.get('/api/auth/capabilities').json()
+    assert capabilities['voice_note_speech'] is True
+    assert capabilities['cloud_assist'] is False
+
+
+def test_speech_fallback_stops_starting_requests_after_deadline(monkeypatch):
+    calls = []
+    clock = [0]
+
+    def handle(request):
+        calls.append(request.url.host)
+        clock[0] = vb.TRANSCRIPTION_BUDGET_SECONDS
+        return httpx.Response(503)
+
+    monkeypatch.setattr(vb, 'TRANSPORT', httpx.MockTransport(handle))
+    monkeypatch.setattr(vb.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setenv('CAPZORYX_CHAT_GROQ_KEY', 'gsk_test')
+    monkeypatch.setenv('CAPZORYX_CHAT_GEMINI_KEY', 'gm_test')
+    monkeypatch.setenv('CAPZORYX_HISAB_HF_TOKEN', 'hf_test')
+    assert vb.transcribe(b'x' * 2000, 'audio/webm', 'bn', 'taka') == (None, None)
+    assert calls == ['api.groq.com']
+
+
 def test_voice_note_routes_end_to_end(world, monkeypatch):  # noqa: F811
     c, _ = world
     signup(c, 'voice_owner')

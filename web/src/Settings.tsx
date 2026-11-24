@@ -12,7 +12,7 @@ import type {BusinessView} from './BusinessSetup';
 
 type Request=<T>(path:string,body?:unknown)=>Promise<T>;
 type Lists={workspaces:WorkspaceItem[];cleared:WorkspaceItem[]};
-export type SettingsProps={connections?:ReactNode;onBusinessSaved?:(view:BusinessView)=>void;session:Session;profile:Profile|null;request:Request;reloadProfile:()=>Promise<void>;changeSession:(s:Session)=>void;lists:Lists;reloadLists:()=>Promise<void>;onExportPdf:()=>Promise<void>;onExportJson:()=>Promise<void>;exporting:boolean;cloudAvailable:boolean};
+export type SettingsProps={connections?:ReactNode;onBusinessSaved?:(view:BusinessView)=>void;session:Session;profile:Profile|null;request:Request;reloadProfile:()=>Promise<void>;changeSession:(s:Session)=>void;lists:Lists;reloadLists:()=>Promise<void>;onExportPdf:()=>Promise<void>;onExportJson:()=>Promise<void>;exporting:boolean;cloudAvailable:boolean;voiceNoteSpeech:boolean};
 const tabs=['Profile','Connections','Security','Sharing','Data'] as const;
 type Tab=typeof tabs[number];
 const tabNames:Record<Tab,string>={Profile:T('Profile'),Connections:T('Connections'),Security:T('Password & 2-step'),Sharing:T('Sharing'),Data:T('Data & workspaces')};
@@ -45,7 +45,8 @@ export default function Settings(props:SettingsProps){
   </div>;
 }
 
-function ProfileTab({session,profile,request,reloadProfile,cloudAvailable}:SettingsProps){
+function ProfileTab({session,profile,request,reloadProfile,cloudAvailable,voiceNoteSpeech}:SettingsProps){
+  const onlineAvailable=cloudAvailable||voiceNoteSpeech||!!profile?.speech_provider;
   const saveData=useDataSaver();
   const info=useMessage();const mail=useMessage();const cur=useMessage();
   const [name,setName]=useState(profile?.display_name||'');const [email,setEmail]=useState(profile?.email||'');const [code,setCode]=useState('');const [busy,setBusy]=useState(false);
@@ -85,9 +86,10 @@ function ProfileTab({session,profile,request,reloadProfile,cloudAvailable}:Setti
         {provider.allowed.includes('record_data')?t('Receives selected records after consent. Training on records is disabled.'):
           provider.allowed.includes('question')?t('Receives questions and a short financial summary after consent. The provider may review them or use them for training.'):
           t('Receives interface labels only.')}</p>)}
-      <label className="check"><input type="checkbox" checked={profile?.smart_assist??false} disabled={busy||(!cloudAvailable&&!profile?.speech_provider)} onChange={e=>void run(async()=>{await request('/account/profile',{smart_assist:e.target.checked});},info,e.target.checked?t('Smart assist is on.'):t('Smart assist is off.'))}/>{t('Allow online assistance')}</label>
+      <label className="check"><input type="checkbox" checked={profile?.smart_assist??false} disabled={busy||(!onlineAvailable&&!profile?.smart_assist)} onChange={e=>void run(async()=>{await request('/account/profile',{smart_assist:e.target.checked});},info,e.target.checked?t('Smart assist is on.'):t('Smart assist is off.'))}/>{t('Allow online assistance')}</label>
       {profile?.speech_provider&&<p className="small muted">{t('Reviewed voice clips can be sent to {host} ({model}).',profile.speech_provider)}</p>}
-      {!cloudAvailable&&!profile?.speech_provider&&<p className="small muted">{t('Smart assist is not available on this site right now.')}</p>}
+      {voiceNoteSpeech&&<p className="small muted">{t('When you choose to record a voice note, a speech provider transcribes the recording. You can type the note instead.')}</p>}
+      {!onlineAvailable&&<p className="small muted">{t('Smart assist is not available on this site right now.')}</p>}
     </Section>
   </>;
 }

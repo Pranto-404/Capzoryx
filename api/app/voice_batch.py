@@ -422,6 +422,7 @@ def split_note(transcript, today, currency, digits, *, use_ai=True, deadline=Non
 
 # ---------- speech to text ----------
 WHISPER_MODELS = ('whisper-large-v3', 'whisper-large-v3-turbo')
+TRANSCRIPTION_BUDGET_SECONDS = 52
 VOCABULARY = ('টাকা হাজার শো লাখ বিকাশ নগদ রকেট ভাড়া বেতন বিল বাকি বিক্রি খরচ দোকান মাল ডেলিভারি গতকাল পরশু আজ '
               'taka hajar bKash Nagad')
 
@@ -438,15 +439,25 @@ def _vocabulary(db, business):
     return hint[:600]
 
 
-def whisper(audio, mime, language, hint):
+def _speech_timeout(deadline, per_attempt=14):
+    remaining = min(per_attempt, deadline - time.monotonic())
+    if remaining < 1:
+        return None
+    return httpx.Timeout(remaining, connect=min(4, remaining), write=min(4, remaining))
+
+
+def whisper(audio, mime, language, hint, deadline):
     from api.app.market import groq_key
     key = groq_key()
     if not key:
         return None, 'groq: no key'
     reasons = []
     for model in WHISPER_MODELS:
+        timeout = _speech_timeout(deadline)
+        if timeout is None:
+            break
         try:
-            with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=60) as client:
+            with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=timeout) as client:
                 response = client.post('https://api.groq.com/openai/v1/audio/transcriptions',
                                        headers={'Authorization': 'Bearer ' + key},
                                        data={'model': model, 'language': language, 'temperature': '0', 'response_format': 'json',
@@ -462,7 +473,7 @@ def whisper(audio, mime, language, hint):
     return None, '; '.join(reasons)
 
 
-def gemini_transcript(audio, mime, language, hint):
+def gemini_transcript(audio, mime, language, hint, deadline):
     from api.app.market import GEMINI_MODELS, gemini_key
     key = gemini_key()
     if not key:
@@ -475,8 +486,11 @@ def gemini_transcript(audio, mime, language, hint):
                                     {'text': ask}]}], 'generationConfig': {'temperature': 0}}
     reasons = []
     for model in GEMINI_MODELS[:2]:
+        timeout = _speech_timeout(deadline, per_attempt=10)
+        if timeout is None:
+            break
         try:
-            with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=60) as client:
+            with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=timeout) as client:
                 response = client.post(f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
                                        headers={'x-goog-api-key': key}, json=body)
             if response.status_code == 200:
@@ -490,14 +504,17 @@ def gemini_transcript(audio, mime, language, hint):
     return None, '; '.join(reasons)
 
 
-def hf_transcript(audio, mime, language, hint):
+def hf_transcript(audio, mime, language, hint, deadline):
     """Whisper large-v3 on Hugging Face's free inference, with the HF token Render already has."""
     import os
     key = (os.getenv('CAPZORYX_HISAB_HF_TOKEN') or os.getenv('HF_TOKEN') or '').strip()
     if not key:
         return None, 'hf: no key'
+    timeout = _speech_timeout(deadline)
+    if timeout is None:
+        return None, 'hf: transcription budget exhausted'
     try:
-        with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=90) as client:
+        with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=timeout) as client:
             response = client.post('https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3',
                                    headers={'Authorization': 'Bearer ' + key, 'Content-Type': mime.split(';')[0]}, content=audio)
         if response.status_code == 200:
@@ -510,15 +527,16 @@ def hf_transcript(audio, mime, language, hint):
 
 
 def transcribe(audio, mime, language, hint):
-    text, used = whisper(audio, mime, language, hint)
+    deadline = time.monotonic() + TRANSCRIPTION_BUDGET_SECONDS
+    text, used = whisper(audio, mime, language, hint, deadline)
     if text:
         return text, used
     log.warning('voice note: whisper unavailable (%s)', used)
-    text, used2 = gemini_transcript(audio, mime, language, hint)
+    text, used2 = gemini_transcript(audio, mime, language, hint, deadline)
     if text:
         return text, used2
     log.warning('voice note: gemini unavailable (%s)', used2)
-    text, used3 = hf_transcript(audio, mime, language, hint)
+    text, used3 = hf_transcript(audio, mime, language, hint, deadline)
     if text:
         return text, used3
     log.warning('voice note: hugging face unavailable (%s)', used3)
