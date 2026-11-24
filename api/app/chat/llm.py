@@ -51,6 +51,8 @@ class Provider:
         key = self.env('KEY')
         if not key and self.name == 'gemini' and os.getenv('SAFELEDGER_LLM_PROFILE', 'gemini_free') == 'gemini_free':
             key = os.getenv('SAFELEDGER_LLM_API_KEY', '').strip()  # reuse the app's existing Gemini key
+        if not key and self.name == 'hisab':
+            key = os.getenv('CAPZORYX_HISAB_HF_TOKEN', '').strip()  # the Hugging Face token cash extraction already uses
         return key
 
     @property
