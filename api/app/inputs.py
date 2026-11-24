@@ -133,7 +133,11 @@ def add_records(body:RecordBatch,actor=Depends(principal),db=Depends(db_connecti
         ids=[r.request_id for r in body.records]
         known=db.execute(f"SELECT COUNT(*) FROM workspace_input_requests WHERE business_id=? AND request_id IN ({','.join('?'*len(ids))})",  # noqa: S608
                          (current.business_id,*ids)).fetchone()[0]
+        digest=hashlib.sha256(sec.canonical([r.model_dump(mode='json') for r in body.records]).encode()).hexdigest()
+        batch_key='batch:'+hashlib.sha256('|'.join(ids).encode()).hexdigest()[:40]
         if known==len(ids):  # the same batch sent again (for example after a dropped connection): already saved
+            stored=db.execute('SELECT body_sha256 FROM workspace_input_requests WHERE business_id=? AND request_id=?',(current.business_id,batch_key)).fetchone()
+            if not stored or stored[0]!=digest:sec.fail(409,'INPUT_REQUEST_CONFLICT')  # same ids, different contents
             return dict(saved=0,replayed=True,source_ids=['manual-'+i for i in ids],
                         dataset_revision=fingerprint(sec.original_dataset(db,current.business_id)),simulation_only=True)
         if known:sec.fail(409,'INPUT_REQUEST_CONFLICT')
@@ -144,6 +148,7 @@ def add_records(body:RecordBatch,actor=Depends(principal),db=Depends(db_connecti
             result=append_record(db,current,InputRecord(**record.model_dump(),expected_revision=revision),manual_entry=True)
             saved.append(result.get('source_id'))
             revision=fingerprint(sec.original_dataset(db,current.business_id))
+        db.execute('INSERT INTO workspace_input_requests VALUES (?,?,?)',(current.business_id,batch_key,digest))
         return dict(saved=len(saved),source_ids=saved,dataset_revision=revision,simulation_only=True)
 
 

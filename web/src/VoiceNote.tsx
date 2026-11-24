@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {currencyDigits,parseMinor} from './api';
+import {currencyDigits,money,parseMinor} from './api';
 import {slug} from './recordParser';
 import {formatDate,todayIso} from './format';
 import {Icon} from './Icon';
@@ -7,19 +7,29 @@ import {t,T,useI18n} from './i18n';
 
 type Request=<R,>(path:string,body?:unknown)=>Promise<R>;
 type EntryType='expense'|'income'|'bill';
-type Draft={entry_type:EntryType;amount_minor:number;effective_on:string;memo:string;warnings:string[];evidence:string;party:string;category:string;confidence:number;due_on?:string;vendor_name?:string;invoice_number?:string};
+type Draft={title?:string;needs_review?:boolean;entry_type:EntryType;amount_minor:number;effective_on:string;memo:string;warnings:string[];evidence:string;party:string;category:string;confidence:number;due_on?:string;vendor_name?:string;invoice_number?:string};
 type Split={drafts:Draft[];dropped:{evidence:string;reason:string}[];method:'ai'|'rules'};
-type Row={id:string;include:boolean;type:EntryType;amount:string;date:string;note:string;party:string;warnings:string[];evidence:string;due:string;invoice:string};
+type Row={id:string;title:string;include:boolean;type:EntryType;amount:string;date:string;note:string;party:string;warnings:string[];evidence:string;due:string;invoice:string};
 type Status={speech:boolean;cloud_allowed:boolean;max_seconds:number};
 type Recognition={lang:string;continuous:boolean;interimResults:boolean;start():void;stop():void;onresult:((e:{resultIndex:number;results:ArrayLike<{isFinal:boolean;0:{transcript:string}}>})=>void)|null;onend:(()=>void)|null;onerror:(()=>void)|null};
 
 const TYPE:Record<EntryType,string>={expense:T('Money paid'),income:T('Money received'),bill:T('Bill still to pay')};
 // Server warnings, listed so they are translated with the rest of the page.
 export const SERVER_WARNINGS=[T('No day was said, so today is used. Change it if needed.'),T('Check the date.'),
-  T('Two numbers were said here. Check that this is the right amount.'),T('Found by the backup reader. Check it, or untick it if it is not a payment.')];
+  T('Two numbers were said here. Check that this is the right amount.'),T('Found by the backup reader. Check it, or untick it if it is not a payment.'),
+  T('The days in your note go backwards. Choose the week above if this was last week.'),T('No payment word was heard. Check whether this money was paid or received.'),T('The type was set from your words. Check it.')];
 const MIME=['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/mp4','audio/webm'];
+const shown=(text:string,currency:string)=>{try{return money(parseMinor(text,currency),currency);}catch{return `${text} ${currency}`;}};
 const major=(minor:number,currency:string)=>{const d=currencyDigits(currency);return (minor/10**d).toFixed(d);};
 const errorText=(e:unknown)=>e instanceof Error?e.message:t('Something went wrong. Please try again.');
+
+/** Monday of this week or of last week, as YYYY-MM-DD in local time. */
+function weekStart(which:'this'|'last'){
+  const d=new Date();const back=(d.getDay()+6)%7+(which==='last'?7:0);d.setDate(d.getDate()-back);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+const plusDays=(iso:string,n:number)=>{const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+const dayName=(iso:string,code:string)=>new Date(iso+'T12:00:00').toLocaleDateString(code==='bn'?'bn-BD':'en-GB',{weekday:'long',day:'numeric',month:'short'});
 
 function toBase64(blob:Blob):Promise<string>{
   return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]||'');r.onerror=()=>reject(r.error);r.readAsDataURL(blob);});
@@ -39,6 +49,7 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
   const [error,setError]=useState('');
   const [result,setResult]=useState('');
   const [interim,setInterim]=useState('');
+  const [week,setWeek]=useState<'recent'|'this'|'last'>('recent');
   const [level,setLevel]=useState(0);
   const wantDictation=useRef(false);
   const recorder=useRef<MediaRecorder|null>(null);
@@ -114,9 +125,9 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
   async function split(){
     setError('');setResult('');setStage('splitting');
     try{
-      const data=await request<Split>('/assist/batch-drafts',{transcript:transcript.trim(),consent:!!status?.cloud_allowed});
+      const data=await request<Split>('/assist/batch-drafts',{transcript:transcript.trim(),consent:!!status?.cloud_allowed,...(week!=='recent'?{week_start:weekStart(week)}:{})});
       if(!alive.current)return;
-      setRows(data.drafts.map(d=>({id:crypto.randomUUID(),include:true,type:d.entry_type,amount:major(d.amount_minor,currency),date:d.effective_on,
+      setRows(data.drafts.map(d=>({id:crypto.randomUUID(),title:d.title||d.category||'',include:!d.needs_review,type:d.entry_type,amount:major(d.amount_minor,currency),date:d.effective_on,
         note:d.memo,party:d.party,warnings:d.warnings,evidence:d.evidence,due:d.due_on||d.effective_on,invoice:d.invoice_number||''})));
       setDropped(data.dropped);setMethod(data.method);
       setStage(data.drafts.length?'review':'idle');
@@ -173,6 +184,9 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     {canRecord&&<p className="small muted">{t('The recording is sent to the speech service to be written down and is not stored by Capzoryx.')}</p>}
     <label htmlFor="voice-transcript">{t('What you said (you can correct it)')}</label>
     <textarea id="voice-transcript" rows={4} maxLength={4000} value={transcript} disabled={busy} onChange={e=>setTranscript(e.target.value)} placeholder={t('Your words appear here. You can also type or paste a whole week of spending.')}/>
+    <label className="voice-week">{t('Days like “Shombar” in my note mean')}<select value={week} disabled={busy} onChange={e=>setWeek(e.target.value as typeof week)}>
+      <option value="recent">{t('The last 7 days')}</option><option value="this">{t('This week (from {date})',{date:formatDate(weekStart('this'))})}</option>
+      <option value="last">{t('Last week ({from} to {to})',{from:formatDate(weekStart('last')),to:formatDate(plusDays(weekStart('last'),6))})}</option></select></label>
     <div className="actions"><button disabled={busy||transcript.trim().length<3} onClick={()=>void split()}>{stage==='splitting'?t('Making drafts…'):t('Make drafts')}</button>
       {transcript&&!busy&&<button className="secondary" onClick={()=>{setTranscript('');setRows([]);setDropped([]);setStage('idle');}}>{t('Clear')}</button>}</div>
     {error&&<p className="error" role="alert">{error}</p>}
@@ -181,8 +195,18 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     {(stage==='review'||stage==='saving')&&<div className="batch-review">
       <h3>{t('{count} drafts from your note',{count:rows.length})}</h3>
       {method==='rules'&&<p className="notice small">{t('Read without AI. Check each draft carefully.')}</p>}
+      <div className="voice-summary" aria-label={t('Summary of your note')}>
+        <div className="voice-totals"><div><small>{t('Money paid')}</small><b className="negative">{money(total('expense'),currency)}</b></div>
+          <div><small>{t('Money received')}</small><b className="positive">{money(total('income'),currency)}</b></div>
+          <div><small>{t('Net')}</small><b>{money(total('income')-total('expense'),currency)}</b></div></div>
+        {[...new Set(chosen.map(r=>r.date))].sort().map(day=><div className="voice-day" key={day}><h4>{dayName(day,code)}</h4>
+          <ul>{chosen.filter(r=>r.date===day).map(r=><li key={r.id} className={'kind-'+r.type}><span className="voice-sign" aria-hidden="true">{r.type==='income'?'+':r.type==='bill'?'⧗':'−'}</span>
+            <span className="voice-title">{r.title||r.note}{r.type==='bill'&&<small>{t('Bill still to pay')}</small>}</span><b>{shown(r.amount,currency)}</b></li>)}</ul></div>)}
+        {rows.length>chosen.length&&<p className="small muted">{t('{count} unticked entries are not included. Tick them below if they are payments.',{count:rows.length-chosen.length})}</p>}
+      </div>
+      <h4 className="voice-check-title">{t('Check each entry against what you said')}</h4>
       <ol className="batch-list">{rows.map((r,i)=><li key={r.id} className={r.include?undefined:'excluded'}>
-        <div className="batch-head"><label className="check"><input type="checkbox" checked={r.include} onChange={e=>update(r.id,{include:e.target.checked})}/><b>{t('Entry {n}',{n:i+1})}</b></label>
+        <div className="batch-head"><label className="check"><input type="checkbox" checked={r.include} onChange={e=>update(r.id,{include:e.target.checked})}/><b>{t('Entry {n}',{n:i+1})}{r.title?' · '+r.title:''}</b></label>
           {r.warnings.length>0&&<span className="badge warn">{t('Check')}</span>}</div>
         {r.evidence&&<p className="batch-quote">“{r.evidence}”</p>}
         <div className="batch-fields">

@@ -66,6 +66,7 @@ jobs:
           node scripts/check_rahim_browser.cjs
           node scripts/check_payroll_browser.cjs
           node scripts/check_business_browser.cjs
+          node scripts/check_voice_batch_browser.cjs
           CHROMIUM_PATH="$(command -v google-chrome)" xvfb-run -a node scripts/check_pwa.cjs
 
   dependency-audit:
