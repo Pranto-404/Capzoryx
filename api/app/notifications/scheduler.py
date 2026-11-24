@@ -42,7 +42,16 @@ def run_workspace(db, business, at):
             enqueue(db, business, 'bill_due', bill.invoice_id, at=at, period=str(today))
     rows = db.execute("""SELECT customer_id,due_on FROM receivable_balances
                          WHERE business_id=? AND open_minor>0 AND due_on<?""", (business, str(today))).fetchall()
-    due = {customer for customer, day in rows if (today-date.fromisoformat(day)).days % 3 == 1}
+    # A customer who always pays a week late is not chased on day one: remind only once they are later than their
+    # own habit (every third day after that), so the reminder does not cry wolf.
+    from api.app.services.radar import expected
+    habit = {i['receivable_id']: i['habit_days'] for i in expected(db, business, ds, today)}
+    due = set()
+    for identity, customer, day in db.execute('SELECT id,customer_id,due_on FROM receivable_balances WHERE business_id=? '
+                                              'AND open_minor>0 AND due_on<?', (business, str(today))).fetchall():
+        past = (today - date.fromisoformat(day)).days - habit.get(identity, 0)
+        if past > 0 and past % 3 == 1:
+            due.add(customer)
     for customer in sorted(due):
         enqueue(db, business, 'customer_overdue', customer, at=at, period=str(today))
     receipts = open_receipts(db, business)
@@ -64,10 +73,12 @@ def run_workspace(db, business, at):
             forecast = project_cashflow(ds, scenario, receipts)
             if agent_enabled:
                 anticipate_gap(db, business, ds, scenario, receipts, forecast)
-            breach = next((d['date'] for d in forecast['days'] if d['shortfall_minor'] and
-                           str(today) <= d['date'] <= str(today+timedelta(days=14))), None)
-            if breach:
-                enqueue(db, business, 'cash_breach', breach, at=at)
+            # Honest radar: alert only when the realistic outlook (customer payment habits, doubtful money left out)
+            # falls short, once per episode, and again only when it gets clearly worse. See services/radar.py.
+            from api.app.services.radar import radar, should_alert
+            view = radar(db, business, ds, reserve[0], max(today, ds.as_of))
+            if should_alert(db, business, view, at):
+                enqueue(db, business, 'cash_breach', view['breach_on'], at=at, period=str(today))
     from api.app.notifications import telegram
     telegram.queue(db,business,at,has_due_bills=bool(email_alerts.due_count(ds,today)))
     # Dispatch once a deferred reminder can be shown. The transaction rechecks open balances and membership.

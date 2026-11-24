@@ -761,3 +761,46 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
 .native-app .aurora{display:none}
 @media(prefers-reduced-motion:reduce){.app-sheet,.app-sheet-backdrop{animation:none}}
 .app-content>div[role=status]:empty{display:none}
+/* Voice note: a week of spending in one recording, reviewed as a batch */
+.voice-note .voice-controls{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin:6px 0 10px}
+.voice-note .voice-lang{margin:0;flex:0 1 220px}
+.voice-record{min-height:52px;padding:12px 22px;border-radius:26px;font-size:15px;gap:10px}
+.voice-record.recording{background:#b3261e;border-color:#b3261e;color:#fff}
+.rec-dot{width:11px;height:11px;border-radius:50%;background:#fff;animation:rec-pulse 1s ease-in-out infinite}
+@keyframes rec-pulse{50%{opacity:.25}}
+.batch-review{margin-top:18px;border-top:1px solid var(--line,#dce5de);padding-top:14px}
+.batch-list{list-style:none;padding:0;margin:0;display:grid;gap:12px}
+.batch-list>li{border:1px solid var(--line,#dce5de);border-radius:14px;padding:12px 14px;background:var(--surface,#fff)}
+.batch-list>li.excluded{opacity:.5}
+.batch-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.batch-head .check{margin:0}
+.batch-quote{font-size:13px;color:var(--muted,#52695f);margin:6px 0 8px;font-style:italic;overflow-wrap:anywhere}
+.batch-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 10px}.batch-fields input,.batch-fields select{min-height:40px;padding:8px 10px}
+.batch-fields label{margin:4px 0 0;font-size:12px}
+.batch-fields .batch-note{grid-column:1/-1}
+.badge.warn{background:#fff3d6;color:#7a5200}
+.batch-total{display:flex;gap:16px;flex-wrap:wrap;font-weight:600;margin:14px 0 6px}
+.batch-dropped{margin:10px 0}
+@media(prefers-reduced-motion:reduce){.rec-dot{animation:none}}
+/* Honest cash radar */
+.cash-radar .radar-pill{font-weight:700}
+.radar-pill.level-clear{background:#e3f4ea;color:#17613a}
+.radar-pill.level-watch{background:#fff3d6;color:#7a5200}
+.radar-pill.level-alert{background:#fde4df;color:#9b2c1d}
+.cash-radar.radar-alert{border-color:#e9b3a8}
+.cash-radar.radar-watch{border-color:#ecd59c}
+.radar-headline{font-size:15px;font-weight:600}
+.radar-sub{font-size:14px;margin:14px 0 8px}
+.radar-outlooks{list-style:none;padding:0;margin:0 0 6px;display:grid;gap:8px}
+.radar-outlooks>li{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center;border:1px solid var(--line,#dce5de);border-radius:12px;padding:10px 12px;font-size:13px}
+.radar-figures small{display:block;font-size:11px}
+.radar-figures b{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+@media(max-width:520px){.radar-outlooks>li{grid-template-columns:1fr 1fr}.radar-outlooks>li>span:first-child{grid-column:1/-1;font-weight:600}}
+.radar-list{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.radar-list>li{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid var(--line,#dce5de);border-radius:12px;padding:10px 12px}
+.radar-list small{display:block}
+.radar-amount{text-align:right}
+.radar-status.status-later_than_usual{background:#fff3d6;color:#7a5200}
+.radar-status.status-doubtful{background:#fde4df;color:#9b2c1d}
+.radar-status.status-usually_late{background:#e8eefc;color:#2d4a8a}
+

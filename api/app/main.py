@@ -18,6 +18,8 @@ from api.app import market
 from api.app import insights
 from api.app import monitor
 from api.app import advisor
+from api.app import voice_batch
+from api.app.services import radar
 from api.app.chat import routes as chat_routes
 from api.app.notifications import email_alerts, push
 from api.app.notifications.routes import router as notification_router
@@ -67,6 +69,7 @@ async def lifespan(app: FastAPI):
         sms_inbox.schema(db)
         payroll.schema(db)
         business.schema(db)
+        radar.schema(db)
         market.schema(db)
         monitor.schema(db)
         advisor.schema(db)
@@ -125,6 +128,7 @@ app.include_router(assist.router)
 app.include_router(hisab_hosted.router)
 app.include_router(books.router)
 app.include_router(voice.router)
+app.include_router(voice_batch.router)
 app.include_router(i18n.router)
 app.include_router(passport.router)
 app.include_router(plans.router)
