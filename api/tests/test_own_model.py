@@ -79,3 +79,13 @@ def test_free_cpu_copy_answers_when_gpu_quota_is_out(monkeypatch):
     assert 'BUSINESS: Test shop.' in system and 'More details exist' in system and len(system) < len(llm.SYSTEM) + 2100
     assert seen[0]['max_tokens'] == llm.CPU_MAX_TOKENS
     llm._cooldown.clear()
+
+
+def test_own_model_reuses_the_hugging_face_token(monkeypatch):
+    from api.app.chat import llm
+    own = next(p for p in llm.PROVIDERS if p.name == 'hisab')
+    monkeypatch.delenv('CAPZORYX_CHAT_HISAB_KEY', raising=False)
+    monkeypatch.setenv('CAPZORYX_HISAB_HF_TOKEN', 'hf_test')
+    assert own.key == 'hf_test'
+    monkeypatch.setenv('CAPZORYX_CHAT_HISAB_KEY', 'hf_own')
+    assert own.key == 'hf_own'
