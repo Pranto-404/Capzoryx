@@ -25,7 +25,7 @@ import {DataEntry} from './DataEntry';
 import {Financing} from './Financing';
 import {QuickAdd} from './QuickAdd';
 import {TelegramLink} from './TelegramLink';
-import {SmsInbox} from './SmsInbox';
+import {SmsInbox,PhoneSms} from './SmsInbox';
 import {Avatar} from './Avatar';
 import {formatDate,formatTime,prettyVendor,roleLabel,workspaceLabel} from './format';
 import {t,T,LanguagePicker,useI18n,hasChosenLanguage} from './i18n';
@@ -90,6 +90,38 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
   const [nextCollection,setNextCollection]=useState<NextCollection|null>(null);
   const focusTarget=useRef<string|null>(null);
   const [moreOpen,setMoreOpen]=useState(false);
+  const [sheet,setSheet]=useState(false);  // the app's "More" sheet
+  useEffect(()=>{
+    if(!sheet)return;
+    const key=(e:globalThis.KeyboardEvent)=>{if(e.key==='Escape')setSheet(false);};
+    document.addEventListener('keydown',key);
+    document.querySelector<HTMLElement>('.app-sheet-user')?.focus();
+    return ()=>document.removeEventListener('keydown',key);
+  },[sheet]);
+  const [offlineAt,setOfflineAt]=useState(0);  // the app is showing data saved on the phone at this time
+  useEffect(()=>{
+    if(!nativeBuild)return;
+    const saved=(e:Event)=>setOfflineAt((e as CustomEvent<number>).detail);const live=()=>setOfflineAt(0);
+    window.addEventListener('capzoryx:offline-data',saved);window.addEventListener('capzoryx:live-data',live);
+    return ()=>{window.removeEventListener('capzoryx:offline-data',saved);window.removeEventListener('capzoryx:live-data',live);};
+  },[]);
+  const back=useRef({tab:'Overview' as string,sheet:false,chat:false});
+  // Android back: close the sheet or chat, then go Home, then leave the app.
+  useEffect(()=>{
+    if(!nativeBuild)return;
+    let remove:(()=>void)|undefined;let live=true;
+    void import('@capacitor/app').then(async({App})=>{
+      const handle=await App.addListener('backButton',()=>{
+        const now=back.current;
+        if(now.sheet)setSheet(false);
+        else if(now.chat)setChatOpen(false);
+        else if(now.tab!=='Overview'){setTab('Overview');setSelected(null);}
+        else void App.minimizeApp();
+      });
+      if(live)remove=()=>void handle.remove();else void handle.remove();
+    }).catch(()=>{});
+    return ()=>{live=false;remove?.();};
+  },[]);
   const [dismissed,setDismissed]=useState(()=>{try{return localStorage.getItem('capzoryx-email-nudge')==='hidden';}catch{return false;}});
   // A new page starts at the top with a short entrance, unless a deep link is scrolling to a target.
   useEffect(()=>{
@@ -215,18 +247,25 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
     theme:()=>document.querySelector<HTMLButtonElement>('.theme-toggle')?.click(),
     tour:()=>document.querySelector<HTMLButtonElement>('[data-tour-launcher]')?.click(),
   };
-  return <div className="shell"><aside>
-    <Brand/>
-    <SidebarSearch go={(page:SearchPage)=>{setTab(page);setSelected(null);if(page==='Assistant'){setChatLoaded(true);setChatOpen(false);}}} actions={searchActions} hidden={session.role==='owner'?undefined:['payroll','business']}/>
-    <nav aria-label={t('Workspace')} className={moreOpen?'open':undefined}>{tabs.filter(tb=>(tb!=='Payroll'&&tb!=='Business')||session.role==='owner').map(tb=><button key={tb} data-tour={tb} className={primaryTabs.includes(tb)?undefined:'more-item'} aria-current={tab===tb?'page':undefined} onClick={()=>{setTab(tb);setSelected(null);setMoreOpen(false);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}}}><Icon name={tb}/>{t(tabLabel[tb])}</button>)}
-      <button className="more-toggle" aria-expanded={moreOpen} onClick={()=>setMoreOpen(!moreOpen)}><Icon name={moreOpen?'close':'more'}/>{t('More')}</button></nav>
-    <div className="identity">
-      <button className="identity-user" onClick={()=>setTab('Settings')} title={t('Open your profile and settings')}><Avatar profile={profile} name={name}/><span><strong>{name}</strong><small>{roleLabel(session.role)}</small></span></button>
-      {lists.workspaces.length>1&&<><label htmlFor="workspace-switch" className="sr-only">{t('Switch workspace')}</label><select id="workspace-switch" value={session.business_id} disabled={busy} onChange={e=>void switchTo(e.target.value)}>{lists.workspaces.map(w=><option key={w.business_id} value={w.business_id}>{workspaceLabel(w.name)}{w.currency?` · ${w.currency}`:''}{w.role!=='owner'?' · '+t('shared'):''}</option>)}</select></>}
-      <LanguagePicker compact id="language-side" onPicked={code=>{void request('/account/profile',{language:code}).catch(()=>{});}}/>
-      <button className="secondary" onClick={logout}>{t('Sign out')}</button></div></aside>
-    <main id="workspace"><header><div><p className="eyebrow">{workspaceLabel(session.workspace_name||'My workspace')}</p><h1 tabIndex={-1} id="workspace-title">{t(pageTitle[tab])}</h1><p className="muted">{snapshot?t('Up to date as of {date} · {currency}',{date:formatDate(snapshot.as_of),currency}):t('Your business finances in one place')}</p></div>
-      <div className="header-actions"><QuickTour ready={!!snapshot&&!busy} userId={session.user_id} currentPage={tab} navigate={tourNavigate}/><ThemeButton/><button className="secondary icon-button" title={t('Download PDF')} aria-label={exporting?t('Preparing PDF…'):t('Download PDF')} disabled={busy||!snapshot||exporting} onClick={()=>void exportPdf()}><Icon name="download"/></button><button className="secondary icon-button" title={t('Refresh')} aria-label={t('Refresh')} disabled={busy} onClick={()=>void run(refresh)}><span className={busy?'spin':undefined}><Icon name="refresh"/></span></button></div></header>
+  // Android app: payment SMS that arrived since the last visit become wallet payments to review.
+  const smsOwner=nativeBuild&&session.role==='owner'&&snapshot?.currency==='BDT';
+  useEffect(()=>{
+    if(!smsOwner)return;
+    let live=true;const stops:(()=>void)[]=[];
+    const found=(count:number)=>{if(live&&count>0)setMessage(t('{count} new payments from your SMS are ready to review under Invoices.',{count}));};
+    void import('./nativeSms').then(async sms=>{
+      const sync=()=>void sms.syncSms(request,session).then(found).catch(()=>{});
+      sync();
+      stops.push(await sms.listenForSms(request,session,found));
+      const {App}=await import('@capacitor/app');
+      const resume=await App.addListener('resume',sync);
+      stops.push(()=>void resume.remove());
+      if(!live)stops.forEach(stop=>stop());
+    }).catch(()=>{});
+    return ()=>{live=false;stops.forEach(stop=>stop());};
+  },[smsOwner,session.business_id,session.user_id]);// eslint-disable-line react-hooks/exhaustive-deps
+  const body=<>
+      {offlineAt>0&&<p className="notice offline-data" role="status">{t('No connection. Showing your data saved on this phone at {time}. Records you add are kept on the phone and sent when you are back online.',{time:new Date(offlineAt).toLocaleString()})}</p>}
       <CurrencyControls key={currency} ready={!!snapshot}/>
       <div aria-live="polite" role="status">{busy&&<p className="notice">{t('Loading your latest data…')}</p>}{message&&<p className="success">{message}</p>}</div>
       {error&&<p className="error" role="alert">{error}</p>}
@@ -288,6 +327,7 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
           {!audit.events.length&&<p>{t('No activity yet.')}</p>}
           <ol className="audit-list">{audit.events.slice().reverse().map(event=>{const p=(event.payload||{}) as Record<string,unknown>;const who=event.actor_id===session.user_id?'You':t('A teammate');return <li key={event.event_id}><strong>{t(AUDIT_TEXT[event.kind]||'')||event.kind.replaceAll('_',' ').toLowerCase()}</strong><small>{formatTime(event.created_at)} · {who}{typeof p.note==='string'&&p.note?` · ${p.note}`:''}{event.kind==='EXECUTED'&&typeof p.cash_delta_minor==='number'?` · ${nativeMoney(Math.abs(p.cash_delta_minor))}`:''}{event.kind==='DENIED'?' · blocked by a safety rule':''}</small>{event.kind==='CASH_CORRECTED'&&<CorrectionSummary payload={p}/>}</li>;})}</ol>
           <details className="advanced"><summary>{t('For auditors')}</summary><p className="muted small">{t('Each entry is linked to the one before it and signed by the server, so any later change is detectable.')} {t('This is not a claim of protection from the system administrator.')}</p><button className="secondary" onClick={()=>save(new Blob([JSON.stringify(audit,null,2)],{type:'application/json'}),'capzoryx-activity-log.json')}>{t('Download the full signed log')}</button></details></>:<p>{t('Activity is unavailable. Refresh to try again.')}</p>}</Panel>}
+      {tab==='Data'&&nativeBuild&&session.role==='owner'&&snapshot?.currency==='BDT'&&<PhoneSms request={request} scope={session} onAdded={()=>void refresh()}/>}
       {tab==='Data'&&<>
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><KhataPage request={request} session={session} onSaved={refresh}/></Suspense></LazyBoundary>}
         {canAddRecords&&<QuickAdd request={request} revision={revision} profile={profile} owner={session.role==='owner'} cloudAvailable={cloudAvailable} hisabAvailable={hisabAvailable} onSaved={async()=>{await refresh();}}/>}
@@ -295,11 +335,46 @@ function WorkspaceContent({token,session,logout,expired,changeSession,setCurrenc
         {session.role==='owner'&&snapshot&&<LazyBoundary><Suspense fallback={null}><CashCorrections session={session} events={events} request={request} onSaved={refresh}/></Suspense></LazyBoundary>}
         {session.role==='owner'&&snapshot&&<div id="statement-review" tabIndex={-1}><LazyBoundary><Suspense fallback={null}><StatementImport initiallyOpen={openStatement} request={request} businessId={session.business_id} userId={session.user_id} onSaved={refresh}/></Suspense></LazyBoundary></div>}
         {session.role==='owner'&&<ImportEvidence busy={busy} enabled={!!snapshot&&snapshot.opening_balance_minor===0&&snapshot.income_minor===0&&snapshot.expenses_minor===0&&invoices.length===0&&proposals.length===0} upload={importRaw}/>}</>}
-      {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings connections={session.role==='owner'?<><TelegramLink request={request}/><SmsInbox request={request}/><ReadOnlyTokens request={request}/></>:undefined} onBusinessSaved={v=>setSetup(x=>x&&{...x,step:v.step,completed:v.completed})} session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
+      {tab==='Settings'&&<LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening settings…')}</section>}><Settings connections={session.role==='owner'?<><TelegramLink request={request}/>{nativeBuild&&snapshot?.currency==='BDT'&&<PhoneSms request={request} scope={session}/>}<SmsInbox request={request}/><ReadOnlyTokens request={request}/></>:undefined} onBusinessSaved={v=>setSetup(x=>x&&{...x,step:v.step,completed:v.completed})} session={session} profile={profile} request={request} reloadProfile={reloadProfile} changeSession={changeSession} lists={lists} reloadLists={reloadLists} onExportPdf={exportPdf} onExportJson={exportJson} exporting={exporting} cloudAvailable={cloudAvailable}/></Suspense></LazyBoundary>}
       {chatLoaded&&<div id="workspace-assistant" hidden={tab!=='Assistant'&&!chatOpen} className={tab==='Assistant'?'assistant-page':'chat-float'} onKeyDown={(e:KeyboardEvent)=>{if(e.key==='Escape'&&tab!=='Assistant')closeChat();}}><LazyBoundary><Suspense fallback={<section className="panel" role="status">{t('Opening assistant…')}</section>}><Assistant visible={tab==='Assistant'||chatOpen} snapshot={snapshot} forecast={baselineMonth} week={week} events={events} invoices={invoices} session={session} profile={profile} cloudAvailable={cloudAvailable} hisabAvailable={hisabAvailable} revision={revision} request={request} onSaved={refresh} onNavigate={action=>{setTab(action);closeChat();}} onProposal={async()=>{await refresh();setTab('Approvals');closeChat();}} onClose={tab==='Assistant'?undefined:closeChat}/></Suspense></LazyBoundary></div>}
-      {tab!=='Assistant'&&<button ref={chatButton} className="chat-launcher" aria-label={chatOpen?t('Close assistant'):t('Open assistant')} aria-expanded={chatOpen} aria-controls="workspace-assistant" onClick={()=>{setChatLoaded(true);setChatOpen(!chatOpen);}}><Icon name="spark"/> <span>{chatOpen?t('Close'):t('Assistant')}</span></button>}
+      {tab!=='Assistant'&&!nativeBuild&&<button ref={chatButton} className="chat-launcher" aria-label={chatOpen?t('Close assistant'):t('Open assistant')} aria-expanded={chatOpen} aria-controls="workspace-assistant" onClick={()=>{setChatLoaded(true);setChatOpen(!chatOpen);}}><Icon name="spark"/> <span>{chatOpen?t('Close'):t('Assistant')}</span></button>}
       {tab==='Audit'&&nativeBuild&&<LazyBoundary><Suspense fallback={null}><AndroidReminders scope={notificationScope}/></Suspense></LazyBoundary>}
       {snapshot&&<CaptureSync session={session} currency={snapshot.currency} request={request} onSaved={refresh} onInvoices={()=>setTab('Invoices')}/>}
+</>;
+  back.current={tab,sheet,chat:chatOpen};
+  const go=(tb:Tab)=>{setTab(tb);setSelected(null);setMoreOpen(false);setSheet(false);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}};
+  const appTabs:Tab[]=(['Overview','Business','Data','Assistant'] as Tab[]).filter(tb=>(tb!=='Business'||session.role==='owner')&&(tb!=='Data'||canAddRecords));
+  const sheetTabs=tabs.filter(tb=>!appTabs.includes(tb)&&((tb!=='Payroll'&&tb!=='Business')||session.role==='owner'));
+  const switcher=lists.workspaces.length>1&&<><label htmlFor="workspace-switch" className="sr-only">{t('Switch workspace')}</label><select id="workspace-switch" value={session.business_id} disabled={busy} onChange={e=>void switchTo(e.target.value)}>{lists.workspaces.map(w=><option key={w.business_id} value={w.business_id}>{workspaceLabel(w.name)}{w.currency?` · ${w.currency}`:''}{w.role!=='owner'?' · '+t('shared'):''}</option>)}</select></>;
+  if(nativeBuild)return <div className="app-shell">
+    <header className="app-bar"><button className="app-avatar" onClick={()=>setSheet(true)} aria-label={t('Open your profile and settings')}><Avatar profile={profile} name={name}/></button>
+      <div className="app-bar-title"><h1 tabIndex={-1} id="workspace-title">{t(tabLabel[tab])}</h1><small>{workspaceLabel(session.workspace_name||'My workspace')}{snapshot?' · '+currency:''}</small></div>
+      <button className="app-icon" aria-label={t('Refresh')} disabled={busy} onClick={()=>void run(refresh)}><span className={busy?'spin':undefined}><Icon name="refresh"/></span></button></header>
+    <main id="workspace" className="app-content">{body}</main>
+    <nav className="app-tabs" aria-label={t('Workspace')}>{appTabs.map(tb=><button key={tb} data-tour={tb} className={tb==='Data'?'app-tab-add':undefined} aria-current={tab===tb&&!sheet?'page':undefined} onClick={()=>go(tb)}><Icon name={tb}/><span>{t(tb==='Overview'?T('Home'):tb==='Data'?T('Add'):tabLabel[tb])}</span></button>)}
+      <button aria-expanded={sheet} aria-current={sheet||sheetTabs.includes(tab)?'page':undefined} onClick={()=>setSheet(!sheet)}><Icon name="more"/><span>{t('More')}</span></button></nav>
+    {sheet&&<div className="app-sheet-backdrop" onClick={e=>{if(e.target===e.currentTarget)setSheet(false);}}><section className="app-sheet" role="dialog" aria-modal="true" aria-label={t('More')}>
+      <span className="app-sheet-handle" aria-hidden="true"/>
+      <button className="app-sheet-user" onClick={()=>go('Settings')}><Avatar profile={profile} name={name}/><span><strong>{name}</strong><small>{roleLabel(session.role)} · {workspaceLabel(session.workspace_name||'My workspace')}</small></span><Icon name="arrow"/></button>
+      <div className="app-sheet-grid">{sheetTabs.map(tb=><button key={tb} className="secondary" aria-current={tab===tb?'page':undefined} onClick={()=>go(tb)}><Icon name={tb}/><span>{t(tabLabel[tb])}</span></button>)}
+        <button className="secondary" disabled={!snapshot||exporting} onClick={()=>{setSheet(false);void exportPdf();}}><Icon name="download"/><span>{exporting?t('Preparing PDF…'):t('Download PDF')}</span></button></div>
+      <div className="app-sheet-row">{switcher}<LanguagePicker compact id="language-sheet" onPicked={code=>{void request('/account/profile',{language:code}).catch(()=>{});}}/><ThemeButton/></div>
+      <button className="secondary app-sheet-signout" onClick={logout}>{t('Sign out')}</button>
+    </section></div>}
+  </div>;
+  return <div className="shell"><aside>
+    <Brand/>
+    <SidebarSearch go={(page:SearchPage)=>{setTab(page);setSelected(null);if(page==='Assistant'){setChatLoaded(true);setChatOpen(false);}}} actions={searchActions} hidden={session.role==='owner'?undefined:['payroll','business']}/>
+    <nav aria-label={t('Workspace')} className={moreOpen?'open':undefined}>{tabs.filter(tb=>(tb!=='Payroll'&&tb!=='Business')||session.role==='owner').map(tb=><button key={tb} data-tour={tb} className={primaryTabs.includes(tb)?undefined:'more-item'} aria-current={tab===tb?'page':undefined} onClick={()=>{setTab(tb);setSelected(null);setMoreOpen(false);if(tb==='Assistant'){setChatLoaded(true);setChatOpen(false);}}}><Icon name={tb}/>{t(tabLabel[tb])}</button>)}
+      <button className="more-toggle" aria-expanded={moreOpen} onClick={()=>setMoreOpen(!moreOpen)}><Icon name={moreOpen?'close':'more'}/>{t('More')}</button></nav>
+    <div className="identity">
+      <button className="identity-user" onClick={()=>setTab('Settings')} title={t('Open your profile and settings')}><Avatar profile={profile} name={name}/><span><strong>{name}</strong><small>{roleLabel(session.role)}</small></span></button>
+      {switcher}
+      <LanguagePicker compact id="language-side" onPicked={code=>{void request('/account/profile',{language:code}).catch(()=>{});}}/>
+      <button className="secondary" onClick={logout}>{t('Sign out')}</button></div></aside>
+    <main id="workspace"><header><div><p className="eyebrow">{workspaceLabel(session.workspace_name||'My workspace')}</p><h1 tabIndex={-1} id="workspace-title">{t(pageTitle[tab])}</h1><p className="muted">{snapshot?t('Up to date as of {date} · {currency}',{date:formatDate(snapshot.as_of),currency}):t('Your business finances in one place')}</p></div>
+      <div className="header-actions"><QuickTour ready={!!snapshot&&!busy} userId={session.user_id} currentPage={tab} navigate={tourNavigate}/><ThemeButton/><button className="secondary icon-button" title={t('Download PDF')} aria-label={exporting?t('Preparing PDF…'):t('Download PDF')} disabled={busy||!snapshot||exporting} onClick={()=>void exportPdf()}><Icon name="download"/></button><button className="secondary icon-button" title={t('Refresh')} aria-label={t('Refresh')} disabled={busy} onClick={()=>void run(refresh)}><span className={busy?'spin':undefined}><Icon name="refresh"/></span></button></div></header>
+      {body}
       <footer>{!nativeBuild&&<InstallControl/>}</footer></main></div>;
 }
 

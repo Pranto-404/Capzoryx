@@ -6,6 +6,7 @@ import {lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {accountRequest} from './api';
 import type {Session} from './types';
 import {Auth} from './Auth';
+import {cacheScope,forgetAll,keepSession,savedSession} from './offlineCache';
 import {EmployeeJoin,EmployeePortal} from './EmployeePortal';
 const Workspace=lazy(()=>import('./Workspace'));
 const JOIN_KEY='safeledger-join-code';
@@ -28,12 +29,14 @@ export default function App() {
   const [online,setOnline]=useState(navigator.onLine && !document.querySelector('meta[name="capzoryx-offline"]'));
   const [capture,setCapture]=useState(false);
   useEffect(()=>{
-    const connected=()=>{setAuth(null);setOnline(true);setCapture(false);}, disconnected=()=>setOnline(false);  // back online: return to the app, which syncs queued records
+    const connected=()=>{if(!nativeBuild)setAuth(null);setOnline(true);setCapture(false);}, disconnected=()=>setOnline(false);  // back online: return to the app, which syncs queued records
     window.addEventListener('online',connected);window.addEventListener('offline',disconnected);
     return ()=>{window.removeEventListener('online',connected);window.removeEventListener('offline',disconnected);};
   },[]);
 
-  const [auth,setAuth]=useState<{session:Session}|null>(null);
+  // The Android app opens the last account straight away (also offline); the server check below confirms or ends it.
+  const [auth,setAuthState]=useState<{session:Session}|null>(()=>{const s=savedSession();if(s)cacheScope(s);return s?{session:s}:null;});
+  const setAuth=(value:{session:Session}|null)=>{if(value){keepSession(value.session);cacheScope(value.session);}setAuthState(value);};
   const [recoveryCode,setRecoveryCode]=useState('');
   const [error,setError]=useState('');const [notice,setNotice]=useState('');
   const [joinCode,setJoinCode]=useState(takeJoinCode);
@@ -59,7 +62,7 @@ export default function App() {
         try{
           const response=await apiFetch('/api/health',{cache:'no-store',signal:AbortSignal.any([abort.signal,AbortSignal.timeout(8000)])});
           if(response.ok && (await response.json()).status==='ok' && !abort.signal.aborted){
-            setAuth(null);setOnline(true);setCapture(false);return;
+            if(!nativeBuild)setAuth(null);setOnline(true);setCapture(false);return;
           }
         }catch{/* Offline or a sleeping service. Keep the draft available locally. */}
       }
@@ -79,7 +82,7 @@ export default function App() {
           credentials:'same-origin',
           signal:AbortSignal.any([controller.signal,AbortSignal.timeout(90000)])
         });
-        if(response.status===401&&!controller.signal.aborted){setAuth(null);await window.capzoryxStore.setScope(null);}
+        if(response.status===401&&!controller.signal.aborted){forgetAll();setAuth(null);await window.capzoryxStore.setScope(null);}
         if(!response.ok)return;
         const session=await response.json() as Session;
         if(!controller.signal.aborted&&!session.guest&&session.workspace_kind!=='demo'){
@@ -97,7 +100,7 @@ export default function App() {
     void accountRequest<Session>('/account/join',{code}).then(session=>{setAuth({session});setNotice(`You joined ${session.workspace_name||'the workspace'} as ${session.role}.`);}).catch(e=>setError(e instanceof Error?e.message:'The invitation could not be used.'));
   },[auth,joinCode]);
   function enter(session:Session){restoreRequest.current?.abort();setRecoveryCode(session.recovery_code||'');setError('');setAuth({session:{...session,recovery_code:undefined}});}
-  async function signout(){try{await accountRequest('/auth/logout',{});}catch{setError('Could not sign out. Please retry.');return;}try{Object.keys(sessionStorage).filter(k=>k.startsWith('safeledger-financing-quotes-v1:')).forEach(k=>sessionStorage.removeItem(k));}catch{/* Storage may be unavailable. */}setAuth(null);setError('');setNotice('');setRecoveryCode('');
+  async function signout(){try{await accountRequest('/auth/logout',{});}catch{setError('Could not sign out. Please retry.');return;}try{Object.keys(sessionStorage).filter(k=>k.startsWith('safeledger-financing-quotes-v1:')).forEach(k=>sessionStorage.removeItem(k));}catch{/* Storage may be unavailable. */}forgetAll();setAuth(null);setError('');setNotice('');setRecoveryCode('');
     try{
       for(const key of Object.keys(localStorage))if(key.startsWith('capzoryx-push:'))localStorage.removeItem(key);
       const reg=await navigator.serviceWorker?.getRegistration();
@@ -113,10 +116,10 @@ export default function App() {
   useEffect(()=>{
     if(!('BroadcastChannel' in window))return;
     const channel=new BroadcastChannel('capzoryx-account');
-    channel.onmessage=event=>{if(event.data==='logout'){setAuth(null);setRecoveryCode('');}};
+    channel.onmessage=event=>{if(event.data==='logout'){forgetAll();setAuth(null);setRecoveryCode('');}};
     return ()=>channel.close();
   },[]);
-  function expired(){void window.capzoryxStore.setScope(null).catch(()=>{});setAuth(null);setError('Your session ended. Sign in again to continue.');}
+  function expired(){forgetAll();void window.capzoryxStore.setScope(null).catch(()=>{});setAuth(null);setError('Your session ended. Sign in again to continue.');}
   if(capture)return <OfflineCapture onClose={()=>setCapture(false)}/>;
   return <>
     {!online&&<p className="notice banner offline-banner" role="status">{t('You are offline or the server is waking up. Sign-in and live data return by themselves when the connection is back.')} <button className="link" onClick={()=>setCapture(true)}>{t('Record a payment offline')}</button></p>}

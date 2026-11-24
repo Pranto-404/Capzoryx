@@ -38,6 +38,7 @@ def schema(db):
 
 class Share(Contract):
     text: str = Field(min_length=1, max_length=2000)
+    source: str = Field(default='shared_text', pattern='^(shared_text|sms)$')  # sms: read by the Android app with the owner's permission
     expected_business_id: RecordId | None = None
     expected_user_id: RecordId | None = None
 
@@ -92,7 +93,7 @@ def share(body: Share, actor=Depends(principal), db=Depends(db_connection)):
         stamp=int(datetime.combine(payment.occurred_on,time(),BD).timestamp())
         db.execute("""INSERT INTO payment_events(id,business_id,source,provider,txn_id,amount_minor,direction,counterparty,
                       key_tag,occurred_at,raw_hash,flags,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                   (identity,business,'shared_text',payment.provider,payment.txn_id,payment.amount_minor,payment.direction,
+                   (identity,business,body.source,payment.provider,payment.txn_id,payment.amount_minor,payment.direction,
                     counterparty,key_tag(key) if key else None,stamp,digest,json.dumps(payment.flags),sec.now()))
         sec.audit(db,current,identity,'PAYMENT_SHARED',dict(event_id=identity,provider=payment.provider))
         enqueue(db,business,'payment_shared',identity)

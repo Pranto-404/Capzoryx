@@ -698,3 +698,66 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
   .insights-table td[data-label]::before{content:attr(data-label);color:var(--muted);font-size:12px}
   .insights-table td small{text-align:right}
 }
+
+/* ---------- Android app (native build): app bar, bottom tabs, bottom sheet ---------- */
+.native-app body{overscroll-behavior-y:none;-webkit-tap-highlight-color:transparent;background:var(--page,#f4f6f4)}
+.native-app .simulation{display:none}
+.app-shell{min-height:100dvh;background:var(--page,#f4f6f4)}
+.app-bar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px 14px;background:var(--surface,#fff);border-bottom:1px solid var(--line,#e1e8e5)}
+.app-bar-title{flex:1;min-width:0}
+.app-bar h1{font-size:19px;line-height:1.25;letter-spacing:-.01em;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-bar small{font-size:11.5px;margin:1px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-bar .app-avatar,.app-bar .app-icon{flex:0 0 auto;width:42px;height:42px;min-height:42px;padding:0;border-radius:50%;background:transparent;border:0;color:var(--text,#193336);box-shadow:none}
+.app-bar .app-avatar .avatar{width:36px;height:36px;font-size:13px}
+.app-bar .app-icon:active,.app-bar .app-avatar:active{background:var(--surface-soft,#eef3f1)}
+.app-content{padding:14px 14px calc(92px + env(safe-area-inset-bottom));max-width:760px;margin:0 auto}
+.app-content .panel{padding:16px;border-radius:18px;margin-bottom:14px;box-shadow:none}
+.app-content .panel h2{font-size:17px;margin-bottom:10px}
+.app-content .metric{border-radius:16px;padding:16px}
+.app-content .notice,.app-content .success,.app-content .error{border-radius:12px}
+.app-content button{min-height:46px;border-radius:12px}
+.app-content .table-wrap{margin:12px -4px}
+.app-tabs{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;padding:6px 4px calc(6px + env(safe-area-inset-bottom));background:var(--surface,#fff);border-top:1px solid var(--line,#e1e8e5);box-shadow:0 -6px 20px #0f2a2210}
+.app-tabs button{flex:1 1 0;min-width:0;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:4px 2px;background:none;border:0;box-shadow:none;color:var(--muted,#5d7370);font-size:11px;font-weight:600;border-radius:14px}
+.app-tabs button .ui-icon{width:22px;height:22px;padding:3px 14px;box-sizing:content-box;border-radius:14px;transition:background .15s}
+.app-tabs button[aria-current=page]{color:var(--text,#193336)}
+.app-tabs button[aria-current=page] .ui-icon{background:color-mix(in srgb,var(--brand,#0f9b7c) 18%,transparent);color:var(--brand,#0f9b7c)}
+.app-tabs button span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app-tabs .app-tab-add .ui-icon{background:var(--brand,#0f9b7c);color:var(--brand-ink,#fff);border-radius:16px}
+.app-tabs .app-tab-add[aria-current=page] .ui-icon{background:var(--brand,#0f9b7c);color:var(--brand-ink,#fff);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand,#0f9b7c) 25%,transparent)}
+.app-sheet-backdrop{position:fixed;inset:0;z-index:60;background:#05141180;display:flex;align-items:flex-end;animation:app-fade .15s ease-out}
+.app-sheet{width:100%;max-height:88dvh;overflow-y:auto;background:var(--surface,#fff);border-radius:22px 22px 0 0;padding:8px 16px calc(18px + env(safe-area-inset-bottom));animation:app-rise .2s ease-out}
+.app-sheet-handle{display:block;width:40px;height:4px;border-radius:4px;background:var(--line,#cfd9d5);margin:4px auto 12px}
+.app-sheet-user{width:100%;display:flex;align-items:center;gap:12px;text-align:left;background:var(--surface-soft,#f3f7f5);border:0;color:var(--text,#193336);border-radius:16px;padding:12px;margin-bottom:14px;box-shadow:none}
+.app-sheet-user>span:not(.avatar){flex:1;min-width:0}.app-sheet-user .avatar{width:44px;height:44px}.app-sheet-user strong{display:block;text-transform:capitalize}.app-sheet-user small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-sheet-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.app-sheet-grid button{flex-direction:column;gap:6px;min-height:84px;padding:10px 6px;border-radius:16px;font-size:12px;font-weight:600;text-align:center}
+.app-sheet-grid button .ui-icon{width:22px;height:22px}
+.app-sheet-grid button[aria-current=page]{border-color:var(--brand,#0f9b7c);color:var(--brand,#0f9b7c)}
+.app-sheet-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.app-sheet-row select{flex:1 1 160px;width:auto}
+.app-sheet-signout{width:100%}
+@keyframes app-rise{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
+@keyframes app-fade{from{opacity:0}to{opacity:1}}
+.native-app .chat-launcher{display:none}
+.app-shell .assistant-page{height:calc(100dvh - 160px - env(safe-area-inset-top) - env(safe-area-inset-bottom));min-height:380px}
+.app-shell .currency-controls{margin-bottom:12px}
+.phone-sms{border-color:color-mix(in srgb,var(--brand,#0f9b7c) 40%,var(--line,#dce5de))}
+/* the website's nav rules must not reach the app's tab bar */
+.app-shell nav.app-tabs button,.app-shell nav.app-tabs button:hover,.app-shell nav.app-tabs button[aria-current]{background:none!important;border:0!important;box-shadow:none!important;transform:none!important;text-align:center}
+.app-shell nav.app-tabs button span{display:block!important;width:auto!important;font-size:11px;color:inherit!important}
+.app-shell nav.app-tabs button{color:var(--muted,#5d7370)}
+.app-shell nav.app-tabs button[aria-current=page]{color:var(--text,#193336)}
+.business-data-file{display:flex;align-items:center;gap:10px;margin:12px 0}
+.business-data-file label{margin:0;display:inline-flex;align-items:center;min-height:42px;padding:8px 16px;border:1px solid var(--line,#cfd9d5);border-radius:10px;background:var(--surface,#fff);cursor:pointer}
+/* App sign-in: the form first, no marketing page */
+.native-auth{min-height:100dvh;padding:calc(24px + env(safe-area-inset-top)) 16px 24px!important;display:flex!important;flex-direction:column;gap:14px;align-items:stretch}
+.native-auth .welcome-story{text-align:center}
+.native-auth .welcome-story .brand{justify-content:center;margin-bottom:8px}
+.native-auth .welcome-story h1{font-size:26px!important;margin:6px 0}
+.native-auth .welcome-copy,.native-auth .welcome-benefits,.native-auth .welcome-example,.native-auth .welcome-story>:not(.brand):not(h1):not(.eyebrow){display:none}
+.native-auth .welcome-entry{max-width:none}
+.native-auth .auth-card{border-radius:22px;padding:20px!important}
+.native-app .aurora{display:none}
+@media(prefers-reduced-motion:reduce){.app-sheet,.app-sheet-backdrop{animation:none}}
+.app-content>div[role=status]:empty{display:none}

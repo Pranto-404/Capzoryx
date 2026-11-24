@@ -17,5 +17,6 @@ if (!nativeBuild && import.meta.env.PROD && 'serviceWorker' in navigator) {
 }
 
 if(nativeBuild){
+  document.documentElement.classList.add('native-app');
   void import('./nativeLinks').then(module=>module.listenToNativeLinks());
 }
