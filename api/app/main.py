@@ -44,6 +44,8 @@ def _cors_origins() -> list[str]:
                    "http://127.0.0.1:4173", "http://localhost:4173"]
     app_host=os.environ.get("CAPZORYX_APP_WEB_ORIGIN","").strip().rstrip("/")
     if app_host:origins.append(app_host)
+    fallback_host=os.environ.get("CAPZORYX_FALLBACK_WEB_ORIGIN","").strip().rstrip("/")
+    if fallback_host:origins.append(fallback_host)
     return [*origins,app_sessions.ORIGIN]
 
 SCHEMA_VERSION = 1
