@@ -104,6 +104,31 @@ def test_speech_uses_whisper_then_gemini(monkeypatch):
     assert calls[:2] == ['api.groq.com/openai/v1/audio/transcriptions'] * 2  # large-v3, then turbo
 
 
+def test_uncertain_bangla_audio_uses_a_second_provider_and_preserves_audio_format(monkeypatch):
+    calls = []
+
+    def handle(request):
+        calls.append(request.url.host)
+        if request.url.host == 'api.groq.com':
+            assert b'note.wav' in request.content
+            assert b'verbose_json' in request.content
+            return httpx.Response(200, json={'text': 'ভুল অংশ', 'segments': [
+                {'text': 'ভুল অংশ', 'avg_logprob': -1.8},
+            ]})
+        return httpx.Response(200, json={'candidates': [{'content': {'parts': [
+            {'text': 'রফিককে দুশো টাকা দিলাম।'},
+        ]}}]})
+
+    monkeypatch.setattr(vb, 'TRANSPORT', httpx.MockTransport(handle))
+    monkeypatch.setenv('CAPZORYX_CHAT_GROQ_KEY', 'gsk_test')
+    monkeypatch.setenv('CAPZORYX_CHAT_GEMINI_KEY', 'gm_test')
+    assert vb.transcribe(b'x' * 2000, 'audio/wav', 'bn', 'বাংলা')[0] == 'রফিককে দুশো টাকা দিলাম।'
+    assert calls == ['api.groq.com', 'generativelanguage.googleapis.com']
+    calls.clear()
+    assert vb.transcribe(b'x' * 2000, 'audio/wav', 'bn', 'বাংলা', alternate=True)[0] == 'রফিককে দুশো টাকা দিলাম।'
+    assert calls == ['generativelanguage.googleapis.com']
+
+
 def test_dedicated_speech_capability_does_not_require_cloud_chat(world, monkeypatch):  # noqa: F811
     c, _ = world
     monkeypatch.setattr('api.app.gateway.disclosure', lambda: [])

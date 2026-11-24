@@ -832,3 +832,7 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
 main.welcome > .welcome-story > .competition-cta { order: 5; justify-self: start; }
 .competition-draft { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 20px; }
 .competition-draft label { margin-block: 0; min-width: 130px; }
+.voice-clip { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-block: 12px; }
+.voice-clip audio { width: min(100%, 360px); }
+.voice-alternate { margin-block: 12px; }
+.voice-alternate textarea { margin-block-end: 8px; }

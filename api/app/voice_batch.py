@@ -20,6 +20,7 @@ import re
 import time
 import unicodedata
 from datetime import date, timedelta
+from typing import Literal
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -553,20 +554,22 @@ def split_note(transcript, today, currency, digits, *, use_ai=True, deadline=Non
 # ---------- speech to text ----------
 WHISPER_MODELS = ('whisper-large-v3', 'whisper-large-v3-turbo')
 TRANSCRIPTION_BUDGET_SECONDS = 52
-VOCABULARY = ('টাকা হাজার শো লাখ বিকাশ নগদ রকেট ভাড়া বেতন বিল বাকি বিক্রি খরচ দোকান মাল ডেলিভারি গতকাল পরশু আজ '
-              'taka hajar bKash Nagad')
+SPEECH_PROMPTS = {
+    'bn': ('বাংলা বা বাংলিশে একজন দোকানির কথার হুবহু প্রতিলিপি। টাকার অঙ্ক, নাম, তারিখ, বিরতি, ধার চেয়েছিল, '
+           'দিতে পেরেছি, দেয় নাই, হাতে আছে, পাঁচশো, দুশো, ভাড়া, খরচ, বিকাশ, নগদ, bKash, taka, hajar।'),
+    'en': 'Verbatim small-business voice note. Keep names, amounts, dates, corrections and negatives as spoken.',
+}
 
 
-def _vocabulary(db, business):
-    """Names the owner uses (suppliers and customers) help the speech engine spell them; at most a few dozen words."""
+def _vocabulary(db, business, language):
+    """Give the transcriber a few relevant vendor spellings in addition to its language prompt."""
     names = set()
     try:
         ds = sec.original_dataset(db, business)
         names |= {i.vendor_id.replace('-', ' ') for i in ds.invoices[-60:]}
     except Exception:  # noqa: BLE001 - a hint only
         pass
-    hint = VOCABULARY + ' ' + ' '.join(sorted(names)[:30])
-    return hint[:600]
+    return SPEECH_PROMPTS[language] + ' ' + ', '.join(sorted(names)[:12])[:160]
 
 
 def _speech_timeout(deadline, per_attempt=14):
@@ -576,31 +579,50 @@ def _speech_timeout(deadline, per_attempt=14):
     return httpx.Timeout(remaining, connect=min(4, remaining), write=min(4, remaining))
 
 
-def whisper(audio, mime, language, hint, deadline):
+def _uncertain_whisper(segments):
+    """Use each segment's reported confidence without rewriting or discarding any words."""
+    if not isinstance(segments, list):
+        return False
+    for segment in segments:
+        if not isinstance(segment, dict) or not str(segment.get('text') or '').strip():
+            continue
+        if any(isinstance(segment.get(key), (float, int)) and check(segment[key]) for key, check in (
+            ('avg_logprob', lambda value: value < -1.4),
+            ('compression_ratio', lambda value: value > 2.8),
+        )):
+            return True
+    return False
+
+
+def whisper(audio, mime, language, hint, deadline, models=WHISPER_MODELS):
     from api.app.market import groq_key
     key = groq_key()
     if not key:
-        return None, 'groq: no key'
+        return None, 'groq: no key', False
     reasons = []
-    for model in WHISPER_MODELS:
-        timeout = _speech_timeout(deadline)
+    extensions = {'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'mp4',
+                  'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-m4a': 'm4a', 'audio/aac': 'aac'}
+    extension = extensions[mime.split(';')[0]]
+    for model in models:
+        timeout = _speech_timeout(deadline, 24 if model == WHISPER_MODELS[0] else 14)
         if timeout is None:
             break
         try:
             with httpx.Client(transport=TRANSPORT, trust_env=False, follow_redirects=False, timeout=timeout) as client:
                 response = client.post('https://api.groq.com/openai/v1/audio/transcriptions',
                                        headers={'Authorization': 'Bearer ' + key},
-                                       data={'model': model, 'language': language, 'temperature': '0', 'response_format': 'json',
+                                       data={'model': model, 'language': language, 'temperature': '0', 'response_format': 'verbose_json',
                                              'prompt': hint},
-                                       files={'file': ('note.' + ('ogg' if 'ogg' in mime else 'mp4' if 'mp4' in mime else 'webm'), audio, mime)})
+                                       files={'file': (f'note.{extension}', audio, mime)})
             if response.status_code == 200:
-                text = str(response.json().get('text') or '').strip()
+                body = response.json()
+                text = str(body.get('text') or '').strip()
                 if text:
-                    return text, model
+                    return text, model, _uncertain_whisper(body.get('segments'))
             reasons.append(f'{model} {response.status_code}')
-        except (httpx.HTTPError, ValueError) as error:
+        except (httpx.HTTPError, ValueError, AttributeError) as error:
             reasons.append(f'{model} {type(error).__name__}')
-    return None, '; '.join(reasons)
+    return None, '; '.join(reasons), False
 
 
 def _gemini_speech_key():
@@ -623,7 +645,8 @@ def gemini_transcript(audio, mime, language, hint, deadline):
         return None, 'gemini: no key'
     ask = ('Transcribe this voice note exactly as spoken, in the language spoken ('
            + ('Bangla, write Bangla words in Bangla script' if language == 'bn' else 'English') +
-           '). Write amounts as the speaker said them. Do not add, translate or summarise anything. '
+           '). Preserve names, amounts, negations, requests, cash balances and every self-correction in spoken order. '
+           'Use punctuation at natural pauses. Never add, translate or summarise anything. Write [unclear] for an unreadable word. '
            'Words that may appear: ' + hint)
     body = {'contents': [{'parts': [{'inline_data': {'mime_type': mime.split(';')[0], 'data': base64.b64encode(audio).decode()}},
                                     {'text': ask}]}], 'generationConfig': {'temperature': 0}}
@@ -642,7 +665,7 @@ def gemini_transcript(audio, mime, language, hint, deadline):
                 if text:
                     return text, model
             reasons.append(f'{model} {response.status_code}')
-        except (httpx.HTTPError, ValueError, KeyError, IndexError) as error:
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
             reasons.append(f'{model} {type(error).__name__}')
     return None, '; '.join(reasons)
 
@@ -668,21 +691,29 @@ def hf_transcript(audio, mime, language, hint, deadline):
         return None, f'hf {type(error).__name__}'
 
 
-def transcribe(audio, mime, language, hint):
+def transcribe(audio, mime, language, hint, alternate=False):
     deadline = time.monotonic() + TRANSCRIPTION_BUDGET_SECONDS
-    text, used = whisper(audio, mime, language, hint, deadline)
-    if text:
-        return text, used
-    log.warning('voice note: whisper unavailable (%s)', used)
-    text, used2 = gemini_transcript(audio, mime, language, hint, deadline)
-    if text:
-        return text, used2
-    log.warning('voice note: gemini unavailable (%s)', used2)
-    text, used3 = hf_transcript(audio, mime, language, hint, deadline)
-    if text:
-        return text, used3
-    log.warning('voice note: hugging face unavailable (%s)', used3)
-    return None, None
+    args = (audio, mime, language, hint, deadline)
+    if alternate:
+        text, model = gemini_transcript(*args)
+        if text:
+            return text, model
+        text, model, _ = whisper(*args, models=WHISPER_MODELS[::-1])
+        if text:
+            return text, model
+        return hf_transcript(*args)
+    text, model, uncertain = whisper(*args)
+    if text and not uncertain:
+        return text, model
+    if not text:
+        log.warning('voice note: whisper unavailable (%s)', model)
+    backup, backup_model = gemini_transcript(*args)
+    if backup:
+        return backup, backup_model
+    backup, backup_model = hf_transcript(*args)
+    if backup:
+        return backup, backup_model
+    return (text, model) if text else (None, None)
 
 
 def speech_available():
@@ -696,6 +727,7 @@ class VoiceNote(Contract):
     mime: str = Field(pattern=r'^audio/(webm|ogg|mp4|mpeg|wav|x-m4a|aac)(;codecs=[a-z0-9.]+)?$')
     language: str = Field(pattern=r'^(bn|en)$')
     consent: StrictBool
+    mode: Literal['primary', 'alternate'] = 'primary'
 
 
 class NoteText(Contract):
@@ -733,11 +765,12 @@ def voice_note(body: VoiceNote, actor=Depends(principal), db=Depends(db_connecti
     if not 1000 <= len(audio) <= MAX_AUDIO_BYTES:
         sec.fail(422, 'INVALID_VOICE_DURATION')
     with sec.transaction(db):
-        hint = _vocabulary(db, actor.business_id)
-    text, model = transcribe(audio, body.mime, body.language, hint)
+        hint = _vocabulary(db, actor.business_id, body.language)
+    text, model = transcribe(audio, body.mime, body.language, hint, alternate=body.mode == 'alternate')
     if not text:
         sec.fail(503, 'SPEECH_SERVICE_BUSY')
-    return dict(transcript=text[:MAX_TRANSCRIPT], engine='whisper' if 'whisper' in model else 'gemini', simulation_only=True)
+    return dict(transcript=text[:MAX_TRANSCRIPT], engine='whisper' if 'whisper' in model else 'gemini',
+                model=model, truncated=len(text) > MAX_TRANSCRIPT, simulation_only=True)
 
 
 @router.post('/batch-drafts')

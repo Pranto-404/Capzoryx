@@ -18,11 +18,13 @@ const DROPPED:Record<string,string>={
   AMOUNT_NOT_SAID:T('The amount was not clearly said.'),
   AMBIGUOUS_AMOUNT:T('Say each payment and its amount in a separate sentence.'),
   AMOUNT_OUT_OF_RANGE:T('This amount is outside the supported range.'),
+  BALANCE_ONLY:T('This amount is a balance mentioned in the story.'),
   CURRENCY_MISMATCH:T('Record this payment in a workspace for its currency.'),
   NOT_IN_NOTE:T('These words do not appear together in the note.'),
   NOT_PAID:T('The note says the payment did not happen.'),
   PLANNED:T('The note describes a future payment.'),
   QUESTION:T('The note asks a question.'),
+  REQUESTED_ONLY:T('This amount was requested. Record the amount actually exchanged.'),
   TOO_MANY_ENTRIES:T('Split the note into smaller batches of up to 40 entries.'),
 };
 // Server warnings, listed so they are translated with the rest of the page.
@@ -50,8 +52,8 @@ function toBase64(blob:Blob):Promise<string>{
 export function VoiceNote({request,revision,currency,onSaved}:{request:Request;revision:string;currency:string;onSaved:()=>Promise<void>|void}){
   const {code}=useI18n();
   const [status,setStatus]=useState<Status|null>(null);
-  const [language,setLanguage]=useState<'bn'|'en'>(code==='en'?'en':'bn');
-  const [stage,setStage]=useState<'idle'|'recording'|'listening'|'hearing'|'splitting'|'review'|'saving'|'saved'>('idle');
+  const [language,setLanguage]=useState<'bn'|'en'>(currency==='BDT'||code==='bn'?'bn':'en');
+  const [stage,setStage]=useState<'idle'|'opening'|'recording'|'listening'|'hearing'|'splitting'|'review'|'saving'|'saved'>('idle');
   const [seconds,setSeconds]=useState(0);
   const [transcript,setTranscript]=useState('');
   const [rows,setRows]=useState<Row[]>([]);
@@ -62,6 +64,11 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
   const [interim,setInterim]=useState('');
   const [week,setWeek]=useState<'recent'|'this'|'last'>('recent');
   const [level,setLevel]=useState(0);
+  const [clip,setClip]=useState<Blob|null>(null);
+  const [clipUrl,setClipUrl]=useState('');
+  const [alternate,setAlternate]=useState('');
+  const [truncated,setTruncated]=useState(false);
+  const dictationText=useRef('');
   const wantDictation=useRef(false);
   const recorder=useRef<MediaRecorder|null>(null);
   const live=useRef<Recognition|null>(null);
@@ -77,18 +84,35 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     void request<Status>('/assist/voice-note').then(s=>{if(alive.current)setStatus(s);}).catch(()=>{if(alive.current)setStatus({speech:false,cloud_allowed:false,max_seconds:180});});
     return ()=>{alive.current=false;wantDictation.current=false;clearInterval(timer.current);recorder.current?.stream.getTracks().forEach(x=>x.stop());live.current?.stop();};
   },[]);// eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{
+    if(!clip){setClipUrl('');return;}
+    const url=URL.createObjectURL(clip);
+    setClipUrl(url);
+    return ()=>URL.revokeObjectURL(url);
+  },[clip]);
+
+  function changeTranscript(value:string){
+    setTranscript(value);
+    setRows([]);
+    setDropped([]);
+    setMethod(null);
+    setResult('');
+    setError('');
+    setStage('idle');
+  }
 
   async function record(){
-    setError('');setResult('');
+    setError('');setResult('');setStage('opening');
     let stream:MediaStream;
     try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});}
-    catch{setError(t('Microphone permission is off. Allow the microphone, or type the note.'));return;}
+    catch{if(alive.current){setStage('idle');setError(t('Microphone permission is off. Allow the microphone, or type the note.'));}return;}
     if(!alive.current){stream.getTracks().forEach(track=>track.stop());return;}
     const mimeType=MIME.find(m=>MediaRecorder.isTypeSupported(m))||'';
     let rec:MediaRecorder;
     try{rec=new MediaRecorder(stream,{...(mimeType?{mimeType}:{}),audioBitsPerSecond:32000});}
     catch{
       stream.getTracks().forEach(track=>track.stop());
+      setStage('idle');
       setError(t('You can also type the note, or use live dictation.'));
       return;
     }
@@ -98,7 +122,15 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       stream.getTracks().forEach(x=>x.stop());clearInterval(timer.current);
       if(!alive.current)return;
       const blob=new Blob(chunks,{type:rec.mimeType||mimeType||'audio/webm'});
-      void hear(blob);
+      setClip(blob);
+      setAlternate('');
+      void hear(blob,'primary');
+    };
+    rec.onerror=()=>{
+      rec.onstop=null;
+      stream.getTracks().forEach(track=>track.stop());
+      clearInterval(timer.current);
+      if(alive.current){setStage('idle');setError(t('The recording stopped unexpectedly. Try recording again or type the note.'));}
     };
     // A live sound-level bar shows the phone is hearing the owner the whole time.
     try{
@@ -109,27 +141,45 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
         setLevel(Math.min(1,peak/64));requestAnimationFrame(tick);};
       requestAnimationFrame(tick);
     }catch{/* the meter is optional */}
-    recorder.current=rec;rec.start(1000);setSeconds(0);setStage('recording');
+    recorder.current=rec;
+    try{rec.start(1000);}catch{
+      stream.getTracks().forEach(track=>track.stop());
+      setStage('idle');setError(t('The recording could not start. You can use live dictation or type the note.'));
+      return;
+    }
+    setSeconds(0);setStage('recording');
     const started=Date.now();
-    timer.current=window.setInterval(()=>{const s=Math.floor((Date.now()-started)/1000);setSeconds(s);if(s>=maxSeconds)rec.stop();},250);
+    timer.current=window.setInterval(()=>{const s=Math.floor((Date.now()-started)/1000);setSeconds(s);if(s>=maxSeconds&&rec.state==='recording')rec.stop();},250);
   }
-  async function hear(blob:Blob){
+  async function hear(blob:Blob,mode:'primary'|'alternate'){
     if(blob.size<1000){setStage('idle');setError(t('The recording was too short. Hold the button a little longer.'));return;}
-    setStage('hearing');
+    setError('');setStage('hearing');
     try{
-      const mime=(blob.type||'audio/webm').replace(/\s+/g,'');
-      const data=await request<{transcript:string}>('/assist/voice-note',{audio_b64:await toBase64(blob),mime,language,consent:true});
+      const mime=(blob.type||'audio/webm').toLowerCase().replace(/\s+/g,'');
+      const data=await request<{transcript:string;truncated?:boolean}>('/assist/voice-note',{audio_b64:await toBase64(blob),mime,language,consent:true,mode});
       if(!alive.current)return;
-      setTranscript(cur=>(cur.trim()?cur.trim()+'\n':'')+data.transcript);setStage('idle');
-    }catch(e){if(alive.current){setStage('idle');setError(errorText(e)+' '+t('You can also type the note, or use live dictation.'));}}
+      setTruncated(!!data.truncated);
+      if(mode==='alternate'&&transcript.trim()){
+        setAlternate(data.transcript);setStage('idle');
+      }else{
+        changeTranscript(data.transcript);
+      }
+    }catch(e){if(alive.current){setStage('idle');setError(errorText(e)+' '+t('The recording is still available to replay or retry.'));}}
   }
   function dictate(){
     if(!Dictation)return;
-    setError('');wantDictation.current=true;
+    setError('');setRows([]);setDropped([]);setResult('');wantDictation.current=true;
+    dictationText.current=transcript.trim();
     const run=()=>{
       const engine=new Dictation();engine.lang=language==='bn'?'bn-BD':'en-US';engine.continuous=true;engine.interimResults=true;
       engine.onresult=e=>{let said='',draft='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i][0].transcript;if(e.results[i].isFinal)said+=x+' ';else draft+=x;}
-        if(said.trim())setTranscript(cur=>(cur.trim()?cur.trim()+' ':'')+said.trim());setInterim(draft);};
+        if(said.trim()){
+          const copy=(dictationText.current?dictationText.current+'\n':'')+said.trim();
+          if(copy.length>4000)setTruncated(true);
+          dictationText.current=copy.slice(0,4000);
+          setTranscript(dictationText.current);
+        }
+        setInterim(draft);};
       engine.onerror=e=>{
         if(e.error==='no-speech'||(e.error==='aborted'&&!wantDictation.current))return;
         wantDictation.current=false;
@@ -149,10 +199,10 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     timer.current=window.setInterval(()=>{const sec=Math.floor((Date.now()-started)/1000);setSeconds(sec);if(sec>=maxSeconds)stopDictation();},500);
   }
   function stopDictation(){wantDictation.current=false;clearInterval(timer.current);live.current?.stop();setInterim('');setStage('idle');}
-  async function split(){
+  async function split(useOnline=false){
     setError('');setResult('');setStage('splitting');
     try{
-      const data=await request<Split>('/assist/batch-drafts',{transcript:transcript.trim(),consent:!!status?.cloud_allowed,...(week!=='recent'?{week_start:weekStart(week)}:{})});
+      const data=await request<Split>('/assist/batch-drafts',{transcript:transcript.trim(),consent:useOnline,...(week!=='recent'?{week_start:weekStart(week)}:{})});
       if(!alive.current)return;
       setRows(data.drafts.map(d=>({id:crypto.randomUUID(),title:d.title||d.category||'',include:!d.needs_review,type:d.entry_type,amount:major(d.amount_minor,currency),date:d.effective_on,
         note:d.memo,party:d.party,warnings:d.warnings,evidence:d.evidence,due:d.due_on||d.effective_on})));
@@ -185,12 +235,12 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
       const done=await request<{saved:number;replayed?:boolean}>('/workspace/records/batch',{expected_revision:revision,records});
       if(!alive.current)return;
       setResult(t('{count} records added. Your balance, forecast and activity are updated.',{count:done.replayed?records.length:done.saved}));
-      setStage('saved');setRows([]);setTranscript('');setDropped([]);
+      setStage('saved');setRows([]);setTranscript('');setDropped([]);setClip(null);setAlternate('');setTruncated(false);
       await onSaved();
     }catch(e){if(alive.current){setStage('review');setError(errorText(e));}}
   }
 
-  const busy=['recording','listening','hearing','splitting','saving'].includes(stage);
+  const busy=['opening','recording','listening','hearing','splitting','saving'].includes(stage);
   return <section className="panel voice-note" aria-labelledby="voice-note-title">
     <p className="eyebrow">{t('Voice note')}</p>
     <h2 id="voice-note-title">{t('Say a whole week of spending at once')}</h2>
@@ -198,10 +248,10 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     <div className="voice-controls">
       <label className="voice-lang">{t('I will speak')}<select value={language} disabled={busy} onChange={e=>setLanguage(e.target.value as 'bn'|'en')}><option value="bn">{t('Bangla or Banglish')}</option><option value="en">English</option></select></label>
       {stage==='recording'
-        ?<button className="voice-record recording" onClick={()=>recorder.current?.stop()}><span className="rec-dot" aria-hidden="true"/>{t('Stop ({time})',{time:`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`})}</button>
+        ?<button className="voice-record recording" onClick={()=>{if(recorder.current?.state==='recording')recorder.current.stop();}}><span className="rec-dot" aria-hidden="true"/>{t('Stop ({time})',{time:`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`})}</button>
         :stage==='listening'
         ?<button className="voice-record recording" onClick={stopDictation}><span className="rec-dot" aria-hidden="true"/>{t('Stop dictation')}</button>
-        :<>{canRecord&&<button className="voice-record" disabled={busy} onClick={()=>void record()}><Icon name="spark"/>{stage==='hearing'?t('Listening to your note…'):t('Record a voice note')}</button>}
+        :<>{canRecord&&<button className="voice-record" disabled={busy} onClick={()=>void record()}><Icon name="spark"/>{stage==='hearing'?t('Transcribing your recording…'):t('Record a voice note')}</button>}
           {Dictation&&<button className="secondary" disabled={busy} onClick={dictate}><Icon name="spark"/>{t('Start live dictation')}</button>}</>}
     </div>
     {stage==='recording'&&<div className="voice-level" aria-hidden="true"><span style={{width:`${Math.round(8+level*92)}%`}}/></div>}
@@ -209,13 +259,24 @@ export function VoiceNote({request,revision,currency,onSaved}:{request:Request;r
     {stage==='recording'&&<p className="small muted" role="status">{t('Up to {minutes} minutes. Say the day, what it was for and the amount for each payment.',{minutes:Math.round(maxSeconds/60)})}</p>}
     {status&&!status.cloud_allowed&&<p className="small muted">{t('Enable Smart assist in Settings to send recordings for transcription. You can also use live dictation or type the note.')}</p>}
     {canRecord&&<p className="small muted">{t('The recording is sent to the speech service to be written down and is not stored by Capzoryx.')}</p>}
+    {clipUrl&&<div className="voice-clip">
+      <audio controls preload="metadata" src={clipUrl} aria-label={t('Replay your recording')}/>
+      {canRecord&&clip&&<button className="secondary" disabled={busy} onClick={()=>void hear(clip,'alternate')}>{t('Try another transcription')}</button>}
+    </div>}
+    {alternate&&<div className="voice-alternate">
+      <label htmlFor="alternate-transcript">{t('Alternative transcription')}</label>
+      <textarea id="alternate-transcript" rows={4} value={alternate} dir="auto" readOnly/>
+      <button className="secondary" disabled={busy} onClick={()=>{changeTranscript(alternate);setAlternate('');}}>{t('Use this transcription')}</button>
+    </div>}
+    {truncated&&<p className="notice" role="status">{t('The transcript reached the text limit. Review the text and record the rest as a separate note.')}</p>}
     <label htmlFor="voice-transcript">{t('What you said (you can correct it)')}</label>
-    <textarea id="voice-transcript" rows={4} maxLength={4000} value={transcript} disabled={busy} onChange={e=>setTranscript(e.target.value)} placeholder={t('Your words appear here. You can also type or paste a whole week of spending.')}/>
-    <label className="voice-week">{t('Days like “Shombar” in my note mean')}<select value={week} disabled={busy} onChange={e=>setWeek(e.target.value as typeof week)}>
+    <textarea id="voice-transcript" dir="auto" rows={6} maxLength={4000} value={transcript} disabled={busy} onChange={e=>changeTranscript(e.target.value)} placeholder={t('Your words appear here. You can also type or paste a whole week of spending.')}/>
+    <label className="voice-week">{t('Days like “Shombar” in my note mean')}<select value={week} disabled={busy} onChange={e=>{setWeek(e.target.value as typeof week);changeTranscript(transcript);}}>
       <option value="recent">{t('The last 7 days')}</option><option value="this">{t('This week (from {date})',{date:formatDate(weekStart('this'))})}</option>
       <option value="last">{t('Last week ({from} to {to})',{from:formatDate(weekStart('last')),to:formatDate(plusDays(weekStart('last'),6))})}</option></select></label>
     <div className="actions"><button disabled={busy||transcript.trim().length<3} onClick={()=>void split()}>{stage==='splitting'?t('Making drafts…'):t('Make drafts')}</button>
-      {transcript&&!busy&&<button className="secondary" onClick={()=>{setTranscript('');setRows([]);setDropped([]);setStage('idle');}}>{t('Clear')}</button>}</div>
+      {status?.cloud_allowed&&method==='rules'&&(dropped.some(item=>item.reason==='AMBIGUOUS_AMOUNT')||rows.length===0)&&<button className="secondary" disabled={busy} onClick={()=>void split(true)}>{t('Try online help for these drafts')}</button>}
+      {(transcript||clip)&&!busy&&<button className="secondary" onClick={()=>{changeTranscript('');setClip(null);setAlternate('');setTruncated(false);}}>{t('Clear')}</button>}</div>
     {error&&<p className="error" role="alert">{error}</p>}
     {result&&<p className="success" role="status">{result}</p>}
     {dropped.length>0&&<details className="batch-dropped" open={rows.length===0}>
