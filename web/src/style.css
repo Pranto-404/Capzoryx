@@ -803,4 +803,7 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
 .radar-status.status-later_than_usual{background:#fff3d6;color:#7a5200}
 .radar-status.status-doubtful{background:#fde4df;color:#9b2c1d}
 .radar-status.status-usually_late{background:#e8eefc;color:#2d4a8a}
+.voice-level{height:8px;border-radius:8px;background:var(--surface-soft,#eef3f1);overflow:hidden;margin:4px 0 8px}
+.voice-level span{display:block;height:100%;background:var(--brand,#0f9b7c);transition:width .08s linear}
+.voice-interim{font-style:italic;color:var(--muted,#52695f);margin:4px 0}
 
