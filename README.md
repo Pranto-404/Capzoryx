@@ -9,7 +9,8 @@ A free AI finance copilot for small shops in Bangladesh. It tells an owner wheth
 next bill is due, answers in Bangla, Banglish or English like a person would, and never moves money.</p>
 
 <p align="center">
-  <a href="https://capzoryx.vercel.app"><b>Open the app</b></a> &nbsp;·&nbsp;
+  <a href="https://capzoryx-competition.onrender.com/demo"><b>Live judge demo</b></a> &nbsp;·&nbsp;
+  <a href="https://capzoryx-competition.onrender.com/"><b>Open the workspace</b></a> &nbsp;·&nbsp;
   <a href="https://t.me/CapzoryxBot"><b>Chat on Telegram</b></a> &nbsp;·&nbsp;
   <a href="docs/DEMO.md">Demo walkthrough</a> &nbsp;·&nbsp;
   <a href="docs/INDEX.md">Documentation</a>
@@ -25,6 +26,15 @@ next bill is due, answers in Bangla, Banglish or English like a person would, an
 <p align="center"><img src="docs/screenshots/social-preview.png" alt="Capzoryx Copilot: cash overview with Bangla chat" width="820"></p>
 
 Built by **Team Capzoryx** · project start **21 November 2026**.
+
+## Competition walkthrough
+
+| Task | Try it live | What to verify |
+| --- | --- | --- |
+| **One week of spending from one voice note** | On the [judge demo](https://capzoryx-competition.onrender.com/demo), choose **Seven-day spending sample**, then **Make drafts**. | Seven dated drafts with **Tk 21,950** in spending. Edit an amount or exclude a draft before confirming the preview. |
+| **Cash Radar for late customer payments** | On the same page, switch between **Customer usually pays late** and **Overdue payment may still arrive**. | The first case is an **Alert** for **Tk 20,000 below reserve**. The second is a **Watch**. Compare recorded cash, the expected collection forecast and the stress case. |
+
+The public demo uses fictional records. To record your own voice note, open a workspace, enable **Settings → Smart assist** and choose **Add records → Voice note**. You can replay the recording, request a second transcription, edit the text, review each draft and save the selected records together. [Competition brief and verification](docs/COMPETITION.md)
 
 ## Why it is different
 

@@ -208,7 +208,8 @@ INCOME = re.compile(r'\b(?:received|got|earned|sold|sale|sales|collected|income|
                     r'নিয়েছিলাম|নিয়েছি|নিলাম|পেয়েছিলাম', re.I)
 BILL = re.compile(r'\b(?:baki|due|owe|bill pending|unpaid)\b|(?<!\w)বাকি(?![\w\u0981-\u09cd])|পাওনা', re.I)
 SPENT = re.compile(r'\b(?:paid|pay|spent|bought|buy|gave|dilam|diyechi|disi|dichi|kinlam|kinechi|khoroch|khorch|bhara|vara|'
-                   r'rent|transport|bill|salary|beton|mal|bazar|nasta|chaa|cha|lunch|tel|fuel|repair|kharcha|expense)\b|'
+                   r'rent|transport|bill|salary|beton|mal|bazar|nasta|chaa|cha|lunch|tel|fuel|repair|kharcha|expense|kinsi|'
+                   r'delivery|packaging)\b|'
                    r'দিলাম|দিয়েছি|দিয়েছিলাম|দিতে পেরেছি|কিনলাম|কিনেছি|খরচ|ভাড়া|বিল|বেতন|মাল|বাজার|নাস্তা|চা|তেল', re.I)
 PURCHASE = re.compile(r'(?:৳\s*\d+(?:[.,]\d+)*|টাকা)\s+দিয়ে(?:ই)?\s+|'
                       r'\b(?:paid for|bought|spent on)\b', re.I)
@@ -318,8 +319,19 @@ BN_DRAFT_LABELS = (
 )
 
 
+LATIN_DRAFT_LABELS = (
+    (r'\btransport\b', 'Transport', 'transport'),
+    (r'\b(?:inventory|stock kinsi)\b', 'Inventory', 'stock'),
+    (r'\b(?:salary|beton)\b', 'Salary', 'salary'),
+    (r'\b(?:electricity|biddut)\b', 'Electricity', 'utilities'),
+    (r'\bdelivery\b', 'Delivery', 'delivery'),
+    (r'\b(?:rent|vara|bhara)\b', 'Rent', 'rent'),
+    (r'\bpackaging\b', 'Packaging', 'packaging'),
+)
+
+
 def _rule_label(part):
-    for pattern, title, category in BN_DRAFT_LABELS:
+    for pattern, title, category in BN_DRAFT_LABELS + LATIN_DRAFT_LABELS:
         if re.search(pattern, _norm(part)):
             return title, category
     return _title(part), ''

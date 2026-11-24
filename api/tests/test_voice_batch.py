@@ -307,6 +307,14 @@ def test_public_competition_demo_runs_engines_without_an_account(world):
     assert data['radar']['habit']['receivables'][0]['habit_days'] == 8
     assert data['radar']['habit']['outlooks']['on_time']['first_shortfall_on'] is None
     assert data['radar']['overdue']['level'] == 'watch'
+    week = data['weekly_voice']['drafts']
+    assert [d['category'] for d in week] == ['transport', 'stock', 'salary', 'utilities', 'delivery', 'rent', 'packaging']
+    assert [d['amount_minor'] for d in week] == [120000, 500000, 350000, 210000, 90000, 800000, 125000]
+    assert all(d['entry_type'] == 'expense' and not d['needs_review'] for d in week)
+    assert len({d['effective_on'] for d in week}) == 7
+    assert sum(d['amount_minor'] for d in week) == 2195000
+    pasted = c.post('/api/competition/drafts', json={'transcript': 'আমি ৳৩০ দিয়ে নাস্তা কিনলাম।'})
+    assert pasted.status_code == 200 and pasted.json()['drafts'][0]['amount_minor'] == 3000
     assert c.get('/api/session').status_code == 401
 
 
