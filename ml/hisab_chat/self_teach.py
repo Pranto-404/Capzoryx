@@ -5,7 +5,7 @@ A model fine-tuned mostly on short template replies forgets how to answer anythi
 questions, in the exact production format, keeps its general ability while it learns Capzoryx's shape. Answers are
 kept only when every amount appears in the facts and the reply is in the question's language.
 
-    python -m ml.hisab_chat.self_teach --out data/selfteach.jsonl --count 1200 --base Qwen/Qwen3-4B-Instruct-2507
+    python -m ml.hisab_chat.self_teach --out data/selfteach.jsonl --count 600 --base Qwen/Qwen3-4B-Instruct-2507
 """
 import argparse
 import json
@@ -59,6 +59,8 @@ def main():
     except TypeError:
         model = AutoModelForCausalLM.from_pretrained(a.base, torch_dtype=dtype).to('cuda').eval()
     items, kept, rows = prompts(a.count, a.seed), 0, []
+    a.out.parent.mkdir(parents=True, exist_ok=True)
+    sink = a.out.open('w')  # written after every batch, so a stopped run still leaves the answers it kept
     for start in range(0, len(items), a.batch):
         batch = items[start:start + a.batch]
         texts = []
@@ -80,10 +82,11 @@ def main():
                 continue
             rows.append({'source': 'synthetic-business-selfteach', 'messages': [
                 {'role': 'system', 'content': system}, {'role': 'user', 'content': question}, {'role': 'assistant', 'content': answer}]})
+            sink.write(json.dumps(rows[-1], ensure_ascii=False) + '\n')
             kept += 1
+        sink.flush()
         print(f'self-teach: {min(start + a.batch, len(items))}/{len(items)} prompts, {kept} answers kept', flush=True)
-    a.out.parent.mkdir(parents=True, exist_ok=True)
-    a.out.write_text(''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in rows))
+    sink.close()
     if rows:
         print('example:', rows[0]['messages'][1]['content'], '->', rows[0]['messages'][2]['content'][:400], flush=True)
     del model

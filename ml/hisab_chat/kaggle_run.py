@@ -154,7 +154,7 @@ def main():
     # The base model answers open business questions in the production format, so the tuned model keeps its general
     # ability; templates alone taught the first model to repeat stock replies to anything new.
     step('Write open answers with the base model', sys.executable, '-m', 'ml.hisab_chat.self_teach', '--out', 'data/selfteach.jsonl',
-         '--count', n(1500), '--base', BASE)
+         '--count', n(int(os.getenv('HISAB_SELFTEACH', '600'))), '--base', BASE)
     step('Build conversations', sys.executable, '-m', 'ml.hisab_chat.build_dataset', '--out', 'data/hisab_chat',
          '--size', n(1200), '--teacher', n(400) if teachers else '0',
          '--business', n(1000), '--business-teacher', n(400) if teachers else '0', '--extra', 'data/selfteach.jsonl')
