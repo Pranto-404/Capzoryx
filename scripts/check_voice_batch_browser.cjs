@@ -7,7 +7,7 @@ const {spawn}=require('node:child_process');
 const {once}=require('node:events');
 const {chromium}=require('../web/node_modules/playwright');
 
-const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar Rahim theke 12 hajar taka pelam, shukrobar biddut bill 1,850 taka. Aj chaa nasta 250.';
+const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar Rahim theke 12 hajar taka pelam, shukrobar biddut bill 1,850 taka. Karim 2000 taka dey nai. Aj chaa nasta 250.';
 (async()=>{
   const server=spawn(process.env.PYTHON||'python',['scripts/serve_golden_site.py'],{cwd:path.resolve(__dirname,'..'),stdio:['ignore','pipe','inherit']});
   const line=readline.createInterface({input:server.stdout});
@@ -31,7 +31,9 @@ const NOTE='Shombar dokan bhara 5000 taka dilam. Tarpor transport e 300. Budhbar
     await panel.getByRole('button',{name:'Make drafts'}).click();
     const items=panel.locator('.batch-list>li');
     await items.first().waitFor();
-    assert.equal(await items.count(),5);
+    assert.equal(await items.count(),5);  // "Karim 2000 taka dey nai" (not paid) is not a draft
+    await panel.locator('.voice-summary .voice-day').first().waitFor();
+    assert.match(await panel.locator('.voice-totals').innerText(),/12,000\.00/);
     assert.equal(await items.nth(2).getByLabel('Type').inputValue(),'income');
     await items.nth(1).getByLabel(/^Amount/).fill('350');            // the owner corrects transport
     await items.nth(4).getByRole('checkbox').uncheck();               // and leaves the tea out

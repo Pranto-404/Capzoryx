@@ -156,8 +156,18 @@ DAY_BEFORE_WORDS = ('পরশু', 'porshu', 'porsu', 'poshu')
 AGO = re.compile(r'(\d+)\s*(?:din|দিন|days?)\s*(?:age|আগে|ago)')
 
 
-def said_day(text, today):
-    """The day a phrase refers to, or None. Weekdays mean the most recent one (today included)."""
+def _weekday(text):
+    words = TOKEN.findall(_norm(text))
+    lowered = _norm(text)
+    for weekday, names in WEEKDAYS.items():
+        if any(n in words or (not n.isascii() and n in lowered) for n in names):
+            return weekday
+    return None
+
+
+def said_day(text, today, week_start=None):
+    """The day a phrase refers to, or None. A weekday falls in the chosen week (week_start .. +6 days); without one,
+    in the seven days ending today."""
     words = TOKEN.findall(_norm(text))
     lowered = _norm(text)
     if 'day before yesterday' in lowered or any(w in words for w in DAY_BEFORE_WORDS):
@@ -169,9 +179,10 @@ def said_day(text, today):
                 return today - timedelta(days=value)
     elif int(match.group(1)) <= LOOKBACK_DAYS:
         return today - timedelta(days=int(match.group(1)))
-    for weekday, names in WEEKDAYS.items():
-        if any(n in words or (not n.isascii() and n in lowered) for n in names):
-            return today - timedelta(days=(today.weekday() - weekday) % 7)
+    weekday = _weekday(text)
+    if weekday is not None:
+        end = week_start + timedelta(days=6) if week_start else today
+        return end - timedelta(days=(end.weekday() - weekday) % 7)
     if any(w in words for w in YESTERDAY_WORDS):
         return today - timedelta(days=1)
     if any(w in words for w in TODAY_WORDS):
@@ -185,25 +196,61 @@ def said_day(text, today):
     return None
 
 
-# ---------- splitting without AI ----------
+# ---------- what kind of statement a part is ----------
 INCOME = re.compile(r'\b(?:received|got|earned|sold|sale|sales|collected|income|pelam|pailam|peyechi|peyesi|paisi|'
                     r'bikri|becha|bechlam|joma)\b|পেয়েছি|পেলাম|পাইলাম|বিক্রি|বেচা|বেচলাম|আয়|জমা', re.I)
 BILL = re.compile(r'\b(?:baki|due|owe|bill pending|unpaid)\b|বাকি|পাওনা', re.I)
-SPLIT = re.compile(r'[.](?!\d)|[।!?;\n]+|,(?!\d)|\b(?:tarpor|tarpore|then|arpor|erpor|after that|and then)\b|তারপর|এরপর|আর তারপর', re.I)
+SPENT = re.compile(r'\b(?:paid|pay|spent|bought|buy|gave|dilam|diyechi|disi|dichi|kinlam|kinechi|khoroch|khorch|bhara|vara|'
+                   r'rent|transport|bill|salary|beton|mal|bazar|nasta|chaa|cha|lunch|tel|fuel|repair|kharcha|expense)\b|'
+                   r'দিলাম|দিয়েছি|কিনলাম|কিনেছি|খরচ|ভাড়া|বিল|বেতন|মাল|বাজার|নাস্তা|চা|তেল', re.I)
+# "Rahim 5000 taka dey nai", "দেইনি", "pai nai", "didn't pay": nothing moved.
+NEGATED = re.compile(r'\b(?:dey ?nai|dei ?nai|dey ?ni|deini|dini|dei nii|pai ?nai|pay ?nai|paini|hoy ?nai|hoini|'
+                     r'not paid|didn\'?t|did not|never|no payment)\b|দেয়নি|দেয়নি|দেইনি|দিইনি|দিনি|পাইনি|পায়নি|পায়নি|হয়নি|হয়নি', re.I)
+# Plans and questions are not money that moved: "kal dibo", "will pay", "koto dibo?".
+PLANNED = re.compile(r'\b(?:dibo|debo|dite hobe|korbo|kinbo|will pay|will buy|going to|plan|planning|next week|'
+                     r'agami|porer shoptahe)\b|দিব|দেব|দিতে হবে|কিনব|করব|আগামী|পরের সপ্তাহে', re.I)
+
+
+def intent(text):
+    """'income', 'bill', 'expense', or a reason the part is not a money movement ('negated', 'planned', 'question', 'unclear')."""
+    if NEGATED.search(text):
+        return 'negated'
+    if PLANNED.search(text):
+        return 'planned'
+    if '?' in text:
+        return 'question'
+    if BILL.search(text):
+        return 'bill'
+    if INCOME.search(text):
+        return 'income'
+    if SPENT.search(text):
+        return 'expense'
+    return 'unclear'
+
+
+SPLIT = re.compile(r'[.](?!\d)|[।!;\n]+|(?<=\?)|,(?!\d)|\b(?:tarpor|tarpore|then|arpor|erpor|after that|and then)\b|তারপর|এরপর|আর তারপর', re.I)
+FILLER = re.compile(r'\b(?:taka|tk|bdt|dilam|diyechi|disi|pelam|pailam|e|te|theke|ke|r|ar|and|then|tarpor)\b|টাকা|দিলাম|পেলাম|থেকে', re.I)
+
+
+def _title(part):
+    """A short label from the words of the part: numbers, days and filler removed."""
+    words = [w for w in re.split(r'\s+', FILLER.sub(' ', part)) if w and not any(ch.isdigit() for ch in w.translate(BN_DIGITS))
+             and _weekday(w) is None and w.casefold() not in _SMALL and w.casefold() not in SCALES and w.casefold() not in _HUNDREDS]
+    return ' '.join(words[:5])[:40].strip(' ,.-') or ''
 
 
 def rule_entries(transcript):
-    """A sentence-by-sentence reading used when no AI service is available: one entry per part with an amount."""
+    """A sentence-by-sentence reading used without AI, and to catch anything the AI missed."""
     entries = []
     for part in SPLIT.split(transcript):
-        part = part.strip(' ,-')
+        part = (part or '').strip(' ,-')
         if len(part) < 3:
             continue
         amounts = spoken_amounts(part)
         if len(amounts) != 1:  # none, or two numbers that cannot be told apart without help
             continue
-        kind = 'bill' if BILL.search(part) else 'income' if INCOME.search(part) else 'expense'
-        entries.append(dict(evidence=part, amount=next(iter(amounts)), type=kind, when='', party='', category='', note=part[:120]))
+        kind = intent(part)
+        entries.append(dict(evidence=part, amount=next(iter(amounts)), type=kind, party='', category='', title=_title(part), note=part[:120]))
     return entries
 
 
@@ -212,15 +259,15 @@ SPLIT_SYSTEM = (
     'You split a small business owner\'s voice note into separate money entries. The note may be Bangla, Banglish '
     '(Bangla in English letters) or English, and may contain speech-recognition mistakes.\n'
     'Return JSON only: {"entries":[{"evidence":"the exact words of the note for this one entry, copied character for '
-    'character","amount":number as said (taka, digits only),"type":"expense|income|bill","when":"the words that say '
-    'which day, copied from the note, or empty","party":"who was paid or who paid, or empty","category":"one or two '
-    'English words such as rent, transport, stock, salary, utilities, food, sales, repair, other","note":"a short '
-    'description in the language of the note"}]}\n'
+    'character","amount":number as said (taka, digits only),"type":"expense|income|bill","party":"who was paid or who '
+    'paid, or empty","category":"one or two English words such as rent, transport, stock, salary, utilities, food, '
+    'sales, repair, other","title":"a clean 2 to 4 word label in the language of the note, e.g. দোকান ভাড়া, '
+    'Rahim theke bikri, Shop rent"}]}\n'
     'Rules: one entry for every separate payment, purchase or sale, even when they share a sentence; never merge two '
     'amounts; never invent an amount or a payment that was not said; convert number words to digits '
     '("dui hajar pachsho" = 2500, "দেড় হাজার" = 1500); if the speaker corrects an amount ("na na, 600"), give only '
-    'the corrected amount; type "bill" only for money still owed to a supplier; skip plans, questions and amounts '
-    'that are not money paid or received.')
+    'the corrected amount; type "bill" only for money still owed to a supplier; leave out anything that did not '
+    'happen (not paid, will pay later, questions).')
 
 
 def _providers():
@@ -261,44 +308,59 @@ def ai_entries(transcript, deadline):
 
 
 # ---------- checking and turning entries into drafts ----------
-def _words(text):
-    return [w for w in TOKEN.findall(_norm(text)) if len(w) > 1 or w.isdigit()]
+def _flat(text):
+    """Lower case, digits made ASCII, punctuation and extra spaces removed: for exact quote matching."""
+    return ' '.join(TOKEN.findall(_norm(text)))
 
 
 def quoted(evidence, transcript):
-    """The entry quotes the note: its words appear in the transcript (speech engines may differ in small ways)."""
-    words = _words(evidence)
-    if not words:
-        return False
-    known = set(_words(transcript))
-    return sum(w in known for w in words) / len(words) >= 0.8
+    """The entry quotes the note: its words appear, in order and together, in the transcript."""
+    words = _flat(evidence)
+    return bool(words) and f' {words} ' in f' {_flat(transcript)} '
+
+
+def _covered(part, evidences):
+    """Most of a rule part's words are inside some AI entry's quote: the AI already handled it."""
+    mine = set(TOKEN.findall(_norm(part)))
+    return bool(mine) and any(len(mine & set(TOKEN.findall(_norm(e)))) / len(mine) >= 0.6 for e in evidences)
 
 
 CATEGORY = re.compile(r'^[a-z][a-z /&-]{0,30}$')
+SKIP_REASONS = {'negated': 'NOT_PAID', 'planned': 'PLANNED', 'question': 'QUESTION'}
 
 
-def checked_drafts(raw_entries, transcript, today, currency, digits):
-    """Validated drafts in the order they were said; entries that fail a check are reported, not silently fixed."""
+def checked_drafts(raw_entries, transcript, today, currency, digits, week_start=None):
+    """Validated drafts in the order they were said; entries that fail a check are reported with the reason."""
     drafts, dropped, day = [], [], None
     seen = set()
-    for raw in (raw_entries or [])[:MAX_ENTRIES]:
+    raw_entries = raw_entries or []
+    if len(raw_entries) > MAX_ENTRIES:
+        dropped.append(dict(evidence='', reason='TOO_MANY_ENTRIES', count=len(raw_entries) - MAX_ENTRIES))
+    order = []
+    for raw in raw_entries[:MAX_ENTRIES]:
         if not isinstance(raw, dict):
             continue
-        evidence = str(raw.get('evidence') or '').strip()[:400]
+        evidence = re.sub(r'\s+', ' ', str(raw.get('evidence') or '')).strip()[:400]
         if not quoted(evidence, transcript):
             dropped.append(dict(evidence=evidence[:120], reason='NOT_IN_NOTE'))
+            continue
+        what = intent(evidence)
+        if what in SKIP_REASONS:
+            dropped.append(dict(evidence=evidence[:120], reason=SKIP_REASONS[what]))
             continue
         try:
             amount = round(float(str(raw.get('amount')).replace(',', '')), 2)
         except (TypeError, ValueError):
             amount = 0
-        said = spoken_amounts(evidence) or spoken_amounts(transcript)
+        said = spoken_amounts(evidence)  # only this entry's own words: never another sentence's number
         if amount <= 0 or amount not in said:
             dropped.append(dict(evidence=evidence[:120], reason='AMOUNT_NOT_SAID'))
             continue
         warnings = []
-        spoken = said_day(str(raw.get('when') or ''), today) or said_day(evidence, today)
+        spoken = said_day(evidence, today, week_start)  # the day comes from the quoted words, never from the AI
         if spoken is not None:
+            if day is not None and spoken < day and _weekday(evidence) is not None and week_start is None:
+                warnings.append('The days in your note go backwards. Choose the week above if this was last week.')
             day = spoken
         elif day is None:
             warnings.append('No day was said, so today is used. Change it if needed.')
@@ -306,47 +368,53 @@ def checked_drafts(raw_entries, transcript, today, currency, digits):
         if effective > today or effective < today - timedelta(days=60):
             warnings.append('Check the date.')
             effective = min(max(effective, today - timedelta(days=60)), today)
-        kind = raw.get('type') if raw.get('type') in ('expense', 'income', 'bill') else 'expense'
+        claimed = raw.get('type') if raw.get('type') in ('expense', 'income', 'bill') else None
+        kind = what if what in ('expense', 'income', 'bill') else (claimed or 'expense')
+        if what == 'unclear':
+            warnings.append('No payment word was heard. Check whether this money was paid or received.')
+        elif claimed and claimed != what:
+            warnings.append('The type was set from your words. Check it.')
         party = re.sub(r'[\x00-\x1f]+', ' ', str(raw.get('party') or '')).strip()[:60]
         category = str(raw.get('category') or '').strip().casefold()
         category = category if CATEGORY.match(category) else ''
-        note = re.sub(r'[\x00-\x1f]+', ' ', str(raw.get('note') or evidence)).strip()[:160]
-        key = (kind, amount, effective, _norm(evidence))
-        if key in seen:
+        title = re.sub(r'[\x00-\x1f]+', ' ', str(raw.get('title') or '')).strip()[:40] or _title(evidence) or category.capitalize()
+        key = _flat(evidence)
+        if key in seen:  # the very same words twice: one entry
             continue
         seen.add(key)
         minor = int(round(amount * 10 ** digits))
-        if len(said) > 1 and len(spoken_amounts(evidence)) > 1:
+        if len(said) > 1:
             warnings.append('Two numbers were said here. Check that this is the right amount.')
-        memo = ' · '.join(x for x in (category.capitalize() if category else '', party, note) if x)[:200]
+        memo = ' · '.join(x for x in (title, party if party and party not in title else '') if x)[:200]
         draft = dict(ok=True, kind='invoice' if kind == 'bill' else 'cash', entry_type=kind, amount_minor=minor,
                      currency=currency, workspace_currency=currency, currency_mismatch=False,
-                     effective_on=effective.isoformat(), memo=memo, warnings=warnings, can_save=True,
-                     confidence=0.9 if not warnings else 0.6, evidence=evidence, party=party, category=category)
+                     effective_on=effective.isoformat(), memo=memo, title=title, warnings=warnings, can_save=True,
+                     needs_review=what == 'unclear' or len(said) > 1, confidence=0.9 if not warnings else 0.6, evidence=evidence,
+                     party=party, category=category)
         if kind == 'bill':
             draft.update(due_on=(effective + timedelta(days=7)).isoformat(), vendor_name=party or 'Supplier',
                          invoice_number=f'VOICE-{effective:%Y%m%d}-{len(drafts) + 1}')
         else:
             draft.update(direction='inflow' if kind == 'income' else 'outflow', status='cleared')
         drafts.append(draft)
+        order.append(effective)
     return drafts, dropped
 
 
-def split_note(transcript, today, currency, digits, *, use_ai=True, deadline=None):
-    """(drafts, dropped, method). The AI split is used when it yields at least as many checked drafts as the rules."""
-    rules, rule_dropped = checked_drafts(rule_entries(transcript), transcript, today, currency, digits)
+def split_note(transcript, today, currency, digits, *, use_ai=True, deadline=None, week_start=None):
+    """(drafts, dropped, method). With AI, anything the rule reader found that no AI entry quotes is added for checking."""
+    rules, rule_dropped = checked_drafts(rule_entries(transcript), transcript, today, currency, digits, week_start)
     if use_ai:
         found = ai_entries(transcript, deadline or time.monotonic() + 30)
         if found:
-            drafts, dropped = checked_drafts(found[0], transcript, today, currency, digits)
-            if drafts:
-                # Anything the rule reader found that the AI left out is offered too, marked for checking.
-                taken = {d['amount_minor'] for d in drafts}
-                covered = ' '.join(d['evidence'] for d in drafts)
+            drafts, dropped = checked_drafts(found[0], transcript, today, currency, digits, week_start)
+            if drafts or dropped:
+                # Parts the AI got wrong (unquoted text, a borrowed amount) are not "covered": the rule reader may recover them.
+                covered = [d['evidence'] for d in drafts] + [d['evidence'] for d in dropped if d['reason'] in SKIP_REASONS.values()]
                 for extra in rules:
-                    if extra['amount_minor'] not in taken and not quoted(extra['evidence'], covered):
+                    if not _covered(extra['evidence'], covered):
                         extra['warnings'].append('Found by the backup reader. Check it, or untick it if it is not a payment.')
-                        extra['confidence'] = 0.5
+                        extra['confidence'], extra['needs_review'] = 0.5, True
                         drafts.append(extra)
                 return drafts, dropped, 'ai'
     return rules, rule_dropped, 'rules'
@@ -473,6 +541,7 @@ class VoiceNote(Contract):
 
 class NoteText(Contract):
     transcript: str = Field(min_length=2, max_length=MAX_TRANSCRIPT)
+    week_start: date | None = None  # the first day of the week the note describes, when the owner chose one
     consent: StrictBool = False  # may the note go to an AI service to be split (otherwise rules only)
 
 
@@ -522,5 +591,7 @@ def batch_drafts(body: NoteText, actor=Depends(principal), db=Depends(db_connect
         cloud = body.consent and _cloud_allowed(db, actor)
     from api.app.currencies import CURRENCIES
     digits = CURRENCIES[ds.currency]['digits']
-    drafts, dropped, method = split_note(body.transcript.strip(), today_bd(), ds.currency, digits, use_ai=cloud)
+    today = today_bd()
+    week = body.week_start if body.week_start and today - timedelta(days=60) <= body.week_start <= today else None
+    drafts, dropped, method = split_note(body.transcript.strip(), today, ds.currency, digits, use_ai=cloud, week_start=week)
     return dict(drafts=drafts, dropped=dropped, method=method, simulation_only=True)

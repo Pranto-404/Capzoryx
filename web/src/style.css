@@ -806,4 +806,19 @@ a.button{display:inline-flex;align-items:center;justify-content:center;min-heigh
 .voice-level{height:8px;border-radius:8px;background:var(--surface-soft,#eef3f1);overflow:hidden;margin:4px 0 8px}
 .voice-level span{display:block;height:100%;background:var(--brand,#0f9b7c);transition:width .08s linear}
 .voice-interim{font-style:italic;color:var(--muted,#52695f);margin:4px 0}
+.voice-week{max-width:420px}
+.voice-summary{border:1px solid var(--line,#dce5de);border-radius:16px;padding:14px;margin:10px 0 16px;background:var(--surface-soft,#f6f9f7)}
+.voice-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:8px}
+.voice-totals small{display:block}.voice-totals b{font-size:18px;font-variant-numeric:tabular-nums}
+.positive{color:#17613a}
+.voice-day h4{margin:12px 0 4px;font-size:13px;color:var(--muted,#52695f)}
+.voice-day ul{list-style:none;padding:0;margin:0}
+.voice-day li{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line,#e3ebe6)}
+.voice-day li:last-child{border-bottom:0}
+.voice-sign{width:24px;height:24px;border-radius:50%;display:inline-grid;place-items:center;font-weight:700;flex:0 0 auto;background:#fde4df;color:#9b2c1d}
+.voice-day li.kind-income .voice-sign{background:#e3f4ea;color:#17613a}
+.voice-day li.kind-bill .voice-sign{background:#fff3d6;color:#7a5200}
+.voice-title{flex:1;min-width:0;overflow-wrap:anywhere}.voice-title small{display:block}
+.voice-day li b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.voice-check-title{margin:6px 0 8px;font-size:14px}
 

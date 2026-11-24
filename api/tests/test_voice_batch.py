@@ -140,3 +140,62 @@ def test_voice_note_routes_end_to_end(world, monkeypatch):  # noqa: F811
     fresh = [dict(r, request_id=str(uuid.uuid4())) for r in records]
     stale = c.post('/api/workspace/records/batch', json={'expected_revision': revision, 'records': fresh})
     assert stale.status_code == 409 and c.get('/api/workspace').json()['snapshot']['income_minor'] == 1200000
+
+
+# ---------- audit acceptance cases ----------
+@pytest.mark.parametrize('note', ['Rahim 5000 taka dey nai', 'রহিম ৫০০০ টাকা দেয়নি', 'kal bhara 5000 dibo',
+                                  'I did not pay the 3000 rent', 'koto dibo 500?'])
+def test_not_paid_planned_or_asked_never_becomes_a_draft(note, monkeypatch):
+    drafts, _, _ = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)
+    assert drafts == []
+    _ai(monkeypatch, [{'evidence': note, 'amount': next(iter(vb.spoken_amounts(note))), 'type': 'expense'}])
+    drafts, dropped, _ = vb.split_note(note, TODAY, 'BDT', 2)
+    assert drafts == [] and dropped[0]['reason'] in ('NOT_PAID', 'PLANNED', 'QUESTION')
+
+
+def test_ai_cannot_borrow_another_sentences_amount_day_or_type(monkeypatch):
+    note = 'Shombar bhara 5000 dilam. Rahim theke 800 pelam.'
+    _ai(monkeypatch, [{'evidence': 'Shombar bhara 5000 dilam', 'amount': 5000, 'type': 'expense'},
+                      {'evidence': 'Rahim theke 800 pelam', 'amount': 5000, 'type': 'income', 'when': 'Shombar'},   # borrowed amount
+                      {'evidence': 'Rahim theke', 'amount': 800, 'type': 'expense'}])                                 # no amount in quote
+    drafts, dropped, _ = vb.split_note(note, TODAY, 'BDT', 2)
+    amounts = [(d['amount_minor'], d['entry_type']) for d in drafts]
+    assert (500000, 'expense') in amounts and all(a != (500000, 'income') for a in amounts)
+    assert (80000, 'income') in amounts  # recovered by the rule reader, type from its own words
+    assert {d['reason'] for d in dropped} == {'AMOUNT_NOT_SAID'}
+
+
+def test_a_chosen_week_keeps_monday_to_sunday_in_order():
+    note = 'Shombar bhara 100 dilam. Mongolbar 200 dilam. Budhbar 300 dilam. Brihospotibar 400 dilam. Shukrobar 500 dilam. Shonibar 600 dilam. Robibar 700 dilam.'
+    drafts, _, _ = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False, week_start=date(2026, 11, 16))
+    assert [d['effective_on'] for d in drafts] == [f'2026-11-{d}' for d in range(16, 23)]
+    loose, _, _ = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)  # no week chosen: warn when days go backwards
+    assert any('go backwards' in ' '.join(d['warnings']) for d in loose)
+
+
+def test_two_equal_amounts_are_two_entries(monkeypatch):
+    note = 'Shombar transport 500 dilam. Budhbar nasta 500 dilam.'
+    _ai(monkeypatch, [{'evidence': 'Shombar transport 500 dilam', 'amount': 500, 'type': 'expense'}])
+    drafts, _, _ = vb.split_note(note, TODAY, 'BDT', 2)
+    assert [(d['amount_minor'], d['effective_on']) for d in drafts] == [(50000, '2026-11-23'), (50000, '2026-11-18')]
+
+
+def test_too_many_entries_are_reported_not_silently_dropped():
+    raw = [{'evidence': 'bhara 100 dilam', 'amount': 100, 'type': 'expense'}] * (vb.MAX_ENTRIES + 5)
+    _, dropped = vb.checked_drafts(raw, 'bhara 100 dilam', TODAY, 'BDT', 2)
+    assert dropped[0] == {'evidence': '', 'reason': 'TOO_MANY_ENTRIES', 'count': 5}
+
+
+def test_batch_replay_with_changed_amounts_is_refused(world):  # noqa: F811
+    import uuid
+    c, _ = world
+    signup(c, 'batch_replay')
+    revision = c.get('/api/workspace').json()['dataset_revision']
+    records = [dict(request_id=str(uuid.uuid4()), kind='cash', amount_minor=10000 * (i + 1), effective_on=str(TODAY - __import__('datetime').timedelta(days=0)),
+                    direction='outflow', status='cleared', memo='') for i in range(2)]
+    first = c.post('/api/workspace/records/batch', json={'expected_revision': revision, 'records': records})
+    assert first.status_code == 201
+    same = c.post('/api/workspace/records/batch', json={'expected_revision': revision, 'records': records})
+    assert same.status_code == 201 and same.json()['replayed'] is True
+    edited = [dict(records[0], amount_minor=99999), records[1]]
+    assert c.post('/api/workspace/records/batch', json={'expected_revision': revision, 'records': edited}).status_code == 409
