@@ -366,3 +366,13 @@ def test_batch_replay_with_changed_amounts_is_refused(world):  # noqa: F811
     assert same.status_code == 201 and same.json()['replayed'] is True
     edited = [dict(records[0], amount_minor=99999), records[1]]
     assert c.post('/api/workspace/records/batch', json={'expected_revision': revision, 'records': edited}).status_code == 409
+
+
+@pytest.mark.parametrize('note', ['amake sadia 500 tk dise and gotokal ami 600 tk paisi rahim theke',
+                                  'আমাকে সাদিয়া ৫০০ টাকা দিসে আর গতকাল আমি ৬০০ টাকা পাইসি রহিম থেকে'])
+def test_two_payments_in_one_sentence_need_no_full_stop(note):
+    drafts, dropped, _ = vb.split_note(note, TODAY, 'BDT', 2, use_ai=False)
+    assert dropped == []
+    assert [(d['amount_minor'], d['effective_on'], d['entry_type']) for d in drafts] == [
+        (50000, '2026-11-24', 'income'),   # "amake ... dise": someone gave money to the owner, today
+        (60000, '2026-11-23', 'income')]   # "gotokal ... paisi": received yesterday

@@ -208,7 +208,7 @@ def said_day(text, today, week_start=None):
 # ---------- what kind of statement a part is ----------
 INCOME = re.compile(r'\b(?:received|got|earned|sold|sale|sales|collected|income|pelam|pailam|peyechi|peyesi|paisi|'
                     r'bikri|becha|bechlam|joma|borrowed|nilam|niyechilam)\b|পেয়েছি|পেলাম|পাইলাম|বিক্রি|বেচা|বেচলাম|আয়|জমা|'
-                    r'নিয়েছিলাম|নিয়েছি|নিলাম|পেয়েছিলাম', re.I)
+                    r'নিয়েছিলাম|নিয়েছি|নিলাম|পেয়েছিলাম|পাইসি|পাইছি|পাইছিলাম|পাইসিলাম|পেয়েছি|পাইছে|পাইসে|\bpaichi\b|\bpaisilam\b|\bpaichilam\b', re.I)
 BILL = re.compile(r'\b(?:baki|due|owe|bill pending|unpaid)\b|(?<!\w)বাকি(?![\w\u0981-\u09cd])|পাওনা', re.I)
 SPENT = re.compile(r'\b(?:paid|pay|spent|bought|buy|gave|dilam|diyechi|disi|dichi|kinlam|kinechi|khoroch|khorch|bhara|vara|'
                    r'rent|transport|bill|salary|beton|mal|bazar|nasta|chaa|cha|lunch|tel|fuel|repair|kharcha|expense|kinsi|'
@@ -226,6 +226,9 @@ NEGATED = re.compile(r'\b(?:dey ?nai|dei ?nai|dey ?ni|deini|dini|dei nii|pai ?na
 # Plans and questions are not money that moved: "kal dibo", "will pay", "koto dibo?".
 PLANNED = re.compile(r'\b(?:dibo|debo|dite hobe|korbo|kinbo|will pay|will buy|going to|plan|planning|next week|'
                      r'agami|porer shoptahe)\b|দিব|দেব|দিতে হবে|কিনব|করব|আগামী|পরের সপ্তাহে', re.I)
+# "amake Sadia 500 dise", "আমাকে রহিম ৫০০ টাকা দিয়েছে": someone gave money TO the owner, so it came in.
+TO_ME = re.compile(r'\b(?:amake|amare|amay|amaye)\b.{0,60}\b(?:dise|disey|dichhe|dicche|dilo|dilen|diyeche|diyechen|dise)\b|'
+                   r'(?:আমাকে|আমারে|আমায়).{0,60}(?:দিসে|দিছে|দিল|দিলো|দিয়েছে|দিয়েছেন|দিয়েছে|দিলেন)', re.I)
 BN_NEGATED = re.compile(r'(?:দেয়|দেই|দিই|পাই|পায়|হয়)\s+নাই|(?:দিতে|পেতে)\s+পারিনি')
 
 
@@ -244,6 +247,8 @@ def intent(text):
         return 'balance'
     if BILL.search(text):
         return 'bill'
+    if TO_ME.search(text):
+        return 'income'
     if PURCHASE.search(text):
         return 'expense'
     if INCOME.search(text):
@@ -305,6 +310,13 @@ def _foreign_currency(part, currency):
     return any(code != currency for code in codes) or (dollars and currency not in DOLLAR_CURRENCIES)
 
 
+def _wordy(text):
+    """At least two words that are not numbers, currency or filler: a clause, not just part of a number."""
+    words = [w for w in TOKEN.findall(_norm(FILLER.sub(' ', text))) if not w[0].isdigit() and w not in _SMALL and w not in SCALES
+             and w not in _HUNDREDS and w not in HUNDRED and w not in ('tk', 'taka', 'টাকা', 'and', 'ar')]
+    return len(words) >= 2
+
+
 def _note_parts(transcript):
     parts = []
     for fragment in SPLIT.split(transcript):
@@ -316,7 +328,10 @@ def _note_parts(transcript):
         for match in JOIN.finditer(fragment):
             left = fragment[start:match.start()].strip()
             right = fragment[match.end():].strip()
-            if intent(left) != 'unclear' and intent(right) != 'unclear' and _payment_amounts(left) and _payment_amounts(right):
+            # Two payments joined by "and"/"আর": split when both halves have an amount and real words, and at least one
+            # half says what happened ("one hundred and fifty" has no words besides numbers, so it stays together).
+            known = (intent(left) != 'unclear') + (intent(right) != 'unclear')
+            if (known == 2 or (known and _wordy(left) and _wordy(right))) and _payment_amounts(left) and _payment_amounts(right):
                 parts.append(left)
                 start = match.end()
         parts.append(fragment[start:].strip())
